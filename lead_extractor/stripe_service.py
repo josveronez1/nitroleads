@@ -246,7 +246,9 @@ def handle_webhook_event(event):
                 logger.error(f"Usuário {user_id} não encontrado")
                 return False
                 
-        return False
+        # Evento não processado (retorna True para não aparecer como erro no Stripe)
+        logger.debug(f"Evento {event.get('type')} não precisa ser processado")
+        return True
         
     except Exception as e:
         logger.error(f"Erro ao processar webhook: {e}")

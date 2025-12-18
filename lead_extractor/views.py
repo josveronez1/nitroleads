@@ -602,11 +602,16 @@ def stripe_webhook(request):
         return HttpResponse(status=400)
     
     # Processar evento
-    if handle_webhook_event(event):
-        logger.info(f"Evento {event['type']} processado com sucesso")
-        return HttpResponse(status=200)
-    else:
-        logger.error(f"Falha ao processar evento {event['type']}")
+    try:
+        result = handle_webhook_event(event)
+        if result:
+            logger.info(f"Evento {event['type']} processado com sucesso")
+            return HttpResponse(status=200)
+        else:
+            logger.error(f"Falha ao processar evento {event['type']}")
+            return HttpResponse(status=500)
+    except Exception as e:
+        logger.error(f"Erro inesperado ao processar webhook: {e}", exc_info=True)
         return HttpResponse(status=500)
 
 
