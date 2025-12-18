@@ -1,0 +1,13 @@
+Django==4.2.27
+dj-database-url==3.0.1
+python-decouple==3.8
+requests==2.32.5
+psycopg2-binary==2.9.11
+playwright==1.57.0
+supabase==2.27.0
+python-jose[cryptography]==3.5.0
+PyJWT==2.10.1
+stripe==14.1.0
+gunicorn==23.0.0
+whitenoise==6.8.2
+

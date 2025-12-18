@@ -1,0 +1,142 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprar Créditos - NitroLeads</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        .package-card {
+            transition: transform 0.2s;
+            border: 2px solid transparent;
+        }
+        .package-card:hover {
+            transform: translateY(-5px);
+            border-color: #0d6efd;
+        }
+        .package-card.featured {
+            border-color: #ffc107;
+            box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="{% url 'dashboard' %}"><i class="fas fa-bolt text-warning"></i> NitroLeads</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard' %}">Nova Pesquisa</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'search_history' %}">Minhas Pesquisas</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'simple_search' %}">Busca Rápida</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    {% if user_profile %}
+                    <span class="text-light">
+                        <i class="fas fa-coins text-warning"></i> 
+                        <strong>{{ available_credits }}</strong> créditos
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container pb-5">
+        <div class="text-center mb-5">
+            <h2>Comprar Créditos</h2>
+            <p class="text-muted">Escolha um pacote de créditos para continuar suas buscas</p>
+        </div>
+
+        <div class="row g-4">
+            {% for package in packages %}
+            <div class="col-md-6 col-lg-3">
+                <div class="card package-card h-100 {% if forloop.counter == 2 %}featured{% endif %}">
+                    <div class="card-body text-center">
+                        {% if forloop.counter == 2 %}
+                        <span class="badge bg-warning text-dark mb-2">Mais Popular</span>
+                        {% endif %}
+                        <h5 class="card-title">{{ package.name }}</h5>
+                        <h2 class="text-primary mb-3">
+                            R$ {{ package.price_brl|floatformat:2 }}
+                        </h2>
+                        <h4 class="mb-3">
+                            <i class="fas fa-coins text-warning"></i> 
+                            {{ package.credits }} créditos
+                        </h4>
+                        <p class="text-muted small mb-4">
+                            R$ {{ package.price_brl|floatformat:2|floatformat:2 }} por crédito
+                        </p>
+                        <button class="btn btn-primary w-100 buy-package-btn" 
+                                data-package-id="{{ package.id }}">
+                            Comprar Agora
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.querySelectorAll('.buy-package-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const packageId = this.getAttribute('data-package-id');
+                const btn = this;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
+                
+                // Criar checkout session
+                const formData = new URLSearchParams();
+                formData.append('package_id', packageId);
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+                
+                fetch('{% url "create_checkout" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    },
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.url) {
+                        // Redirecionar para checkout do Stripe
+                        window.location.href = data.url;
+                    } else {
+                        alert('Erro: ' + (data.error || 'Erro ao processar pagamento'));
+                        btn.disabled = false;
+                        btn.innerHTML = 'Comprar Agora';
+                    }
+                })
+                .catch(error => {
+                    alert('Erro ao processar pagamento');
+                    btn.disabled = false;
+                    btn.innerHTML = 'Comprar Agora';
+                });
+            });
+        });
+    </script>
+</body>
+
+</html>
+
