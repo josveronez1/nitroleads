@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
 stripe.api_key = STRIPE_SECRET_KEY
 
+# Configurar se PIX está habilitado (padrão: False - apenas cartão)
+ENABLE_PIX = config('STRIPE_ENABLE_PIX', default=False, cast=bool)
+
 # Constantes de precificação
 CREDIT_PRICE = 0.30  # R$0,30 por crédito
 MIN_CREDITS = 10
@@ -59,8 +62,18 @@ def create_checkout_session(package_id, user_id, user_email):
         success_url = f"{base_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{base_url}/payment/cancel"
         
+        # Definir métodos de pagamento (PIX só se estiver habilitado)
+        payment_method_types = ['card']
+        payment_method_options = {}
+        
+        if ENABLE_PIX:
+            payment_method_types.append('pix')
+            payment_method_options['pix'] = {
+                'expires_after_seconds': 3600,  # 1 hora para PIX
+            }
+        
         session = stripe.checkout.Session.create(
-            payment_method_types=['card', 'pix'],  # Suporta PIX e cartão
+            payment_method_types=payment_method_types,
             line_items=[{
                 'price_data': {
                     'currency': 'brl',
@@ -76,11 +89,7 @@ def create_checkout_session(package_id, user_id, user_email):
             success_url=success_url,
             cancel_url=cancel_url,
             customer_email=user_email,
-            payment_method_options={
-                'pix': {
-                    'expires_after_seconds': 3600,  # 1 hora para PIX (padrão Stripe é 24h, mas podemos ajustar)
-                }
-            },
+            payment_method_options=payment_method_options if payment_method_options else None,
             metadata={
                 'user_id': str(user_id),
                 'package_id': str(package_id),
@@ -133,8 +142,18 @@ def create_custom_checkout_session(credits, user_id, user_email):
         success_url = f"{base_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{base_url}/payment/cancel"
         
+        # Definir métodos de pagamento (PIX só se estiver habilitado)
+        payment_method_types = ['card']
+        payment_method_options = {}
+        
+        if ENABLE_PIX:
+            payment_method_types.append('pix')
+            payment_method_options['pix'] = {
+                'expires_after_seconds': 3600,  # 1 hora para PIX
+            }
+        
         session = stripe.checkout.Session.create(
-            payment_method_types=['card', 'pix'],  # Suporta PIX e cartão
+            payment_method_types=payment_method_types,
             line_items=[{
                 'price_data': {
                     'currency': 'brl',
@@ -150,11 +169,7 @@ def create_custom_checkout_session(credits, user_id, user_email):
             success_url=success_url,
             cancel_url=cancel_url,
             customer_email=user_email,
-            payment_method_options={
-                'pix': {
-                    'expires_after_seconds': 3600,  # 1 hora para PIX
-                }
-            },
+            payment_method_options=payment_method_options if payment_method_options else None,
             metadata={
                 'user_id': str(user_id),
                 'credits': str(credits),
