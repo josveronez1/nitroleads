@@ -5,8 +5,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Configurar chave secreta do Stripe
-stripe.api_key = config('STRIPE_SECRET_KEY', default='')
+# Configurar chave secreta do Stripe (será verificada antes de cada chamada)
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
+stripe.api_key = STRIPE_SECRET_KEY
 
 # Constantes de precificação
 CREDIT_PRICE = 0.30  # R$0,30 por crédito
@@ -34,6 +35,14 @@ def create_checkout_session(package_id, user_id, user_email):
     Returns:
         dict: Sessão do Stripe ou None em caso de erro
     """
+    # Verificar se a chave do Stripe está configurada
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.strip() == '':
+        logger.error("STRIPE_SECRET_KEY não está configurada no .env")
+        return None
+    
+    # Atualizar a chave caso tenha mudado
+    stripe.api_key = STRIPE_SECRET_KEY
+    
     try:
         # Buscar pacote
         package = next((p for p in CREDIT_PACKAGES if p['id'] == package_id), None)
@@ -82,10 +91,11 @@ def create_checkout_session(package_id, user_id, user_email):
         return session
         
     except stripe.error.StripeError as e:
-        logger.error(f"Erro do Stripe: {e}")
+        logger.error(f"Erro do Stripe ao criar checkout: {e}", exc_info=True)
+        logger.error(f"Detalhes do erro Stripe: tipo={type(e).__name__}, mensagem={str(e)}")
         return None
     except Exception as e:
-        logger.error(f"Erro ao criar checkout session: {e}")
+        logger.error(f"Erro inesperado ao criar checkout session: {e}", exc_info=True)
         return None
 
 
@@ -101,6 +111,14 @@ def create_custom_checkout_session(credits, user_id, user_email):
     Returns:
         dict: Sessão do Stripe ou None em caso de erro
     """
+    # Verificar se a chave do Stripe está configurada
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.strip() == '':
+        logger.error("STRIPE_SECRET_KEY não está configurada no .env")
+        return None
+    
+    # Atualizar a chave caso tenha mudado
+    stripe.api_key = STRIPE_SECRET_KEY
+    
     try:
         # Validar quantidade de créditos
         if credits < MIN_CREDITS or credits > MAX_CREDITS:
@@ -147,10 +165,11 @@ def create_custom_checkout_session(credits, user_id, user_email):
         return session
         
     except stripe.error.StripeError as e:
-        logger.error(f"Erro do Stripe: {e}")
+        logger.error(f"Erro do Stripe ao criar checkout customizado: {e}", exc_info=True)
+        logger.error(f"Detalhes do erro Stripe: tipo={type(e).__name__}, mensagem={str(e)}")
         return None
     except Exception as e:
-        logger.error(f"Erro ao criar checkout session customizado: {e}")
+        logger.error(f"Erro inesperado ao criar checkout session customizado: {e}", exc_info=True)
         return None
 
 

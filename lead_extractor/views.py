@@ -494,6 +494,9 @@ def create_checkout(request):
     """
     Cria sessão de checkout do Stripe.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     user_profile = request.user_profile
     
     if request.method == 'POST':
@@ -504,17 +507,22 @@ def create_checkout(request):
         
         try:
             package_id = int(package_id)
+            logger.info(f"Criando checkout para usuário {user_profile.email}, pacote {package_id}")
             session = create_checkout_session(package_id, user_profile.id, user_profile.email)
             
             if session:
+                logger.info(f"Checkout criado com sucesso: {session.id}")
                 return JsonResponse({'session_id': session.id, 'url': session.url})
             else:
+                logger.error(f"Erro ao criar checkout: função retornou None")
                 return JsonResponse({'error': 'Erro ao criar sessão de checkout'}, status=500)
                 
-        except ValueError:
+        except ValueError as e:
+            logger.error(f"Erro de valor ao criar checkout: {e}")
             return JsonResponse({'error': 'ID de pacote inválido'}, status=400)
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+            logger.error(f"Erro inesperado ao criar checkout: {e}", exc_info=True)
+            return JsonResponse({'error': f'Erro ao criar checkout: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Método não permitido'}, status=405)
 
@@ -524,13 +532,18 @@ def create_custom_checkout(request):
     """
     Cria sessão de checkout customizada do Stripe para quantidade personalizada de créditos.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     user_profile = request.user_profile
     
     if request.method == 'POST':
         try:
             credits = int(request.POST.get('credits', 0))
+            logger.info(f"Criando checkout customizado para usuário {user_profile.email}, {credits} créditos")
             
             if credits < MIN_CREDITS or credits > MAX_CREDITS:
+                logger.warning(f"Quantidade de créditos inválida: {credits}")
                 return JsonResponse({
                     'error': f'Quantidade de créditos deve estar entre {MIN_CREDITS} e {MAX_CREDITS}'
                 }, status=400)
@@ -538,15 +551,18 @@ def create_custom_checkout(request):
             session = create_custom_checkout_session(credits, user_profile.id, user_profile.email)
             
             if session:
+                logger.info(f"Checkout customizado criado com sucesso: {session.id}")
                 return JsonResponse({'session_id': session.id, 'url': session.url})
             else:
+                logger.error(f"Erro ao criar checkout customizado: função retornou None")
                 return JsonResponse({'error': 'Erro ao criar sessão de checkout'}, status=500)
                 
-        except ValueError:
+        except ValueError as e:
+            logger.error(f"Erro de valor ao criar checkout customizado: {e}")
             return JsonResponse({'error': 'Quantidade de créditos inválida'}, status=400)
         except Exception as e:
-            logger.error(f"Erro ao criar checkout customizado: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
+            logger.error(f"Erro inesperado ao criar checkout customizado: {e}", exc_info=True)
+            return JsonResponse({'error': f'Erro ao criar checkout: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Método não permitido'}, status=405)
 
