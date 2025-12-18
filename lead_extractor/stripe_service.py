@@ -199,18 +199,26 @@ def handle_webhook_event(event):
         bool: True se processado com sucesso, False caso contrário
     """
     try:
+        logger.info(f"Processando evento do tipo: {event.get('type')}")
+        
         if event['type'] == 'checkout.session.completed':
             session = event['data']['object']
+            
+            logger.info(f"Checkout session completed. Session ID: {session.get('id')}")
+            logger.info(f"Metadata da sessão: {session.get('metadata')}")
             
             # Extrair metadata
             user_id = session['metadata'].get('user_id')
             package_id = session['metadata'].get('package_id')
-            credits = int(session['metadata'].get('credits', 0))
+            credits_str = session['metadata'].get('credits', '0')
+            credits = int(credits_str) if credits_str else 0
             is_custom = session['metadata'].get('custom') == 'true'
             payment_intent_id = session.get('payment_intent')
             
+            logger.info(f"Extracted: user_id={user_id}, credits={credits}, is_custom={is_custom}")
+            
             if not user_id or not credits:
-                logger.error("Metadata incompleta no evento do Stripe")
+                logger.error(f"Metadata incompleta no evento do Stripe: user_id={user_id}, credits={credits}")
                 return False
             
             # Adicionar créditos ao usuário

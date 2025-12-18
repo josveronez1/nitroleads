@@ -574,25 +574,39 @@ def stripe_webhook(request):
     """
     import json
     import stripe
+    import logging
+    
+    logger = logging.getLogger(__name__)
     
     payload = request.body
     sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
     
     webhook_secret = config('STRIPE_WEBHOOK_SECRET', default='')
     
+    logger.info("Webhook do Stripe recebido")
+    
+    if not webhook_secret:
+        logger.error("STRIPE_WEBHOOK_SECRET não está configurada")
+        return HttpResponse(status=500)
+    
     try:
         event = stripe.Webhook.construct_event(
             payload, sig_header, webhook_secret
         )
-    except ValueError:
+        logger.info(f"Evento do Stripe verificado: {event['type']} (ID: {event['id']})")
+    except ValueError as e:
+        logger.error(f"Erro ao decodificar payload do webhook: {e}")
         return HttpResponse(status=400)
-    except stripe.error.SignatureVerificationError:
+    except stripe.error.SignatureVerificationError as e:
+        logger.error(f"Erro na verificação da assinatura do webhook: {e}")
         return HttpResponse(status=400)
     
     # Processar evento
     if handle_webhook_event(event):
+        logger.info(f"Evento {event['type']} processado com sucesso")
         return HttpResponse(status=200)
     else:
+        logger.error(f"Falha ao processar evento {event['type']}")
         return HttpResponse(status=500)
 
 
