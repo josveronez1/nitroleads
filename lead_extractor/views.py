@@ -69,137 +69,137 @@ def dashboard(request):
     
     try:
         if request.method == "POST" and user_profile:
-        niche = request.POST.get('niche', '').strip()
-        location = request.POST.get('location', '').strip()
-        quantity = int(request.POST.get('quantity', 50))
-        
-        if not niche or not location:
-            messages.error(request, 'Por favor, preencha o nicho e a localização.')
-        else:
-            # Construir query combinada
-            search_term = f"{niche} em {location}"
+            niche = request.POST.get('niche', '').strip()
+            location = request.POST.get('location', '').strip()
+            quantity = int(request.POST.get('quantity', 50))
             
-            # Verificar créditos
-            available_credits = check_credits(user_profile)
-            if available_credits < quantity:
-                messages.warning(request, f'Você tem apenas {available_credits} créditos disponíveis. Ajustando quantidade.')
-                quantity = available_credits
-            
-            if quantity <= 0:
-                messages.error(request, 'Você não tem créditos suficientes para realizar a busca.')
+            if not niche or not location:
+                messages.error(request, 'Por favor, preencha o nicho e a localização.')
             else:
-                # Buscar lugares no Google Maps
-                places = search_google_maps(search_term)
+                # Construir query combinada
+                search_term = f"{niche} em {location}"
                 
-                # Aplicar filtro de deduplicação
-                filtered_places, existing_cnpjs = filter_existing_leads(user_profile, places, days_threshold=30)
+                # Verificar créditos
+                available_credits = check_credits(user_profile)
+                if available_credits < quantity:
+                    messages.warning(request, f'Você tem apenas {available_credits} créditos disponíveis. Ajustando quantidade.')
+                    quantity = available_credits
                 
-                # Criar objeto Search para salvar
-                search_obj = Search.objects.create(
-                    user=user_profile,
-                    niche=niche,
-                    location=location,
-                    quantity_requested=quantity,
-                    search_data={
-                        'query': search_term,
-                        'total_places_found': len(places),
-                        'filtered_places': len(filtered_places),
-                    }
-                )
-                
-                credits_used = 0
-                leads_processed = 0
-                queue_items = []  # Armazenar queue_ids para buscar resultados depois
-                
-                # Processar até atingir a quantidade solicitada
-                for place in filtered_places[:quantity]:
-                    if leads_processed >= quantity:
-                        break
-                    
-                    company_data = {
-                        'name': place.get('title'),
-                        'address': place.get('address'),
-                        'phone_maps': place.get('phoneNumber'),
-                        'cnpj': None,
-                        'viper_data': {},
-                        'queue_id': None  # Para armazenar ID da fila
-                    }
-                    
-                    # 1. Buscar CNPJ
-                    cnpj = find_cnpj_by_name(company_data['name'])
-                    
-                    if cnpj:
-                        company_data['cnpj'] = cnpj
-                        
-                        # 2. Buscar dados públicos (Telefone/Endereço)
-                        public_data = enrich_company_viper(cnpj)
-                        if public_data:
-                            company_data['viper_data'].update(public_data)
-                        
-                        # 3. Buscar Sócios usando FILA (API Interna/Secreta)
-                        # Enfileirar a requisição em vez de processar diretamente
-                        queue_result = get_partners_internal_queued(cnpj, user_profile)
-                        company_data['queue_id'] = queue_result.get('queue_id')
-                        queue_items.append(company_data['queue_id'])
-                        
-                        # Verificar se já existe lead com este CNPJ para este usuário
-                        existing_lead = Lead.objects.filter(
-                            user=user_profile,
-                            cnpj=cnpj
-                        ).first()
-                        
-                        if existing_lead:
-                            # Atualizar last_seen_by_user
-                            existing_lead.last_seen_by_user = timezone.now()
-                            existing_lead.save(update_fields=['last_seen_by_user'])
-                            lead_obj = existing_lead
-                        else:
-                            # Criar novo lead (com dados parciais, sócios serão adicionados depois)
-                            lead_obj = Lead.objects.create(
-                                user=user_profile,
-                                search=search_obj,
-                                name=company_data['name'],
-                                address=company_data['address'],
-                                phone_maps=company_data['phone_maps'],
-                                cnpj=cnpj,
-                                viper_data=company_data['viper_data']  # Sem sócios ainda
-                            )
-                            
-                            # Debitar crédito apenas para leads novos
-                            success, new_balance, error = debit_credits(
-                                user_profile,
-                                1,
-                                description=f"Lead: {company_data['name']}"
-                            )
-                            
-                            if success:
-                                credits_used += 1
-                            else:
-                                messages.warning(request, f'Erro ao debitar crédito: {error}')
-                                continue
-                        
-                        leads_processed += 1
-                        results.append(company_data)
-                
-                # Atualizar search_obj com resultados
-                search_obj.results_count = leads_processed
-                search_obj.credits_used = credits_used
-                search_obj.results_data = {
-                    'leads': [
-                        {
-                            'name': r['name'],
-                            'cnpj': r.get('cnpj'),
-                        }
-                        for r in results
-                    ],
-                    'queue_items': queue_items  # IDs das requisições na fila
-                }
-                search_obj.save()
-                
-                if queue_items:
-                    messages.info(request, f'Busca iniciada! {leads_processed} leads encontrados. {credits_used} créditos utilizados. Os dados dos sócios estão sendo processados...')
+                if quantity <= 0:
+                    messages.error(request, 'Você não tem créditos suficientes para realizar a busca.')
                 else:
-                    messages.success(request, f'Busca concluída! {leads_processed} leads encontrados. {credits_used} créditos utilizados.')
+                    # Buscar lugares no Google Maps
+                    places = search_google_maps(search_term)
+                    
+                    # Aplicar filtro de deduplicação
+                    filtered_places, existing_cnpjs = filter_existing_leads(user_profile, places, days_threshold=30)
+                    
+                    # Criar objeto Search para salvar
+                    search_obj = Search.objects.create(
+                        user=user_profile,
+                        niche=niche,
+                        location=location,
+                        quantity_requested=quantity,
+                        search_data={
+                            'query': search_term,
+                            'total_places_found': len(places),
+                            'filtered_places': len(filtered_places),
+                        }
+                    )
+                    
+                    credits_used = 0
+                    leads_processed = 0
+                    queue_items = []  # Armazenar queue_ids para buscar resultados depois
+                    
+                    # Processar até atingir a quantidade solicitada
+                    for place in filtered_places[:quantity]:
+                        if leads_processed >= quantity:
+                            break
+                        
+                        company_data = {
+                            'name': place.get('title'),
+                            'address': place.get('address'),
+                            'phone_maps': place.get('phoneNumber'),
+                            'cnpj': None,
+                            'viper_data': {},
+                            'queue_id': None  # Para armazenar ID da fila
+                        }
+                        
+                        # 1. Buscar CNPJ
+                        cnpj = find_cnpj_by_name(company_data['name'])
+                        
+                        if cnpj:
+                            company_data['cnpj'] = cnpj
+                            
+                            # 2. Buscar dados públicos (Telefone/Endereço)
+                            public_data = enrich_company_viper(cnpj)
+                            if public_data:
+                                company_data['viper_data'].update(public_data)
+                            
+                            # 3. Buscar Sócios usando FILA (API Interna/Secreta)
+                            # Enfileirar a requisição em vez de processar diretamente
+                            queue_result = get_partners_internal_queued(cnpj, user_profile)
+                            company_data['queue_id'] = queue_result.get('queue_id')
+                            queue_items.append(company_data['queue_id'])
+                            
+                            # Verificar se já existe lead com este CNPJ para este usuário
+                            existing_lead = Lead.objects.filter(
+                                user=user_profile,
+                                cnpj=cnpj
+                            ).first()
+                            
+                            if existing_lead:
+                                # Atualizar last_seen_by_user
+                                existing_lead.last_seen_by_user = timezone.now()
+                                existing_lead.save(update_fields=['last_seen_by_user'])
+                                lead_obj = existing_lead
+                            else:
+                                # Criar novo lead (com dados parciais, sócios serão adicionados depois)
+                                lead_obj = Lead.objects.create(
+                                    user=user_profile,
+                                    search=search_obj,
+                                    name=company_data['name'],
+                                    address=company_data['address'],
+                                    phone_maps=company_data['phone_maps'],
+                                    cnpj=cnpj,
+                                    viper_data=company_data['viper_data']  # Sem sócios ainda
+                                )
+                                
+                                # Debitar crédito apenas para leads novos
+                                success, new_balance, error = debit_credits(
+                                    user_profile,
+                                    1,
+                                    description=f"Lead: {company_data['name']}"
+                                )
+                                
+                                if success:
+                                    credits_used += 1
+                                else:
+                                    messages.warning(request, f'Erro ao debitar crédito: {error}')
+                                    continue
+                            
+                            leads_processed += 1
+                            results.append(company_data)
+                    
+                    # Atualizar search_obj com resultados
+                    search_obj.results_count = leads_processed
+                    search_obj.credits_used = credits_used
+                    search_obj.results_data = {
+                        'leads': [
+                            {
+                                'name': r['name'],
+                                'cnpj': r.get('cnpj'),
+                            }
+                            for r in results
+                        ],
+                        'queue_items': queue_items  # IDs das requisições na fila
+                    }
+                    search_obj.save()
+                    
+                    if queue_items:
+                        messages.info(request, f'Busca iniciada! {leads_processed} leads encontrados. {credits_used} créditos utilizados. Os dados dos sócios estão sendo processados...')
+                    else:
+                        messages.success(request, f'Busca concluída! {leads_processed} leads encontrados. {credits_used} créditos utilizados.')
     
         except Exception as e:
             logger.error(f"Erro ao processar busca no dashboard: {e}", exc_info=True)
