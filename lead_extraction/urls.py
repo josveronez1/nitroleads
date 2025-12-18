@@ -19,7 +19,7 @@ from django.urls import path
 from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
     search_by_cpf, search_by_cnpj, search_history,
-    purchase_credits, create_checkout, stripe_webhook, payment_success
+    purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success
 )
 
 urlpatterns = [
@@ -35,6 +35,7 @@ urlpatterns = [
     path('history/', search_history, name='search_history'),
     path('purchase/', purchase_credits, name='purchase_credits'),
     path('checkout/create/', create_checkout, name='create_checkout'),
+    path('checkout/create-custom/', create_custom_checkout, name='create_custom_checkout'),
     path('webhook/stripe/', stripe_webhook, name='stripe_webhook'),
     path('payment/success/', payment_success, name='payment_success'),
 ]
