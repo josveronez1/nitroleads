@@ -201,9 +201,9 @@ def dashboard(request):
                     else:
                         messages.success(request, f'Busca concluída! {leads_processed} leads encontrados. {credits_used} créditos utilizados.')
     
-        except Exception as e:
-            logger.error(f"Erro ao processar busca no dashboard: {e}", exc_info=True)
-            messages.error(request, f'Erro ao processar busca: {str(e)}')
+    except Exception as e:
+        logger.error(f"Erro ao processar busca no dashboard: {e}", exc_info=True)
+        messages.error(request, f'Erro ao processar busca: {str(e)}')
     
     # Buscar créditos disponíveis
     available_credits = check_credits(user_profile) if user_profile else 0
