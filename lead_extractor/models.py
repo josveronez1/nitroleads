@@ -79,3 +79,41 @@ class Lead(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ViperRequestQueue(models.Model):
+    """
+    Fila de requisições para API interna do Viper.
+    Garante que apenas uma requisição seja processada por vez.
+    """
+    REQUEST_TYPES = [
+        ('partners', 'Sócios/QSA'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pendente'),
+        ('processing', 'Processando'),
+        ('completed', 'Completo'),
+        ('failed', 'Falhou'),
+    ]
+    
+    user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='viper_requests')
+    request_type = models.CharField(max_length=20, choices=REQUEST_TYPES)
+    request_data = models.JSONField(default=dict)  # Ex: {'cnpj': '12345678901234'}
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    result_data = models.JSONField(null=True, blank=True)  # Resultado da API
+    error_message = models.TextField(null=True, blank=True)
+    priority = models.IntegerField(default=0)  # Maior = maior prioridade
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-priority', 'created_at']  # Ordena por prioridade (maior primeiro) e depois por data
+        indexes = [
+            models.Index(fields=['status', 'priority', 'created_at']),  # Para buscar próximo item
+            models.Index(fields=['user', 'status']),  # Para buscar requisições do usuário
+        ]
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} - {self.user.email} - {self.get_status_display()}"

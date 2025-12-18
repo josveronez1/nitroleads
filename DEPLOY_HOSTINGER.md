@@ -333,7 +333,9 @@ Descomente a linha de redirecionamento HTTP → HTTPS e ajuste se necessário.
 
 ## Passo 14: Configurar Tarefas Automáticas (Cronjobs)
 
-### 14.1 Atualizar tokens do Viper periodicamente
+### 14. Processadores em Background
+
+#### 14.1 Atualizar tokens do Viper periodicamente
 
 ```bash
 crontab -e

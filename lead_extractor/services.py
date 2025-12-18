@@ -265,3 +265,37 @@ def search_cnpj_viper(cnpj):
         return None
     
     return enrich_company_viper(cnpj_clean)
+
+
+def get_partners_internal_queued(cnpj, user_profile):
+    """
+    Busca o QSA usando fila para evitar requisições simultâneas.
+    Adiciona a requisição à fila e retorna um dict com status e queue_id.
+    
+    Args:
+        cnpj: CNPJ para buscar sócios
+        user_profile: UserProfile do usuário
+    
+    Returns:
+        dict: {
+            'status': 'queued',
+            'queue_id': id da requisição na fila,
+            'data': None (será preenchido quando processado)
+        }
+    """
+    from .viper_queue_service import enqueue_viper_request
+    
+    # Adicionar à fila
+    queue_item = enqueue_viper_request(
+        user_profile=user_profile,
+        request_type='partners',
+        request_data={'cnpj': str(cnpj).strip()},
+        priority=0
+    )
+    
+    # Retornar status de enfileirado
+    return {
+        'status': 'queued',
+        'queue_id': queue_item.id,
+        'data': None
+    }

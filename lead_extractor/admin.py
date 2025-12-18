@@ -4,7 +4,7 @@ from django.utils.html import format_html
 from django.shortcuts import redirect
 from django.urls import path
 from django.http import HttpResponseRedirect
-from .models import UserProfile, Lead, Search, CreditTransaction
+from .models import UserProfile, Lead, Search, CreditTransaction, ViperRequestQueue
 from .credit_service import add_credits
 
 
@@ -108,3 +108,12 @@ class CreditTransactionAdmin(admin.ModelAdmin):
     list_filter = ('transaction_type', 'created_at')
     search_fields = ('user__email', 'stripe_payment_intent_id')
     readonly_fields = ('created_at',)
+
+
+@admin.register(ViperRequestQueue)
+class ViperRequestQueueAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'request_type', 'status', 'priority', 'created_at', 'completed_at')
+    list_filter = ('status', 'request_type', 'created_at')
+    search_fields = ('user__email',)
+    readonly_fields = ('created_at', 'started_at', 'completed_at')
+    ordering = ['-created_at']

@@ -145,7 +145,14 @@
         {% if results %}
         <div class="card shadow-sm border-0">
             <div class="card-header py-3">
-                <h5 class="mb-0 fw-bold">Resultados Encontrados ({{ results|length }})</h5>
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">Resultados Encontrados ({{ results|length }})</h5>
+                    {% if queue_items %}
+                    <div id="processing-indicator" class="text-warning">
+                        <i class="fas fa-spinner fa-spin"></i> Processando dados dos sócios...
+                    </div>
+                    {% endif %}
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
@@ -198,7 +205,7 @@
                                 {% endif %}
                             </td>
 
-                            <td>
+                            <td data-queue-id="{% if item.queue_id %}{{ item.queue_id }}{% endif %}" data-cnpj="{% if item.cnpj %}{{ item.cnpj }}{% endif %}">
                                 {% if item.viper_data.socios_qsa and item.viper_data.socios_qsa.socios %}
                                 <ul class="list-unstyled mb-0">
                                     {% for socio in item.viper_data.socios_qsa.socios %}
@@ -227,6 +234,10 @@
                                     </li>
                                     {% endfor %}
                                 </ul>
+                                {% elif item.queue_id %}
+                                <div class="text-muted small">
+                                    <i class="fas fa-spinner fa-spin"></i> Buscando sócios...
+                                </div>
                                 {% else %}
                                 <span class="text-muted small">Sem dados de sócios</span>
                                 {% endif %}
@@ -316,6 +327,116 @@
             });
         });
     </script>
+
+    {% if queue_items %}
+    <script>
+        // Polling para verificar status das requisições na fila
+        const queueItems = {{ queue_items_json|safe }};
+        const processingQueue = new Set(queueItems);
+        let pollInterval = null;
+
+        function updateSocioData(queueId, cnpj, resultData) {
+            // Encontrar a célula correspondente na tabela
+            const cell = document.querySelector(`td[data-queue-id="${queueId}"]`);
+            if (!cell || !resultData) return;
+
+            // Verificar se resultData tem a estrutura esperada
+            // Pode vir como resultData diretamente (array) ou resultData.socios (objeto com socios)
+            let sociosArray = [];
+            if (Array.isArray(resultData)) {
+                sociosArray = resultData;
+            } else if (resultData.socios && Array.isArray(resultData.socios)) {
+                sociosArray = resultData.socios;
+            }
+            
+            if (sociosArray.length > 0) {
+                let html = '<ul class="list-unstyled mb-0">';
+                sociosArray.forEach(socio => {
+                    const nome = socio.NOME || socio.nome || 'N/A';
+                    const cargo = socio.CARGO || socio.qualificacao || 'Sócio/Admin';
+                    const cpf = socio.CPF || socio.cpf || '';
+                    const firstLetter = nome.charAt(0).toUpperCase();
+                    
+                    html += `
+                        <li class="mb-2 d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <div class="avatar-initial">${firstLetter}</div>
+                                <div style="line-height: 1.2;">
+                                    <span class="fw-bold d-block" style="font-size: 0.85rem;">${nome}</span>
+                                    <span class="text-muted small" style="font-size: 0.75rem;">${cargo}</span>
+                                </div>
+                            </div>
+                            ${cpf ? `<button class="btn btn-sm btn-outline-primary ms-2 search-cpf-btn" data-cpf="${cpf}" data-name="${nome}" title="Buscar dados por CPF"><i class="fas fa-search"></i></button>` : ''}
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+                cell.innerHTML = html;
+                
+                // Reativar botões de busca por CPF
+                cell.querySelectorAll('.search-cpf-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const cpf = this.getAttribute('data-cpf');
+                        const name = this.getAttribute('data-name');
+                        searchCpfInline(cpf, name);
+                    });
+                });
+            } else {
+                cell.innerHTML = '<span class="text-muted small">Nenhum sócio encontrado</span>';
+            }
+        }
+
+        function checkQueueStatus() {
+            if (processingQueue.size === 0) {
+                // Todas as requisições foram processadas
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                }
+                const indicator = document.getElementById('processing-indicator');
+                if (indicator) {
+                    indicator.innerHTML = '<i class="fas fa-check text-success"></i> Processamento concluído!';
+                    setTimeout(() => indicator.style.display = 'none', 3000);
+                }
+                return;
+            }
+
+            // Verificar status de cada requisição na fila
+            processingQueue.forEach(queueId => {
+                fetch(`{% url 'viper_queue_status' 0 %}`.replace('0', queueId))
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'completed') {
+                            // Requisição concluída, atualizar dados
+                            processingQueue.delete(queueId);
+                            const cnpj = document.querySelector(`td[data-queue-id="${queueId}"]`)?.getAttribute('data-cnpj');
+                            if (data.result) {
+                                updateSocioData(queueId, cnpj, data.result);
+                            }
+                        } else if (data.status === 'failed') {
+                            // Requisição falhou
+                            processingQueue.delete(queueId);
+                            const cell = document.querySelector(`td[data-queue-id="${queueId}"]`);
+                            if (cell) {
+                                cell.innerHTML = '<span class="text-danger small">Erro ao buscar sócios</span>';
+                            }
+                        }
+                        // Se status é 'pending' ou 'processing', continuar aguardando
+                    })
+                    .catch(error => {
+                        console.error('Erro ao verificar status da fila:', error);
+                    });
+            });
+        }
+
+        // Iniciar polling a cada 2 segundos
+        if (processingQueue.size > 0) {
+            pollInterval = setInterval(checkQueueStatus, 2000);
+            // Verificar imediatamente
+            checkQueueStatus();
+        }
+    </script>
+    {% endif %}
 </body>
 
 </html>
