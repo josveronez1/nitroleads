@@ -1,312 +1,101 @@
-{% load static %}
+{% extends "lead_extractor/base.html" %}
 {% load phone_filters %}
-<!DOCTYPE html>
-<html lang="pt-br">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NitroLeads</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', system-ui, sans-serif;
-        }
+{% block title %}Dashboard - NitroLeads{% endblock %}
 
-        .card-header {
-            background-color: #fff;
-            border-bottom: 1px solid #eee;
-        }
-
-        .table th {
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-            color: #888;
-            letter-spacing: 0.5px;
-        }
-
-        .avatar-initial {
-            width: 32px;
-            height: 32px;
-            background: #e9ecef;
-            color: #495057;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            font-weight: bold;
-            font-size: 0.8rem;
-            margin-right: 10px;
-        }
-
-        .contact-badge {
-            font-size: 0.85rem;
-            padding: 5px 10px;
-            border-radius: 6px;
-            display: inline-block;
-            margin-bottom: 4px;
-        }
-
-        .badge-phone {
-            background-color: #e6fffa;
-            color: #047857;
-            border: 1px solid #b7eb8f;
-        }
-
-        .badge-email {
-            background-color: #f0f5ff;
-            color: #1d4ed8;
-            border: 1px solid #bfdbfe;
-        }
-    </style>
-</head>
-
-<body>
-
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="{% url 'dashboard' %}"><i class="fas fa-bolt text-warning"></i> NitroLeads</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="{% url 'dashboard' %}">Nova Pesquisa</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'search_history' %}">Minhas Pesquisas</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'simple_search' %}">Busca Rápida</a>
-                    </li>
-                </ul>
-                <div class="d-flex align-items-center gap-3">
-                    {% if user_profile %}
-                    <span class="text-light">
-                        <i class="fas fa-coins text-warning"></i> 
-                        <strong>{{ available_credits }}</strong> créditos
-                    </span>
-                    <a href="{% url 'purchase_credits' %}" class="btn btn-warning btn-sm">
-                        <i class="fas fa-shopping-cart"></i> Comprar Créditos
-                    </a>
-                    <a href="{% url 'export_csv' %}" class="btn btn-success btn-sm">
-                        <i class="fas fa-file-excel"></i> Exportar CSV
-                    </a>
-                    <a href="{% url 'logout' %}" class="btn btn-outline-light btn-sm">
-                        <i class="fas fa-sign-out-alt"></i> Sair
-                    </a>
-                    {% endif %}
+{% block content %}
+<!-- Cards de Métricas -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card metric-card text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="metric-label">Créditos Disponíveis</div>
+                        <div class="metric-value">{{ available_credits|default:0 }}</div>
+                    </div>
+                    <i class="fas fa-coins fa-2x opacity-50"></i>
+                </div>
+                <a href="{% url 'purchase_credits' %}" class="text-white text-decoration-underline small">
+                    Comprar mais créditos →
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="text-muted small mb-1">Leads Hoje</div>
+                        <div class="h3 mb-0">{{ leads_today|default:0 }}</div>
+                    </div>
+                    <i class="fas fa-users fa-2x text-primary opacity-25"></i>
                 </div>
             </div>
         </div>
-    </nav>
-
-    <div class="container pb-5">
-
-        <div class="card shadow-sm mb-4 border-0">
-            <div class="card-body p-4">
-                <form method="POST">
-                    {% csrf_token %}
-                    <div class="row g-3">
-                        <div class="col-md-4 position-relative">
-                            <label for="niche" class="form-label">Nicho</label>
-                            <input type="text" name="niche" id="niche" class="form-control form-control-lg"
-                                placeholder="Ex: Advogado" value="{{ niche }}" required autocomplete="off">
-                            <div id="niche-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
-                        </div>
-                        <div class="col-md-4 position-relative">
-                            <label for="location" class="form-label">Localização</label>
-                            <input type="text" name="location" id="location" class="form-control form-control-lg"
-                                placeholder="Ex: São Paulo - SP" value="{{ location }}" required autocomplete="off">
-                            <div id="location-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
-                        </div>
-                        <div class="col-md-2">
-                            <label for="quantity" class="form-label">Quantidade</label>
-                            <input type="number" name="quantity" id="quantity" class="form-control form-control-lg"
-                                min="1" max="{{ available_credits|default:1000 }}" value="{{ quantity }}" required>
-                            <div class="form-text">Máx: {{ available_credits|default:"-" }} créditos</div>
-                        </div>
-                        <div class="col-md-2 d-flex align-items-end">
-                            <button class="btn btn-primary btn-lg w-100" type="submit">
-                                <i class="fas fa-search"></i> Buscar
-                            </button>
-                        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="text-muted small mb-1">Pesquisas Hoje</div>
+                        <div class="h3 mb-0">{{ searches_today|default:0 }}</div>
                     </div>
-                    <div class="form-text mt-2">
-                        <i class="fas fa-info-circle"></i> 
-                        O sistema irá atualizar os tokens automaticamente se necessário (pode levar alguns segundos).
-                    </div>
-                </form>
+                    <i class="fas fa-search fa-2x text-primary opacity-25"></i>
+                </div>
             </div>
         </div>
-    
-    <script>
-        // Autocomplete para nichos
-        (function() {
-            const nicheInput = document.getElementById('niche');
-            const nicheSuggestions = document.getElementById('niche-suggestions');
-            let nicheTimeout = null;
-            let activeNicheIndex = -1;
-            
-            nicheInput.addEventListener('input', function() {
-                const query = this.value.trim();
-                
-                clearTimeout(nicheTimeout);
-                
-                if (query.length < 2) {
-                    nicheSuggestions.style.display = 'none';
-                    return;
-                }
-                
-                nicheTimeout = setTimeout(() => {
-                    fetch(`{% url 'api_autocomplete_niches' %}?q=${encodeURIComponent(query)}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.results && data.results.length > 0) {
-                                nicheSuggestions.innerHTML = '';
-                                data.results.forEach((item, index) => {
-                                    const li = document.createElement('a');
-                                    li.className = 'list-group-item list-group-item-action';
-                                    li.textContent = item.display;
-                                    li.href = '#';
-                                    li.addEventListener('click', function(e) {
-                                        e.preventDefault();
-                                        nicheInput.value = item.value;
-                                        nicheSuggestions.style.display = 'none';
-                                    });
-                                    nicheSuggestions.appendChild(li);
-                                });
-                                nicheSuggestions.style.display = 'block';
-                                activeNicheIndex = -1;
-                            } else {
-                                nicheSuggestions.style.display = 'none';
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Erro ao buscar sugestões de nichos:', error);
-                        });
-                }, 300);
-            });
-            
-            nicheInput.addEventListener('keydown', function(e) {
-                const items = nicheSuggestions.querySelectorAll('.list-group-item');
-                if (items.length === 0) return;
-                
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    activeNicheIndex = (activeNicheIndex + 1) % items.length;
-                    items[activeNicheIndex].focus();
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    activeNicheIndex = activeNicheIndex <= 0 ? items.length - 1 : activeNicheIndex - 1;
-                    items[activeNicheIndex].focus();
-                } else if (e.key === 'Enter' && activeNicheIndex >= 0) {
-                    e.preventDefault();
-                    items[activeNicheIndex].click();
-                }
-            });
-            
-            // Fechar ao clicar fora
-            document.addEventListener('click', function(e) {
-                if (!nicheInput.contains(e.target) && !nicheSuggestions.contains(e.target)) {
-                    nicheSuggestions.style.display = 'none';
-                }
-            });
-        })();
-        
-        // Autocomplete para localizações
-        (function() {
-            const locationInput = document.getElementById('location');
-            const locationSuggestions = document.getElementById('location-suggestions');
-            let locationTimeout = null;
-            let activeLocationIndex = -1;
-            
-            locationInput.addEventListener('input', function() {
-                const query = this.value.trim();
-                
-                clearTimeout(locationTimeout);
-                
-                if (query.length < 2) {
-                    locationSuggestions.style.display = 'none';
-                    return;
-                }
-                
-                locationTimeout = setTimeout(() => {
-                    fetch(`{% url 'api_autocomplete_locations' %}?q=${encodeURIComponent(query)}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.results && data.results.length > 0) {
-                                locationSuggestions.innerHTML = '';
-                                data.results.forEach((item, index) => {
-                                    const li = document.createElement('a');
-                                    li.className = 'list-group-item list-group-item-action';
-                                    li.textContent = item.display;
-                                    li.href = '#';
-                                    li.addEventListener('click', function(e) {
-                                        e.preventDefault();
-                                        locationInput.value = item.value;
-                                        locationSuggestions.style.display = 'none';
-                                    });
-                                    locationSuggestions.appendChild(li);
-                                });
-                                locationSuggestions.style.display = 'block';
-                                activeLocationIndex = -1;
-                            } else {
-                                locationSuggestions.style.display = 'none';
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Erro ao buscar sugestões de localizações:', error);
-                        });
-                }, 300);
-            });
-            
-            locationInput.addEventListener('keydown', function(e) {
-                const items = locationSuggestions.querySelectorAll('.list-group-item');
-                if (items.length === 0) return;
-                
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    activeLocationIndex = (activeLocationIndex + 1) % items.length;
-                    items[activeLocationIndex].focus();
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    activeLocationIndex = activeLocationIndex <= 0 ? items.length - 1 : activeLocationIndex - 1;
-                    items[activeLocationIndex].focus();
-                } else if (e.key === 'Enter' && activeLocationIndex >= 0) {
-                    e.preventDefault();
-                    items[activeLocationIndex].click();
-                }
-            });
-            
-            // Fechar ao clicar fora
-            document.addEventListener('click', function(e) {
-                if (!locationInput.contains(e.target) && !locationSuggestions.contains(e.target)) {
-                    locationSuggestions.style.display = 'none';
-                }
-            });
-        })();
-    </script>
+            </div>
+        </div>
 
+<!-- Formulário de Busca -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Nova Pesquisa de Leads</h5>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            {% csrf_token %}
+            <div class="row g-3">
+                <div class="col-md-4 position-relative">
+                    <label for="niche" class="form-label fw-semibold">Nicho</label>
+                    <input type="text" name="niche" id="niche" class="form-control form-control-lg"
+                        placeholder="Ex: Advogado" value="{{ niche }}" required autocomplete="off">
+                    <div id="niche-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
+                </div>
+                <div class="col-md-4 position-relative">
+                    <label for="location" class="form-label fw-semibold">Localização</label>
+                    <input type="text" name="location" id="location" class="form-control form-control-lg"
+                        placeholder="Ex: São Paulo - SP" value="{{ location }}" required autocomplete="off">
+                    <div id="location-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
+                </div>
+                <div class="col-md-2">
+                    <label for="quantity" class="form-label fw-semibold">Quantidade</label>
+                    <input type="number" name="quantity" id="quantity" class="form-control form-control-lg"
+                        min="1" max="{{ available_credits|default:1000 }}" value="{{ quantity }}" required>
+                    <div class="form-text">Máx: {{ available_credits|default:"-" }} créditos</div>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button class="btn btn-primary btn-lg w-100" type="submit">
+                        <i class="fas fa-search"></i> Buscar
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Resultados -->
         {% if results %}
-        <div class="card shadow-sm border-0">
-            <div class="card-header py-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 fw-bold">Resultados Encontrados ({{ results|length }})</h5>
-                    {% if queue_items %}
-                    <div id="processing-indicator" class="text-warning">
-                        <i class="fas fa-spinner fa-spin"></i> Processando dados dos sócios...
-                    </div>
-                    {% endif %}
-                </div>
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Resultados Encontrados ({{ results|length }})</h5>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="bg-light">
+            <thead>
                         <tr>
                             <th style="width: 30%;">Empresa</th>
                             <th style="width: 15%;">CNPJ</th>
@@ -319,14 +108,15 @@
                         <tr>
                             <td>
                                 <div class="fw-bold text-dark">{{ item.name }}</div>
-                                <div class="text-muted small mt-1"><i class="fas fa-map-marker-alt me-1"></i> {{
-                                    item.address }}</div>
+                        <div class="text-muted small mt-1">
+                            <i class="fas fa-map-marker-alt me-1"></i> {{ item.address }}
+                        </div>
                                 {% if item.phone_maps %}
-                                <div class="text-muted small mt-1"><i class="fas fa-phone-alt me-1"></i> {{
-                                    item.phone_maps }} (Maps)</div>
+                        <div class="text-muted small mt-1">
+                            <i class="fas fa-phone-alt me-1"></i> {{ item.phone_maps }} (Maps)
+                        </div>
                                 {% endif %}
                             </td>
-
                             <td>
                                 {% if item.cnpj %}
                                 <span class="badge bg-light text-dark border">{{ item.cnpj }}</span>
@@ -334,7 +124,6 @@
                                 <span class="badge bg-secondary">Não encontrado</span>
                                 {% endif %}
                             </td>
-
                             <td>
                                 {% if item.viper_data %}
                                 <div class="d-flex flex-column align-items-start">
@@ -343,7 +132,6 @@
                                         {{ phone|format_phone }}
                                     </div>
                                     {% endfor %}
-
                                     {% for email in item.viper_data|get_emails %}
                                     <div class="contact-badge badge-email">
                                         ✉️ {{ email }}
@@ -354,40 +142,29 @@
                                 <span class="text-muted small">-</span>
                                 {% endif %}
                             </td>
-
-                            <td data-queue-id="{% if item.queue_id %}{{ item.queue_id }}{% endif %}" data-cnpj="{% if item.cnpj %}{{ item.cnpj }}{% endif %}">
+                            <td>
                                 {% if item.viper_data.socios_qsa and item.viper_data.socios_qsa.socios %}
                                 <ul class="list-unstyled mb-0">
                                     {% for socio in item.viper_data.socios_qsa.socios %}
-                                    <li class="mb-2 d-flex align-items-center justify-content-between">
-                                        <div class="d-flex align-items-center">
-                                            <div class="avatar-initial">
-                                                {{ socio.NOME|slice:":1" }}
-                                            </div>
-                                            <div style="line-height: 1.2;">
-                                                <span class="fw-bold d-block" style="font-size: 0.85rem;">
-                                                    {{ socio.NOME|title }}
-                                                </span>
-                                                <span class="text-muted small" style="font-size: 0.75rem;">
-                                                    {{ socio.CARGO|default:"Sócio/Admin"|title }}
-                                                </span>
-                                            </div>
+                            <li class="mb-2 d-flex align-items-center justify-content-between">
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar-initial">{{ socio.NOME|slice:":1" }}</div>
+                                    <div style="line-height: 1.2;">
+                                        <span class="fw-bold d-block" style="font-size: 0.85rem;">{{ socio.NOME|title }}</span>
+                                        <span class="text-muted small" style="font-size: 0.75rem;">{{ socio.CARGO|default:"Sócio/Admin"|title }}</span>
                                         </div>
-                                        {% if socio.CPF %}
-                                        <button class="btn btn-sm btn-outline-primary ms-2 search-cpf-btn" 
-                                                data-cpf="{{ socio.CPF }}"
-                                                data-name="{{ socio.NOME }}"
-                                                title="Buscar dados por CPF">
-                                            <i class="fas fa-search"></i>
-                                        </button>
-                                        {% endif %}
+                                        </div>
+                                {% if socio.CPF %}
+                                <button class="btn btn-sm btn-outline-primary ms-2 search-cpf-btn" 
+                                        data-cpf="{{ socio.CPF }}"
+                                        data-name="{{ socio.NOME }}"
+                                        title="Buscar dados por CPF">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                                {% endif %}
                                     </li>
                                     {% endfor %}
                                 </ul>
-                                {% elif item.queue_id %}
-                                <div class="text-muted small">
-                                    <i class="fas fa-spinner fa-spin"></i> Buscando sócios...
-                                </div>
                                 {% else %}
                                 <span class="text-muted small">Sem dados de sócios</span>
                                 {% endif %}
@@ -399,194 +176,207 @@
             </div>
         </div>
         {% endif %}
-    </div>
 
-    <!-- Modal para resultados de busca por CPF -->
-    <div class="modal fade" id="cpfResultModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Resultados da Busca por CPF</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="cpfResultContent">
-                    <div class="text-center">
-                        <div class="spinner-border" role="status">
-                            <span class="visually-hidden">Carregando...</span>
-                        </div>
+<!-- Modal para resultados de busca por CPF -->
+<div class="modal fade" id="cpfResultModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Resultados da Busca por CPF</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="cpfResultContent">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Carregando...</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Busca por CPF inline
-        document.querySelectorAll('.search-cpf-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const cpf = this.getAttribute('data-cpf');
-                const name = this.getAttribute('data-name');
-                const modal = new bootstrap.Modal(document.getElementById('cpfResultModal'));
-                
-                // Limpar conteúdo anterior
-                document.getElementById('cpfResultContent').innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
-                modal.show();
-                
-                // Fazer requisição AJAX
-                const csrfTokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
-                const csrfToken = csrfTokenElement ? csrfTokenElement.value : '';
-                fetch('{% url "search_by_cpf" %}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRFToken': csrfToken
-                    },
-                    body: 'cpf=' + encodeURIComponent(cpf)
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        let html = `<h6>CPF: ${cpf}</h6><h6>Nome: ${name}</h6><hr>`;
-                        
-                        if (data.data.telefones && data.data.telefones.length > 0) {
-                            html += '<h6>Telefones:</h6><ul>';
-                            data.data.telefones.forEach(phone => {
-                                html += `<li>${phone}</li>`;
-                            });
-                            html += '</ul>';
-                        }
-                        
-                        if (data.data.emails && data.data.emails.length > 0) {
-                            html += '<h6>Emails:</h6><ul>';
-                            data.data.emails.forEach(email => {
-                                html += `<li>${email}</li>`;
-                            });
-                            html += '</ul>';
-                        }
-                        
-                        document.getElementById('cpfResultContent').innerHTML = html;
-                    } else {
-                        document.getElementById('cpfResultContent').innerHTML = `<div class="alert alert-danger">${data.error || 'Erro na busca'}</div>`;
-                    }
-                })
-                .catch(error => {
-                    document.getElementById('cpfResultContent').innerHTML = '<div class="alert alert-danger">Erro ao buscar dados do CPF</div>';
-                });
-            });
-        });
-    </script>
-
-    {% if queue_items %}
-    <script>
-        // Polling para verificar status das requisições na fila
-        const queueItems = {{ queue_items_json|safe }};
-        const processingQueue = new Set(queueItems);
-        let pollInterval = null;
-
-        function updateSocioData(queueId, cnpj, resultData) {
-            // Encontrar a célula correspondente na tabela
-            const cell = document.querySelector(`td[data-queue-id="${queueId}"]`);
-            if (!cell || !resultData) return;
-
-            // Verificar se resultData tem a estrutura esperada
-            // Pode vir como resultData diretamente (array) ou resultData.socios (objeto com socios)
-            let sociosArray = [];
-            if (Array.isArray(resultData)) {
-                sociosArray = resultData;
-            } else if (resultData.socios && Array.isArray(resultData.socios)) {
-                sociosArray = resultData.socios;
-            }
-            
-            if (sociosArray.length > 0) {
-                let html = '<ul class="list-unstyled mb-0">';
-                sociosArray.forEach(socio => {
-                    const nome = socio.NOME || socio.nome || 'N/A';
-                    const cargo = socio.CARGO || socio.qualificacao || 'Sócio/Admin';
-                    const cpf = socio.CPF || socio.cpf || '';
-                    const firstLetter = nome.charAt(0).toUpperCase();
-                    
-                    html += `
-                        <li class="mb-2 d-flex align-items-center justify-content-between">
-                            <div class="d-flex align-items-center">
-                                <div class="avatar-initial">${firstLetter}</div>
-                                <div style="line-height: 1.2;">
-                                    <span class="fw-bold d-block" style="font-size: 0.85rem;">${nome}</span>
-                                    <span class="text-muted small" style="font-size: 0.75rem;">${cargo}</span>
-                                </div>
-                            </div>
-                            ${cpf ? `<button class="btn btn-sm btn-outline-primary ms-2 search-cpf-btn" data-cpf="${cpf}" data-name="${nome}" title="Buscar dados por CPF"><i class="fas fa-search"></i></button>` : ''}
-                        </li>
-                    `;
-                });
-                html += '</ul>';
-                cell.innerHTML = html;
-                
-                // Reativar botões de busca por CPF
-                cell.querySelectorAll('.search-cpf-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const cpf = this.getAttribute('data-cpf');
-                        const name = this.getAttribute('data-name');
-                        searchCpfInline(cpf, name);
-                    });
-                });
-            } else {
-                cell.innerHTML = '<span class="text-muted small">Nenhum sócio encontrado</span>';
-            }
-        }
-
-        function checkQueueStatus() {
-            if (processingQueue.size === 0) {
-                // Todas as requisições foram processadas
-                if (pollInterval) {
-                    clearInterval(pollInterval);
-                    pollInterval = null;
-                }
-                const indicator = document.getElementById('processing-indicator');
-                if (indicator) {
-                    indicator.innerHTML = '<i class="fas fa-check text-success"></i> Processamento concluído!';
-                    setTimeout(() => indicator.style.display = 'none', 3000);
-                }
+{% block extra_js %}
+<script>
+    // Autocomplete para nichos
+    (function() {
+        const nicheInput = document.getElementById('niche');
+        const nicheSuggestions = document.getElementById('niche-suggestions');
+        let nicheTimeout = null;
+        let activeNicheIndex = -1;
+        
+        nicheInput.addEventListener('input', function() {
+            const query = this.value.trim();
+            clearTimeout(nicheTimeout);
+            if (query.length < 2) {
+                nicheSuggestions.style.display = 'none';
                 return;
             }
-
-            // Verificar status de cada requisição na fila
-            processingQueue.forEach(queueId => {
-                fetch(`{% url 'viper_queue_status' 0 %}`.replace('0', queueId))
+            nicheTimeout = setTimeout(() => {
+                fetch(`{% url 'api_autocomplete_niches' %}?q=${encodeURIComponent(query)}`)
                     .then(response => response.json())
                     .then(data => {
-                        if (data.status === 'completed') {
-                            // Requisição concluída, atualizar dados
-                            processingQueue.delete(queueId);
-                            const cnpj = document.querySelector(`td[data-queue-id="${queueId}"]`)?.getAttribute('data-cnpj');
-                            if (data.result) {
-                                updateSocioData(queueId, cnpj, data.result);
-                            }
-                        } else if (data.status === 'failed') {
-                            // Requisição falhou
-                            processingQueue.delete(queueId);
-                            const cell = document.querySelector(`td[data-queue-id="${queueId}"]`);
-                            if (cell) {
-                                cell.innerHTML = '<span class="text-danger small">Erro ao buscar sócios</span>';
-                            }
+                        if (data.results && data.results.length > 0) {
+                            nicheSuggestions.innerHTML = '';
+                            data.results.forEach((item) => {
+                                const li = document.createElement('a');
+                                li.className = 'list-group-item list-group-item-action';
+                                li.textContent = item.display;
+                                li.href = '#';
+                                li.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    nicheInput.value = item.value;
+                                    nicheSuggestions.style.display = 'none';
+                                });
+                                nicheSuggestions.appendChild(li);
+                            });
+                            nicheSuggestions.style.display = 'block';
+                            activeNicheIndex = -1;
+                        } else {
+                            nicheSuggestions.style.display = 'none';
                         }
-                        // Se status é 'pending' ou 'processing', continuar aguardando
                     })
-                    .catch(error => {
-                        console.error('Erro ao verificar status da fila:', error);
-                    });
-            });
-        }
+                    .catch(error => console.error('Erro ao buscar sugestões de nichos:', error));
+            }, 300);
+        });
+        
+        nicheInput.addEventListener('keydown', function(e) {
+            const items = nicheSuggestions.querySelectorAll('.list-group-item');
+            if (items.length === 0) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeNicheIndex = (activeNicheIndex + 1) % items.length;
+                items[activeNicheIndex].focus();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeNicheIndex = activeNicheIndex <= 0 ? items.length - 1 : activeNicheIndex - 1;
+                items[activeNicheIndex].focus();
+            } else if (e.key === 'Enter' && activeNicheIndex >= 0) {
+                e.preventDefault();
+                items[activeNicheIndex].click();
+            }
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (!nicheInput.contains(e.target) && !nicheSuggestions.contains(e.target)) {
+                nicheSuggestions.style.display = 'none';
+            }
+        });
+    })();
+    
+    // Autocomplete para localizações
+    (function() {
+        const locationInput = document.getElementById('location');
+        const locationSuggestions = document.getElementById('location-suggestions');
+        let locationTimeout = null;
+        let activeLocationIndex = -1;
+        
+        locationInput.addEventListener('input', function() {
+            const query = this.value.trim();
+            clearTimeout(locationTimeout);
+            if (query.length < 2) {
+                locationSuggestions.style.display = 'none';
+                return;
+            }
+            locationTimeout = setTimeout(() => {
+                fetch(`{% url 'api_autocomplete_locations' %}?q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.results && data.results.length > 0) {
+                            locationSuggestions.innerHTML = '';
+                            data.results.forEach((item) => {
+                                const li = document.createElement('a');
+                                li.className = 'list-group-item list-group-item-action';
+                                li.textContent = item.display;
+                                li.href = '#';
+                                li.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    locationInput.value = item.value;
+                                    locationSuggestions.style.display = 'none';
+                                });
+                                locationSuggestions.appendChild(li);
+                            });
+                            locationSuggestions.style.display = 'block';
+                            activeLocationIndex = -1;
+                        } else {
+                            locationSuggestions.style.display = 'none';
+                        }
+                    })
+                    .catch(error => console.error('Erro ao buscar sugestões de localizações:', error));
+            }, 300);
+        });
+        
+        locationInput.addEventListener('keydown', function(e) {
+            const items = locationSuggestions.querySelectorAll('.list-group-item');
+            if (items.length === 0) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeLocationIndex = (activeLocationIndex + 1) % items.length;
+                items[activeLocationIndex].focus();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeLocationIndex = activeLocationIndex <= 0 ? items.length - 1 : activeLocationIndex - 1;
+                items[activeLocationIndex].focus();
+            } else if (e.key === 'Enter' && activeLocationIndex >= 0) {
+                e.preventDefault();
+                items[activeLocationIndex].click();
+            }
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (!locationInput.contains(e.target) && !locationSuggestions.contains(e.target)) {
+                locationSuggestions.style.display = 'none';
+            }
+        });
+    })();
 
-        // Iniciar polling a cada 2 segundos
-        if (processingQueue.size > 0) {
-            pollInterval = setInterval(checkQueueStatus, 2000);
-            // Verificar imediatamente
-            checkQueueStatus();
-        }
-    </script>
-    {% endif %}
-</body>
+    // Busca por CPF inline
+    function searchCpfInline(cpf, name) {
+        const modal = new bootstrap.Modal(document.getElementById('cpfResultModal'));
+        document.getElementById('cpfResultContent').innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
+        modal.show();
+        
+        const csrfTokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
+        const csrfToken = csrfTokenElement ? csrfTokenElement.value : '';
+        fetch('{% url "search_by_cpf" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': csrfToken
+            },
+            body: 'cpf=' + encodeURIComponent(cpf)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                let html = `<h6>CPF: ${cpf}</h6><h6>Nome: ${name}</h6><hr>`;
+                if (data.data.telefones && data.data.telefones.length > 0) {
+                    html += '<h6>Telefones:</h6><ul>';
+                    data.data.telefones.forEach(phone => html += `<li>${phone}</li>`);
+                    html += '</ul>';
+                }
+                if (data.data.emails && data.data.emails.length > 0) {
+                    html += '<h6>Emails:</h6><ul>';
+                    data.data.emails.forEach(email => html += `<li>${email}</li>`);
+                    html += '</ul>';
+                }
+                document.getElementById('cpfResultContent').innerHTML = html;
+            } else {
+                document.getElementById('cpfResultContent').innerHTML = `<div class="alert alert-danger">${data.error || 'Erro na busca'}</div>`;
+            }
+        })
+        .catch(error => {
+            document.getElementById('cpfResultContent').innerHTML = '<div class="alert alert-danger">Erro ao buscar dados do CPF</div>';
+        });
+    }
 
-</html>
+    document.querySelectorAll('.search-cpf-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            searchCpfInline(this.getAttribute('data-cpf'), this.getAttribute('data-name'));
+        });
+    });
+
+</script>
+{% endblock %}

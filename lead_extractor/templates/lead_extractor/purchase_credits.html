@@ -1,252 +1,172 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="pt-br">
+{% extends "lead_extractor/base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Comprar Créditos - NitroLeads</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', system-ui, sans-serif;
-        }
-        .package-card {
-            transition: transform 0.2s;
-            border: 2px solid transparent;
-        }
-        .package-card:hover {
-            transform: translateY(-5px);
-            border-color: #0d6efd;
-        }
-        .package-card.featured {
-            border-color: #ffc107;
-            box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
-        }
-    </style>
-</head>
+{% block title %}Comprar Créditos - NitroLeads{% endblock %}
 
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="{% url 'dashboard' %}"><i class="fas fa-bolt text-warning"></i> NitroLeads</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'dashboard' %}">Nova Pesquisa</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'search_history' %}">Minhas Pesquisas</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'simple_search' %}">Busca Rápida</a>
-                    </li>
-                </ul>
-                <div class="d-flex align-items-center gap-3">
-                    {% if user_profile %}
-                    <span class="text-light">
-                        <i class="fas fa-coins text-warning"></i> 
-                        <strong>{{ available_credits }}</strong> créditos
-                    </span>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </nav>
+{% block extra_css %}
+<style>
+    .package-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: 2px solid transparent;
+    }
+    .package-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .package-card.featured {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 20px rgba(13, 110, 253, 0.2);
+    }
+</style>
+{% endblock %}
 
-    <div class="container pb-5">
-        <div class="text-center mb-5">
-            <h2>Comprar Créditos</h2>
-            <p class="text-muted">Escolha um pacote de créditos para continuar suas buscas</p>
-        </div>
+{% block content %}
+<div class="text-center mb-5">
+    <h2>Comprar Créditos</h2>
+    <p class="text-muted">Escolha um pacote de créditos para continuar suas buscas</p>
+</div>
 
-        <div class="row g-4">
-            {% for package in packages %}
-            <div class="col-md-6 col-lg-3">
-                <div class="card package-card h-100 {% if forloop.counter == 2 %}featured{% endif %}">
-                    <div class="card-body text-center">
-                        {% if forloop.counter == 2 %}
-                        <span class="badge bg-warning text-dark mb-2">Mais Popular</span>
-                        {% endif %}
-                        <h5 class="card-title">{{ package.name }}</h5>
-                        <h2 class="text-primary mb-3">
-                            R$ {{ package.price_brl|floatformat:2 }}
-                        </h2>
-                        <h4 class="mb-3">
-                            <i class="fas fa-coins text-warning"></i> 
-                            {{ package.credits }} créditos
-                        </h4>
-                        <p class="text-muted small mb-4">
-                            R$ 0,30 por crédito
-                        </p>
-                        <button class="btn btn-primary w-100 buy-package-btn" 
-                                data-package-id="{{ package.id }}">
-                            Comprar Agora
-                        </button>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-
-        <!-- Compra Customizada -->
-        <div class="row mt-5">
-            <div class="col-md-8 mx-auto">
-                <div class="card">
-                    <div class="card-header bg-secondary text-white text-center">
-                        <h5 class="mb-0"><i class="fas fa-cog"></i> Ou escolha a quantidade desejada</h5>
-                    </div>
-                    <div class="card-body">
-                        <form id="custom-purchase-form">
-                            {% csrf_token %}
-                            <div class="row align-items-end">
-                                <div class="col-md-6">
-                                    <label for="custom-credits" class="form-label">Quantidade de Créditos</label>
-                                    <input type="number" 
-                                           class="form-control" 
-                                           id="custom-credits" 
-                                           name="credits"
-                                           min="{{ MIN_CREDITS }}" 
-                                           max="{{ MAX_CREDITS }}" 
-                                           value="100"
-                                           required>
-                                    <div class="form-text">
-                                        Mínimo: {{ MIN_CREDITS }} créditos | Máximo: {{ MAX_CREDITS }} créditos
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Preço Total</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text">R$</span>
-                                        <input type="text" 
-                                               class="form-control" 
-                                               id="custom-price" 
-                                               value="30,00" 
-                                               readonly
-                                               style="font-size: 1.25rem; font-weight: bold;">
-                                    </div>
-                                    <div class="form-text">
-                                        <small>R$ 0,30 por crédito</small>
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <button type="submit" class="btn btn-success w-100" id="custom-buy-btn">
-                                        <i class="fas fa-shopping-cart"></i> Comprar
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+<div class="row g-4">
+    {% for package in packages %}
+    <div class="col-md-6 col-lg-3">
+        <div class="card package-card h-100 {% if forloop.counter == 2 %}featured{% endif %}">
+            <div class="card-body text-center d-flex flex-column">
+                {% if forloop.counter == 2 %}
+                <span class="badge bg-primary mb-2">Mais Popular</span>
+                {% endif %}
+                <h5 class="card-title">{{ package.name }}</h5>
+                <h2 class="text-primary mb-3">
+                    R$ {{ package.price_brl|floatformat:2 }}
+                </h2>
+                <h4 class="mb-3">
+                    <i class="fas fa-coins text-warning"></i> 
+                    {{ package.credits }} créditos
+                </h4>
+                <p class="text-muted small mb-4">
+                    R$ 0,30 por crédito
+                </p>
+                <button class="btn btn-primary w-100 mt-auto buy-package-btn" 
+                        data-package-id="{{ package.id }}">
+                    Comprar Agora
+                </button>
             </div>
         </div>
     </div>
+    {% endfor %}
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Calcular preço dinamicamente para compra customizada
-        const creditPrice = 0.30;
-        const minCredits = {{ MIN_CREDITS }};
-        const maxCredits = {{ MAX_CREDITS }};
-        
-        document.getElementById('custom-credits').addEventListener('input', function() {
-            const credits = parseInt(this.value) || 0;
-            const price = credits * creditPrice;
-            document.getElementById('custom-price').value = price.toLocaleString('pt-BR', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            });
-        });
+<!-- Compra Customizada -->
+<div class="row mt-5">
+    <div class="col-md-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Compra Personalizada</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Personalize a quantidade de créditos que deseja comprar (mínimo: {{ MIN_CREDITS }}, máximo: {{ MAX_CREDITS }})
+                </p>
+                <form id="customPurchaseForm">
+                    {% csrf_token %}
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-6">
+                            <label for="customCredits" class="form-label fw-semibold">Quantidade de Créditos</label>
+                            <input type="number" class="form-control form-control-lg" id="customCredits" 
+                                   min="{{ MIN_CREDITS }}" max="{{ MAX_CREDITS }}" 
+                                   value="{{ MIN_CREDITS }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Valor Total</label>
+                            <div class="input-group input-group-lg">
+                                <span class="input-group-text">R$</span>
+                                <input type="text" class="form-control" id="customPrice" 
+                                       value="{{ CREDIT_PRICE|floatformat:2 }}" readonly>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary btn-lg w-100">
+                                <i class="fas fa-shopping-cart me-2"></i>Comprar
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
 
-        // Submit da compra customizada
-        document.getElementById('custom-purchase-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const credits = parseInt(document.getElementById('custom-credits').value);
-            const btn = document.getElementById('custom-buy-btn');
-            
-            if (credits < minCredits || credits > maxCredits) {
-                alert(`Quantidade de créditos deve estar entre ${minCredits} e ${maxCredits}`);
-                return;
-            }
-            
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
-            
-            const formData = new URLSearchParams();
-            formData.append('credits', credits);
-            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-            
-            fetch('{% url "create_custom_checkout" %}', {
+{% block extra_js %}
+<script>
+    const CREDIT_PRICE = {{ CREDIT_PRICE }};
+    const MIN_CREDITS = {{ MIN_CREDITS }};
+    const MAX_CREDITS = {{ MAX_CREDITS }};
+
+    // Calcular preço customizado
+    document.getElementById('customCredits').addEventListener('input', function() {
+        const credits = parseInt(this.value) || 0;
+        if (credits >= MIN_CREDITS && credits <= MAX_CREDITS) {
+            const price = (credits * CREDIT_PRICE).toFixed(2);
+            document.getElementById('customPrice').value = price.replace('.', ',');
+        }
+    });
+
+    // Comprar pacote
+    document.querySelectorAll('.buy-package-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const packageId = this.getAttribute('data-package-id');
+            fetch('{% url "create_checkout" %}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': '{{ csrf_token }}'
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
                 },
-                body: formData
+                body: 'package_id=' + packageId
             })
             .then(response => response.json())
             .then(data => {
-                if (data.url) {
-                    window.location.href = data.url;
+                if (data.checkout_url) {
+                    window.location.href = data.checkout_url;
                 } else {
-                    alert('Erro: ' + (data.error || 'Erro ao processar pagamento'));
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-shopping-cart"></i> Comprar';
+                    alert('Erro ao criar checkout: ' + (data.error || 'Erro desconhecido'));
                 }
             })
             .catch(error => {
-                alert('Erro ao processar pagamento');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-shopping-cart"></i> Comprar';
+                console.error('Erro:', error);
+                alert('Erro ao processar compra');
             });
         });
+    });
 
-        // Comprar pacotes
-        document.querySelectorAll('.buy-package-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const packageId = this.getAttribute('data-package-id');
-                const btn = this;
-                btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
-                
-                // Criar checkout session
-                const formData = new URLSearchParams();
-                formData.append('package_id', packageId);
-                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-                
-                fetch('{% url "create_checkout" %}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                    },
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.url) {
-                        // Redirecionar para checkout do Stripe
-                        window.location.href = data.url;
-                    } else {
-                        alert('Erro: ' + (data.error || 'Erro ao processar pagamento'));
-                        btn.disabled = false;
-                        btn.innerHTML = 'Comprar Agora';
-                    }
-                })
-                .catch(error => {
-                    alert('Erro ao processar pagamento');
-                    btn.disabled = false;
-                    btn.innerHTML = 'Comprar Agora';
-                });
-            });
+    // Compra customizada
+    document.getElementById('customPurchaseForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const credits = parseInt(document.getElementById('customCredits').value);
+        
+        if (credits < MIN_CREDITS || credits > MAX_CREDITS) {
+            alert(`A quantidade de créditos deve estar entre ${MIN_CREDITS} e ${MAX_CREDITS}`);
+            return;
+        }
+
+        fetch('{% url "create_custom_checkout" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: 'credits=' + credits
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.checkout_url) {
+                window.location.href = data.checkout_url;
+            } else {
+                alert('Erro ao criar checkout: ' + (data.error || 'Erro desconhecido'));
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao processar compra');
         });
-    </script>
-</body>
-
-</html>
-
+    });
+</script>
+{% endblock %}

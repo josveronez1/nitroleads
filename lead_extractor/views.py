@@ -8,7 +8,8 @@ from decouple import config
 from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
     get_partners_internal, get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper,
-    normalize_niche, normalize_location, get_cached_search, create_cached_search, get_leads_from_cache, search_incremental
+    normalize_niche, normalize_location, get_cached_search, create_cached_search, get_leads_from_cache, search_incremental,
+    wait_for_partners_processing
 )
 from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation
 from .credit_service import debit_credits, check_credits
@@ -118,7 +119,6 @@ def dashboard(request):
                     
                     credits_used = 0
                     leads_processed = 0
-                    queue_items = []
                     existing_cnpjs = set()
                     
                     if use_cache:
@@ -159,8 +159,7 @@ def dashboard(request):
                                     'address': place.get('address'),
                                     'phone_maps': place.get('phoneNumber'),
                                     'cnpj': None,
-                                    'viper_data': {},
-                                    'queue_id': None
+                                    'viper_data': {}
                                 }
                                 
                                 cnpj = find_cnpj_by_name(company_data['name'])
@@ -170,17 +169,14 @@ def dashboard(request):
                                     if public_data:
                                         company_data['viper_data'].update(public_data)
                                     
-                                    queue_result = get_partners_internal_queued(cnpj, user_profile)
-                                    company_data['queue_id'] = queue_result.get('queue_id')
-                                    queue_items.append(company_data['queue_id'])
-                                    
+                                    # Buscar ou criar Lead
                                     existing_lead = Lead.objects.filter(
                                         user=user_profile,
                                         cnpj=cnpj
                                     ).first()
                                     
                                     if not existing_lead:
-                                        Lead.objects.create(
+                                        lead_obj = Lead.objects.create(
                                             user=user_profile,
                                             search=search_obj,
                                             name=company_data['name'],
@@ -196,15 +192,32 @@ def dashboard(request):
                                             description=f"Lead: {company_data['name']}"
                                         )
                                         
-                                        if success:
-                                            credits_used += 1
-                                            leads_processed += 1
-                                            results.append(company_data)
+                                        if not success:
+                                            messages.warning(request, f'Erro ao debitar crédito: {error}')
+                                            continue
+                                        
+                                        credits_used += 1
                                     else:
+                                        lead_obj = existing_lead
                                         existing_lead.last_seen_by_user = timezone.now()
                                         existing_lead.save(update_fields=['last_seen_by_user'])
-                                        leads_processed += 1
-                                        results.append(company_data)
+                                    
+                                    # Enfileirar busca de sócios e aguardar processamento
+                                    queue_result = get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
+                                    queue_id = queue_result.get('queue_id')
+                                    
+                                    # Aguardar processamento (com timeout)
+                                    partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+                                    
+                                    # Recarregar Lead para pegar dados atualizados
+                                    lead_obj.refresh_from_db()
+                                    
+                                    # Atualizar company_data com dados completos do Lead
+                                    if lead_obj.viper_data:
+                                        company_data['viper_data'] = lead_obj.viper_data
+                                    
+                                    leads_processed += 1
+                                    results.append(company_data)
                     else:
                         # Busca completa (sem cache ou cache insuficiente)
                         places = search_google_maps(search_term)
@@ -227,8 +240,7 @@ def dashboard(request):
                                 'address': place.get('address'),
                                 'phone_maps': place.get('phoneNumber'),
                                 'cnpj': None,
-                                'viper_data': {},
-                                'queue_id': None
+                                'viper_data': {}
                             }
                             
                             cnpj = find_cnpj_by_name(company_data['name'])
@@ -238,19 +250,16 @@ def dashboard(request):
                                 if public_data:
                                     company_data['viper_data'].update(public_data)
                                 
-                                queue_result = get_partners_internal_queued(cnpj, user_profile)
-                                company_data['queue_id'] = queue_result.get('queue_id')
-                                queue_items.append(company_data['queue_id'])
-                                
+                                # Buscar ou criar Lead
                                 existing_lead = Lead.objects.filter(
                                     user=user_profile,
                                     cnpj=cnpj
                                 ).first()
                                 
                                 if existing_lead:
+                                    lead_obj = existing_lead
                                     existing_lead.last_seen_by_user = timezone.now()
                                     existing_lead.save(update_fields=['last_seen_by_user'])
-                                    lead_obj = existing_lead
                                 else:
                                     lead_obj = Lead.objects.create(
                                         user=user_profile,
@@ -268,15 +277,29 @@ def dashboard(request):
                                         description=f"Lead: {company_data['name']}"
                                     )
                                     
-                                    if success:
-                                        credits_used += 1
-                                    else:
+                                    if not success:
                                         messages.warning(request, f'Erro ao debitar crédito: {error}')
                                         continue
+                                    
+                                    credits_used += 1
+                                
+                                # Enfileirar busca de sócios e aguardar processamento
+                                queue_result = get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
+                                queue_id = queue_result.get('queue_id')
+                                
+                                # Aguardar processamento (com timeout)
+                                partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+                                
+                                # Recarregar Lead para pegar dados atualizados
+                                lead_obj.refresh_from_db()
+                                
+                                # Atualizar company_data com dados completos do Lead
+                                if lead_obj.viper_data:
+                                    company_data['viper_data'] = lead_obj.viper_data
                                 
                                 leads_processed += 1
                                 results.append(company_data)
-                        
+
                         # Criar ou atualizar cache com os novos leads
                         if niche_normalized and location_normalized:
                             # Buscar ou criar cache
@@ -304,15 +327,11 @@ def dashboard(request):
                                 'cnpj': r.get('cnpj'),
                             }
                             for r in results
-                        ],
-                        'queue_items': queue_items
+                        ]
                     }
                     search_obj.save()
                     
-                    if queue_items:
-                        messages.info(request, f'Busca iniciada! {leads_processed} leads encontrados. {credits_used} créditos utilizados. Os dados dos sócios estão sendo processados...')
-                    else:
-                        messages.success(request, f'Busca concluída! {leads_processed} leads encontrados. {credits_used} créditos utilizados.')
+                    messages.success(request, f'Busca concluída! {leads_processed} leads encontrados. {credits_used} créditos utilizados.')
     
     except Exception as e:
         logger.error(f"Erro ao processar busca no dashboard: {e}", exc_info=True)
@@ -321,13 +340,17 @@ def dashboard(request):
     # Buscar créditos disponíveis
     available_credits = check_credits(user_profile) if user_profile else 0
     
-    # Se há resultados, verificar se há queue_items para processar
-    queue_items = []
-    if results:
-        queue_items = [r.get('queue_id') for r in results if r.get('queue_id')]
+    # Calcular métricas para o dashboard
+    today = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    leads_today = Lead.objects.filter(
+        user=user_profile,
+        created_at__gte=today
+    ).count() if user_profile else 0
     
-    # Converter queue_items para JSON seguro para o template
-    queue_items_json = json.dumps(queue_items) if queue_items else '[]'
+    searches_today = Search.objects.filter(
+        user=user_profile,
+        created_at__gte=today
+    ).count() if user_profile else 0
     
     context = {
         'results': results,
@@ -336,9 +359,9 @@ def dashboard(request):
         'location': location,
         'quantity': quantity,
         'available_credits': available_credits,
+        'leads_today': leads_today,
+        'searches_today': searches_today,
         'user_profile': user_profile,
-        'queue_items': queue_items,  # IDs das requisições na fila
-        'queue_items_json': queue_items_json,  # JSON seguro para JavaScript
     }
     
     return render(request, 'lead_extractor/dashboard.html', context)

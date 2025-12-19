@@ -6,8 +6,10 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from lead_extractor.viper_queue_service import process_next_request, mark_request_completed, mark_request_failed
 from lead_extractor.services import get_partners_internal
+from lead_extractor.models import Lead
 import time
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,27 @@ class Command(BaseCommand):
                             result = get_partners_internal(cnpj, retry=False)
                             
                             if result is not None:
+                                # Salvar QSA no Lead.viper_data se lead estiver associado
+                                if queue_item.lead:
+                                    lead = queue_item.lead
+                                    # Garantir que viper_data é um dict
+                                    if not lead.viper_data:
+                                        lead.viper_data = {}
+                                    
+                                    # Salvar resultado em socios_qsa
+                                    lead.viper_data['socios_qsa'] = result
+                                    lead.save(update_fields=['viper_data'])
+                                    logger.info(f"QSA salvo no Lead {lead.id} para CNPJ {cnpj}")
+                                else:
+                                    # Se não tiver lead associado, tentar encontrar pelo CNPJ
+                                    lead = Lead.objects.filter(cnpj=cnpj, user=queue_item.user).first()
+                                    if lead:
+                                        if not lead.viper_data:
+                                            lead.viper_data = {}
+                                        lead.viper_data['socios_qsa'] = result
+                                        lead.save(update_fields=['viper_data'])
+                                        logger.info(f"QSA salvo no Lead {lead.id} para CNPJ {cnpj} (encontrado pelo CNPJ)")
+                                
                                 mark_request_completed(queue_item, result)
                                 self.stdout.write(self.style.SUCCESS(f'✓ Requisição {queue_item.id} processada com sucesso'))
                             else:

@@ -268,7 +268,7 @@ def search_cnpj_viper(cnpj):
     return enrich_company_viper(cnpj_clean)
 
 
-def get_partners_internal_queued(cnpj, user_profile):
+def get_partners_internal_queued(cnpj, user_profile, lead=None):
     """
     Busca o QSA usando fila para evitar requisições simultâneas.
     Adiciona a requisição à fila e retorna um dict com status e queue_id.
@@ -276,6 +276,7 @@ def get_partners_internal_queued(cnpj, user_profile):
     Args:
         cnpj: CNPJ para buscar sócios
         user_profile: UserProfile do usuário
+        lead: Lead opcional para associar à requisição
     
     Returns:
         dict: {
@@ -291,7 +292,8 @@ def get_partners_internal_queued(cnpj, user_profile):
         user_profile=user_profile,
         request_type='partners',
         request_data={'cnpj': str(cnpj).strip()},
-        priority=0
+        priority=0,
+        lead=lead
     )
     
     # Retornar status de enfileirado
@@ -300,6 +302,48 @@ def get_partners_internal_queued(cnpj, user_profile):
         'queue_id': queue_item.id,
         'data': None
     }
+
+
+def wait_for_partners_processing(queue_id, user_profile, timeout=60, poll_interval=1):
+    """
+    Aguarda o processamento de uma requisição de sócios na fila.
+    
+    Args:
+        queue_id: ID da requisição na fila
+        user_profile: UserProfile do usuário (para validação)
+        timeout: Tempo máximo de espera em segundos (default: 60)
+        poll_interval: Intervalo entre verificações em segundos (default: 1)
+    
+    Returns:
+        dict ou None: Resultado da requisição se completada, None se falhou ou timeout
+    """
+    from .models import ViperRequestQueue
+    import time
+    
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        try:
+            queue_item = ViperRequestQueue.objects.get(id=queue_id, user=user_profile)
+            
+            if queue_item.status == 'completed':
+                return queue_item.result_data
+            elif queue_item.status == 'failed':
+                logger.warning(f"Requisição {queue_id} falhou: {queue_item.error_message}")
+                return None
+            
+            # Aguardar antes de verificar novamente
+            time.sleep(poll_interval)
+            
+        except ViperRequestQueue.DoesNotExist:
+            logger.error(f"Requisição {queue_id} não encontrada")
+            return None
+        except Exception as e:
+            logger.error(f"Erro ao verificar status da requisição {queue_id}: {e}", exc_info=True)
+            return None
+    
+    logger.warning(f"Timeout aguardando processamento da requisição {queue_id}")
+    return None
 
 
 def remove_accents(text):
@@ -545,14 +589,13 @@ def get_leads_from_cache(cached_search, user_profile, quantity):
                 existing_lead.last_seen_by_user = timezone.now()
                 existing_lead.save(update_fields=['last_seen_by_user'])
             
-            # Formatar para retorno
+            # Formatar para retorno (viper_data já inclui QSA se disponível no cache)
             company_data = {
                 'name': lead.name,
                 'address': lead.address,
                 'phone_maps': lead.phone_maps,
                 'cnpj': cnpj,
-                'viper_data': lead.viper_data or {},
-                'queue_id': None  # Leads do cache já têm dados completos, sócios serão buscados depois se necessário
+                'viper_data': lead.viper_data or {}
             }
             
             results.append(company_data)

@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def enqueue_viper_request(user_profile, request_type, request_data, priority=0):
+def enqueue_viper_request(user_profile, request_type, request_data, priority=0, lead=None):
     """
     Adiciona uma requisição à fila do Viper.
     
@@ -20,12 +20,14 @@ def enqueue_viper_request(user_profile, request_type, request_data, priority=0):
         request_type: Tipo de requisição ('partners', etc)
         request_data: Dados da requisição (dict, ex: {'cnpj': '12345678901234'})
         priority: Prioridade (maior = maior prioridade, default=0)
+        lead: Lead opcional para associar à requisição
     
     Returns:
         ViperRequestQueue: Objeto da requisição enfileirada
     """
     queue_item = ViperRequestQueue.objects.create(
         user=user_profile,
+        lead=lead,
         request_type=request_type,
         request_data=request_data,
         priority=priority,

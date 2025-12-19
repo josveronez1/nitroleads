@@ -161,6 +161,7 @@ class ViperRequestQueue(models.Model):
     ]
     
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='viper_requests')
+    lead = models.ForeignKey('Lead', on_delete=models.CASCADE, null=True, blank=True, related_name='viper_queue_requests', help_text='Lead associado a esta requisição (opcional)')
     request_type = models.CharField(max_length=20, choices=REQUEST_TYPES)
     request_data = models.JSONField(default=dict)  # Ex: {'cnpj': '12345678901234'}
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
