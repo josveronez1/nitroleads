@@ -7,9 +7,10 @@ from django.views.decorators.csrf import csrf_exempt
 from decouple import config
 from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
-    get_partners_internal, get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper
+    get_partners_internal, get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper,
+    normalize_niche, normalize_location, get_cached_search, create_cached_search, get_leads_from_cache, search_incremental
 )
-from .models import Lead, Search, UserProfile, ViperRequestQueue
+from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation
 from .credit_service import debit_credits, check_credits
 from .stripe_service import create_checkout_session, create_custom_checkout_session, handle_webhook_event, CREDIT_PACKAGES, CREDIT_PRICE, MIN_CREDITS, MAX_CREDITS
 from .decorators import require_user_profile, validate_user_ownership
@@ -88,11 +89,19 @@ def dashboard(request):
                 if quantity <= 0:
                     messages.error(request, 'Você não tem créditos suficientes para realizar a busca.')
                 else:
-                    # Buscar lugares no Google Maps
-                    places = search_google_maps(search_term)
+                    # Normalizar entrada
+                    niche_normalized = normalize_niche(niche)
+                    location_normalized = normalize_location(location)
                     
-                    # Aplicar filtro de deduplicação
-                    filtered_places, existing_cnpjs = filter_existing_leads(user_profile, places, days_threshold=30)
+                    cached_search = None
+                    use_cache = False
+                    
+                    # Tentar buscar do cache se normalização funcionou
+                    if niche_normalized and location_normalized:
+                        cached_search = get_cached_search(niche_normalized, location_normalized)
+                        if cached_search and cached_search.total_leads_cached >= quantity:
+                            # Cache tem leads suficientes
+                            use_cache = True
                     
                     # Criar objeto Search para salvar
                     search_obj = Search.objects.create(
@@ -100,86 +109,190 @@ def dashboard(request):
                         niche=niche,
                         location=location,
                         quantity_requested=quantity,
+                        cached_search=cached_search if use_cache else None,
                         search_data={
                             'query': search_term,
-                            'total_places_found': len(places),
-                            'filtered_places': len(filtered_places),
+                            'from_cache': use_cache,
                         }
                     )
                     
                     credits_used = 0
                     leads_processed = 0
-                    queue_items = []  # Armazenar queue_ids para buscar resultados depois
+                    queue_items = []
+                    existing_cnpjs = set()
                     
-                    # Processar até atingir a quantidade solicitada
-                    for place in filtered_places[:quantity]:
-                        if leads_processed >= quantity:
-                            break
+                    if use_cache:
+                        # Buscar leads do cache
+                        cached_results = get_leads_from_cache(cached_search, user_profile, quantity)
                         
-                        company_data = {
-                            'name': place.get('title'),
-                            'address': place.get('address'),
-                            'phone_maps': place.get('phoneNumber'),
-                            'cnpj': None,
-                            'viper_data': {},
-                            'queue_id': None  # Para armazenar ID da fila
-                        }
-                        
-                        # 1. Buscar CNPJ
-                        cnpj = find_cnpj_by_name(company_data['name'])
-                        
-                        if cnpj:
-                            company_data['cnpj'] = cnpj
+                        for company_data in cached_results:
+                            # Debitar crédito para cada lead do cache (mesmo preço)
+                            success, new_balance, error = debit_credits(
+                                user_profile,
+                                1,
+                                description=f"Lead (cache): {company_data['name']}"
+                            )
                             
-                            # 2. Buscar dados públicos (Telefone/Endereço)
-                            public_data = enrich_company_viper(cnpj)
-                            if public_data:
-                                company_data['viper_data'].update(public_data)
-                            
-                            # 3. Buscar Sócios usando FILA (API Interna/Secreta)
-                            # Enfileirar a requisição em vez de processar diretamente
-                            queue_result = get_partners_internal_queued(cnpj, user_profile)
-                            company_data['queue_id'] = queue_result.get('queue_id')
-                            queue_items.append(company_data['queue_id'])
-                            
-                            # Verificar se já existe lead com este CNPJ para este usuário
-                            existing_lead = Lead.objects.filter(
-                                user=user_profile,
-                                cnpj=cnpj
-                            ).first()
-                            
-                            if existing_lead:
-                                # Atualizar last_seen_by_user
-                                existing_lead.last_seen_by_user = timezone.now()
-                                existing_lead.save(update_fields=['last_seen_by_user'])
-                                lead_obj = existing_lead
+                            if success:
+                                credits_used += 1
+                                leads_processed += 1
+                                results.append(company_data)
+                                if company_data.get('cnpj'):
+                                    existing_cnpjs.add(company_data['cnpj'])
                             else:
-                                # Criar novo lead (com dados parciais, sócios serão adicionados depois)
-                                lead_obj = Lead.objects.create(
-                                    user=user_profile,
-                                    search=search_obj,
-                                    name=company_data['name'],
-                                    address=company_data['address'],
-                                    phone_maps=company_data['phone_maps'],
-                                    cnpj=cnpj,
-                                    viper_data=company_data['viper_data']  # Sem sócios ainda
-                                )
-                                
-                                # Debitar crédito apenas para leads novos
-                                success, new_balance, error = debit_credits(
-                                    user_profile,
-                                    1,
-                                    description=f"Lead: {company_data['name']}"
-                                )
-                                
-                                if success:
-                                    credits_used += 1
-                                else:
-                                    messages.warning(request, f'Erro ao debitar crédito: {error}')
-                                    continue
+                                messages.warning(request, f'Erro ao debitar crédito: {error}')
+                        
+                        # Verificar se precisa buscar mais (busca incremental)
+                        if leads_processed < quantity:
+                            additional_needed = quantity - leads_processed
+                            new_places, existing_cnpjs = search_incremental(
+                                search_term, user_profile, additional_needed, existing_cnpjs
+                            )
                             
-                            leads_processed += 1
-                            results.append(company_data)
+                            # Processar novos lugares encontrados
+                            for place in new_places:
+                                if leads_processed >= quantity:
+                                    break
+                                
+                                company_data = {
+                                    'name': place.get('title'),
+                                    'address': place.get('address'),
+                                    'phone_maps': place.get('phoneNumber'),
+                                    'cnpj': None,
+                                    'viper_data': {},
+                                    'queue_id': None
+                                }
+                                
+                                cnpj = find_cnpj_by_name(company_data['name'])
+                                if cnpj:
+                                    company_data['cnpj'] = cnpj
+                                    public_data = enrich_company_viper(cnpj)
+                                    if public_data:
+                                        company_data['viper_data'].update(public_data)
+                                    
+                                    queue_result = get_partners_internal_queued(cnpj, user_profile)
+                                    company_data['queue_id'] = queue_result.get('queue_id')
+                                    queue_items.append(company_data['queue_id'])
+                                    
+                                    existing_lead = Lead.objects.filter(
+                                        user=user_profile,
+                                        cnpj=cnpj
+                                    ).first()
+                                    
+                                    if not existing_lead:
+                                        Lead.objects.create(
+                                            user=user_profile,
+                                            search=search_obj,
+                                            name=company_data['name'],
+                                            address=company_data['address'],
+                                            phone_maps=company_data['phone_maps'],
+                                            cnpj=cnpj,
+                                            viper_data=company_data['viper_data']
+                                        )
+                                        
+                                        success, new_balance, error = debit_credits(
+                                            user_profile,
+                                            1,
+                                            description=f"Lead: {company_data['name']}"
+                                        )
+                                        
+                                        if success:
+                                            credits_used += 1
+                                            leads_processed += 1
+                                            results.append(company_data)
+                                    else:
+                                        existing_lead.last_seen_by_user = timezone.now()
+                                        existing_lead.save(update_fields=['last_seen_by_user'])
+                                        leads_processed += 1
+                                        results.append(company_data)
+                    else:
+                        # Busca completa (sem cache ou cache insuficiente)
+                        places = search_google_maps(search_term)
+                        filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
+                        existing_cnpjs = existing_cnpjs_set
+                        
+                        # Atualizar search_data
+                        search_obj.search_data.update({
+                            'total_places_found': len(places),
+                            'filtered_places': len(filtered_places),
+                        })
+                        
+                        # Processar até atingir a quantidade solicitada
+                        for place in filtered_places[:quantity]:
+                            if leads_processed >= quantity:
+                                break
+                            
+                            company_data = {
+                                'name': place.get('title'),
+                                'address': place.get('address'),
+                                'phone_maps': place.get('phoneNumber'),
+                                'cnpj': None,
+                                'viper_data': {},
+                                'queue_id': None
+                            }
+                            
+                            cnpj = find_cnpj_by_name(company_data['name'])
+                            if cnpj:
+                                company_data['cnpj'] = cnpj
+                                public_data = enrich_company_viper(cnpj)
+                                if public_data:
+                                    company_data['viper_data'].update(public_data)
+                                
+                                queue_result = get_partners_internal_queued(cnpj, user_profile)
+                                company_data['queue_id'] = queue_result.get('queue_id')
+                                queue_items.append(company_data['queue_id'])
+                                
+                                existing_lead = Lead.objects.filter(
+                                    user=user_profile,
+                                    cnpj=cnpj
+                                ).first()
+                                
+                                if existing_lead:
+                                    existing_lead.last_seen_by_user = timezone.now()
+                                    existing_lead.save(update_fields=['last_seen_by_user'])
+                                    lead_obj = existing_lead
+                                else:
+                                    lead_obj = Lead.objects.create(
+                                        user=user_profile,
+                                        search=search_obj,
+                                        name=company_data['name'],
+                                        address=company_data['address'],
+                                        phone_maps=company_data['phone_maps'],
+                                        cnpj=cnpj,
+                                        viper_data=company_data['viper_data']
+                                    )
+                                    
+                                    success, new_balance, error = debit_credits(
+                                        user_profile,
+                                        1,
+                                        description=f"Lead: {company_data['name']}"
+                                    )
+                                    
+                                    if success:
+                                        credits_used += 1
+                                    else:
+                                        messages.warning(request, f'Erro ao debitar crédito: {error}')
+                                        continue
+                                
+                                leads_processed += 1
+                                results.append(company_data)
+                        
+                        # Criar ou atualizar cache com os novos leads
+                        if niche_normalized and location_normalized:
+                            # Buscar ou criar cache
+                            cached_search_new = get_cached_search(niche_normalized, location_normalized)
+                            if not cached_search_new:
+                                cached_search_new = create_cached_search(niche_normalized, location_normalized, leads_processed)
+                            
+                            # Associar leads ao cache e atualizar search_obj
+                            if cached_search_new:
+                                Lead.objects.filter(
+                                    search=search_obj,
+                                    cnpj__isnull=False
+                                ).exclude(cnpj='').update(cached_search=cached_search_new)
+                                
+                                search_obj.cached_search = cached_search_new
+                                search_obj.save(update_fields=['cached_search'])
                     
                     # Atualizar search_obj com resultados
                     search_obj.results_count = leads_processed
@@ -192,7 +305,7 @@ def dashboard(request):
                             }
                             for r in results
                         ],
-                        'queue_items': queue_items  # IDs das requisições na fila
+                        'queue_items': queue_items
                     }
                     search_obj.save()
                     
@@ -700,3 +813,56 @@ def get_viper_result(request, queue_id):
         
     except ViperRequestQueue.DoesNotExist:
         return JsonResponse({'error': 'Requisição não encontrada'}, status=404)
+
+
+@require_user_profile
+def api_autocomplete_niches(request):
+    """
+    Endpoint de autocomplete para nichos.
+    GET /api/autocomplete/niches/?q=adv
+    """
+    q = request.GET.get('q', '').strip()
+    
+    if not q:
+        return JsonResponse({'results': []})
+    
+    try:
+        # Buscar nichos que começam com a query (case insensitive)
+        niches = NormalizedNiche.objects.filter(
+            display_name__icontains=q,
+            is_active=True
+        ).order_by('display_name')[:20]
+        
+        results = [{'value': niche.display_name, 'display': niche.display_name} for niche in niches]
+        
+        return JsonResponse({'results': results})
+    except Exception as e:
+        logger.error(f"Erro ao buscar nichos para autocomplete: {e}", exc_info=True)
+        return JsonResponse({'results': []})
+
+
+@require_user_profile
+def api_autocomplete_locations(request):
+    """
+    Endpoint de autocomplete para localizações (cidades).
+    GET /api/autocomplete/locations/?q=são
+    """
+    q = request.GET.get('q', '').strip()
+    
+    if not q:
+        return JsonResponse({'results': []})
+    
+    try:
+        # Buscar cidades que começam com a query (case insensitive)
+        # Formato esperado: "Cidade - UF"
+        locations = NormalizedLocation.objects.filter(
+            display_name__icontains=q,
+            is_active=True
+        ).order_by('state', 'city')[:20]
+        
+        results = [{'value': loc.display_name, 'display': loc.display_name} for loc in locations]
+        
+        return JsonResponse({'results': results})
+    except Exception as e:
+        logger.error(f"Erro ao buscar localizações para autocomplete: {e}", exc_info=True)
+        return JsonResponse({'results': []})

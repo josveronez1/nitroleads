@@ -112,15 +112,17 @@
                 <form method="POST">
                     {% csrf_token %}
                     <div class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-4 position-relative">
                             <label for="niche" class="form-label">Nicho</label>
                             <input type="text" name="niche" id="niche" class="form-control form-control-lg"
-                                placeholder="Ex: Escritórios de Advocacia" value="{{ niche }}" required>
+                                placeholder="Ex: Advogado" value="{{ niche }}" required autocomplete="off">
+                            <div id="niche-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4 position-relative">
                             <label for="location" class="form-label">Localização</label>
                             <input type="text" name="location" id="location" class="form-control form-control-lg"
-                                placeholder="Ex: São Paulo, SP" value="{{ location }}" required>
+                                placeholder="Ex: São Paulo - SP" value="{{ location }}" required autocomplete="off">
+                            <div id="location-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
                         </div>
                         <div class="col-md-2">
                             <label for="quantity" class="form-label">Quantidade</label>
@@ -141,6 +143,154 @@
                 </form>
             </div>
         </div>
+    
+    <script>
+        // Autocomplete para nichos
+        (function() {
+            const nicheInput = document.getElementById('niche');
+            const nicheSuggestions = document.getElementById('niche-suggestions');
+            let nicheTimeout = null;
+            let activeNicheIndex = -1;
+            
+            nicheInput.addEventListener('input', function() {
+                const query = this.value.trim();
+                
+                clearTimeout(nicheTimeout);
+                
+                if (query.length < 2) {
+                    nicheSuggestions.style.display = 'none';
+                    return;
+                }
+                
+                nicheTimeout = setTimeout(() => {
+                    fetch(`{% url 'api_autocomplete_niches' %}?q=${encodeURIComponent(query)}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.results && data.results.length > 0) {
+                                nicheSuggestions.innerHTML = '';
+                                data.results.forEach((item, index) => {
+                                    const li = document.createElement('a');
+                                    li.className = 'list-group-item list-group-item-action';
+                                    li.textContent = item.display;
+                                    li.href = '#';
+                                    li.addEventListener('click', function(e) {
+                                        e.preventDefault();
+                                        nicheInput.value = item.value;
+                                        nicheSuggestions.style.display = 'none';
+                                    });
+                                    nicheSuggestions.appendChild(li);
+                                });
+                                nicheSuggestions.style.display = 'block';
+                                activeNicheIndex = -1;
+                            } else {
+                                nicheSuggestions.style.display = 'none';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Erro ao buscar sugestões de nichos:', error);
+                        });
+                }, 300);
+            });
+            
+            nicheInput.addEventListener('keydown', function(e) {
+                const items = nicheSuggestions.querySelectorAll('.list-group-item');
+                if (items.length === 0) return;
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeNicheIndex = (activeNicheIndex + 1) % items.length;
+                    items[activeNicheIndex].focus();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeNicheIndex = activeNicheIndex <= 0 ? items.length - 1 : activeNicheIndex - 1;
+                    items[activeNicheIndex].focus();
+                } else if (e.key === 'Enter' && activeNicheIndex >= 0) {
+                    e.preventDefault();
+                    items[activeNicheIndex].click();
+                }
+            });
+            
+            // Fechar ao clicar fora
+            document.addEventListener('click', function(e) {
+                if (!nicheInput.contains(e.target) && !nicheSuggestions.contains(e.target)) {
+                    nicheSuggestions.style.display = 'none';
+                }
+            });
+        })();
+        
+        // Autocomplete para localizações
+        (function() {
+            const locationInput = document.getElementById('location');
+            const locationSuggestions = document.getElementById('location-suggestions');
+            let locationTimeout = null;
+            let activeLocationIndex = -1;
+            
+            locationInput.addEventListener('input', function() {
+                const query = this.value.trim();
+                
+                clearTimeout(locationTimeout);
+                
+                if (query.length < 2) {
+                    locationSuggestions.style.display = 'none';
+                    return;
+                }
+                
+                locationTimeout = setTimeout(() => {
+                    fetch(`{% url 'api_autocomplete_locations' %}?q=${encodeURIComponent(query)}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.results && data.results.length > 0) {
+                                locationSuggestions.innerHTML = '';
+                                data.results.forEach((item, index) => {
+                                    const li = document.createElement('a');
+                                    li.className = 'list-group-item list-group-item-action';
+                                    li.textContent = item.display;
+                                    li.href = '#';
+                                    li.addEventListener('click', function(e) {
+                                        e.preventDefault();
+                                        locationInput.value = item.value;
+                                        locationSuggestions.style.display = 'none';
+                                    });
+                                    locationSuggestions.appendChild(li);
+                                });
+                                locationSuggestions.style.display = 'block';
+                                activeLocationIndex = -1;
+                            } else {
+                                locationSuggestions.style.display = 'none';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Erro ao buscar sugestões de localizações:', error);
+                        });
+                }, 300);
+            });
+            
+            locationInput.addEventListener('keydown', function(e) {
+                const items = locationSuggestions.querySelectorAll('.list-group-item');
+                if (items.length === 0) return;
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeLocationIndex = (activeLocationIndex + 1) % items.length;
+                    items[activeLocationIndex].focus();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeLocationIndex = activeLocationIndex <= 0 ? items.length - 1 : activeLocationIndex - 1;
+                    items[activeLocationIndex].focus();
+                } else if (e.key === 'Enter' && activeLocationIndex >= 0) {
+                    e.preventDefault();
+                    items[activeLocationIndex].click();
+                }
+            });
+            
+            // Fechar ao clicar fora
+            document.addEventListener('click', function(e) {
+                if (!locationInput.contains(e.target) && !locationSuggestions.contains(e.target)) {
+                    locationSuggestions.style.display = 'none';
+                }
+            });
+        })();
+    </script>
 
         {% if results %}
         <div class="card shadow-sm border-0">

@@ -4,7 +4,7 @@ from django.utils.html import format_html
 from django.shortcuts import redirect
 from django.urls import path
 from django.http import HttpResponseRedirect
-from .models import UserProfile, Lead, Search, CreditTransaction, ViperRequestQueue
+from .models import UserProfile, Lead, Search, CreditTransaction, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation
 from .credit_service import add_credits
 
 
@@ -117,3 +117,25 @@ class ViperRequestQueueAdmin(admin.ModelAdmin):
     search_fields = ('user__email',)
     readonly_fields = ('created_at', 'started_at', 'completed_at')
     ordering = ['-created_at']
+
+
+@admin.register(CachedSearch)
+class CachedSearchAdmin(admin.ModelAdmin):
+    list_display = ('niche_normalized', 'location_normalized', 'total_leads_cached', 'last_updated', 'expires_at', 'created_at')
+    list_filter = ('last_updated', 'created_at')
+    search_fields = ('niche_normalized', 'location_normalized')
+    readonly_fields = ('created_at', 'last_updated')
+
+
+@admin.register(NormalizedNiche)
+class NormalizedNicheAdmin(admin.ModelAdmin):
+    list_display = ('display_name', 'name', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
+    search_fields = ('display_name', 'name')
+
+
+@admin.register(NormalizedLocation)
+class NormalizedLocationAdmin(admin.ModelAdmin):
+    list_display = ('display_name', 'city', 'state', 'is_active', 'created_at')
+    list_filter = ('state', 'is_active', 'created_at')
+    search_fields = ('city', 'display_name')

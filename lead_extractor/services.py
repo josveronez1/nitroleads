@@ -4,10 +4,11 @@ import re
 import os
 import subprocess
 import logging
+import unicodedata
 from datetime import timedelta
 from django.utils import timezone
 from decouple import config
-from .models import Lead
+from .models import Lead, NormalizedNiche, NormalizedLocation, CachedSearch
 
 logger = logging.getLogger(__name__)
 
@@ -299,3 +300,301 @@ def get_partners_internal_queued(cnpj, user_profile):
         'queue_id': queue_item.id,
         'data': None
     }
+
+
+def remove_accents(text):
+    """
+    Remove acentos de uma string.
+    
+    Args:
+        text: String a ser normalizada
+    
+    Returns:
+        str: String sem acentos
+    """
+    nfkd = unicodedata.normalize('NFKD', text)
+    return ''.join([c for c in nfkd if not unicodedata.combining(c)])
+
+
+def normalize_niche(niche):
+    """
+    Normaliza um nicho para formato padrão.
+    
+    Args:
+        niche: String do nicho (ex: "Advogado", "advogado", "ADVOGADO")
+    
+    Returns:
+        str: Nicho normalizado (lowercase, sem acentos, espaços normalizados)
+    """
+    if not niche:
+        return ''
+    
+    # Remove acentos
+    normalized = remove_accents(niche)
+    # Lowercase
+    normalized = normalized.lower()
+    # Remove espaços extras
+    normalized = ' '.join(normalized.split())
+    
+    return normalized
+
+
+def normalize_location(location):
+    """
+    Normaliza uma localização para formato "Cidade - UF".
+    
+    Args:
+        location: String da localização (ex: "São Paulo", "são paulo - sp", "SAO PAULO-SP")
+    
+    Returns:
+        str: Localização normalizada no formato "Cidade - UF" ou None se inválida
+    """
+    if not location:
+        return None
+    
+    # Remove espaços extras
+    location = ' '.join(location.split())
+    
+    # Tentar diferentes formatos de entrada
+    # Formato 1: "Cidade - UF" ou "Cidade -UF" ou "Cidade- UF"
+    match = re.match(r'^(.+?)\s*-\s*([A-Z]{2})$', location.upper())
+    if match:
+        city = match.group(1).strip()
+        state = match.group(2).strip()
+    else:
+        # Formato 2: Apenas cidade (tentar buscar no banco)
+        # Por enquanto, assumir que é apenas cidade e não normalizar
+        # Isso será melhorado quando tivermos o autocomplete funcionando
+        return None
+    
+    # Buscar no banco de dados
+    try:
+        normalized_location = NormalizedLocation.objects.filter(
+            city__iexact=city,
+            state=state,
+            is_active=True
+        ).first()
+        
+        if normalized_location:
+            return normalized_location.display_name
+        else:
+            # Se não encontrou, criar formato padrão (capitalizar cidade)
+            city_formatted = city.title()
+            return f"{city_formatted} - {state}"
+    except Exception as e:
+        logger.error(f"Erro ao normalizar localização '{location}': {e}", exc_info=True)
+        # Fallback: retornar formato padrão
+        city_formatted = city.title() if 'city' in locals() else location.title()
+        state_formatted = state if 'state' in locals() else ''
+        if state_formatted:
+            return f"{city_formatted} - {state_formatted}"
+        return None
+
+
+def get_or_create_normalized_niche(niche):
+    """
+    Busca ou cria um NormalizedNiche.
+    
+    Args:
+        niche: String do nicho
+    
+    Returns:
+        NormalizedNiche: Objeto NormalizedNiche
+    """
+    normalized_name = normalize_niche(niche)
+    
+    if not normalized_name:
+        return None
+    
+    niche_obj, created = NormalizedNiche.objects.get_or_create(
+        name=normalized_name,
+        defaults={
+            'display_name': niche.strip().title(),
+            'is_active': True
+        }
+    )
+    
+    return niche_obj
+
+
+def get_cached_search(niche_normalized, location_normalized):
+    """
+    Busca um CachedSearch válido (não expirado).
+    
+    Args:
+        niche_normalized: Nicho normalizado
+        location_normalized: Localização normalizada (formato: "Cidade - UF")
+    
+    Returns:
+        CachedSearch ou None: Cache válido ou None se não existe ou está expirado
+    """
+    if not niche_normalized or not location_normalized:
+        return None
+    
+    now = timezone.now()
+    
+    try:
+        cached = CachedSearch.objects.filter(
+            niche_normalized=niche_normalized,
+            location_normalized=location_normalized,
+            expires_at__gt=now  # Ainda não expirado
+        ).first()
+        
+        return cached
+    except Exception as e:
+        logger.error(f"Erro ao buscar cache: {e}", exc_info=True)
+        return None
+
+
+def create_cached_search(niche_normalized, location_normalized, total_leads):
+    """
+    Cria um novo CachedSearch.
+    
+    Args:
+        niche_normalized: Nicho normalizado
+        location_normalized: Localização normalizada
+        total_leads: Total de leads no cache
+    
+    Returns:
+        CachedSearch: Objeto criado
+    """
+    now = timezone.now()
+    expires_at = now + timedelta(days=90)
+    
+    cached, created = CachedSearch.objects.get_or_create(
+        niche_normalized=niche_normalized,
+        location_normalized=location_normalized,
+        defaults={
+            'total_leads_cached': total_leads,
+            'expires_at': expires_at,
+            'last_updated': now
+        }
+    )
+    
+    if not created:
+        # Atualizar cache existente
+        cached.total_leads_cached = total_leads
+        cached.last_updated = now
+        cached.expires_at = expires_at
+        cached.save()
+    
+    return cached
+
+
+def get_leads_from_cache(cached_search, user_profile, quantity):
+    """
+    Busca leads de um CachedSearch e cria cópias para o usuário se necessário.
+    
+    Args:
+        cached_search: Objeto CachedSearch
+        user_profile: UserProfile do usuário
+        quantity: Quantidade desejada
+    
+    Returns:
+        list: Lista de leads do cache (formato dict como no dashboard)
+    """
+    if not cached_search:
+        return []
+    
+    try:
+        # Buscar leads do cache (pode ser de qualquer usuário, pois é cache global)
+        # Pegar leads únicos por CNPJ usando distinct
+        cached_leads_raw = Lead.objects.filter(
+            cached_search=cached_search,
+            cnpj__isnull=False
+        ).exclude(cnpj='').values_list('cnpj', flat=True).distinct()[:quantity]
+        
+        # Buscar os objetos Lead completos para os CNPJs únicos
+        cached_leads = Lead.objects.filter(
+            cached_search=cached_search,
+            cnpj__in=list(cached_leads_raw)
+        ).order_by('cnpj', '-created_at')  # Pegar o mais recente de cada CNPJ
+        
+        # Converter para formato esperado pelo dashboard
+        results = []
+        cnpjs_processed = set()
+        
+        for lead in cached_leads:
+            cnpj = lead.cnpj
+            
+            # Evitar duplicatas (manualmente, já que pode haver múltiplos leads com mesmo CNPJ)
+            if cnpj in cnpjs_processed:
+                continue
+            cnpjs_processed.add(cnpj)
+            
+            # Verificar se já existe lead para este usuário
+            existing_lead = Lead.objects.filter(
+                user=user_profile,
+                cnpj=cnpj
+            ).first()
+            
+            if not existing_lead:
+                # Criar novo lead para este usuário a partir do cache
+                Lead.objects.create(
+                    user=user_profile,
+                    cached_search=cached_search,
+                    name=lead.name,
+                    address=lead.address,
+                    phone_maps=lead.phone_maps,
+                    cnpj=cnpj,
+                    viper_data=lead.viper_data or {},
+                    first_extracted_at=lead.first_extracted_at or timezone.now()
+                )
+            else:
+                # Atualizar last_seen_by_user do lead existente
+                existing_lead.last_seen_by_user = timezone.now()
+                existing_lead.save(update_fields=['last_seen_by_user'])
+            
+            # Formatar para retorno
+            company_data = {
+                'name': lead.name,
+                'address': lead.address,
+                'phone_maps': lead.phone_maps,
+                'cnpj': cnpj,
+                'viper_data': lead.viper_data or {},
+                'queue_id': None  # Leads do cache já têm dados completos, sócios serão buscados depois se necessário
+            }
+            
+            results.append(company_data)
+            
+            # Limitar quantidade
+            if len(results) >= quantity:
+                break
+        
+        return results
+    except Exception as e:
+        logger.error(f"Erro ao buscar leads do cache: {e}", exc_info=True)
+        return []
+
+
+def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
+    """
+    Busca incremental apenas os leads que ainda não foram encontrados.
+    
+    Args:
+        search_term: Termo de busca para Google Maps
+        user_profile: UserProfile do usuário
+        quantity: Quantidade adicional necessária
+        existing_cnpjs: Set de CNPJs já existentes para evitar duplicatas
+    
+    Returns:
+        tuple: (lista de novos places, set atualizado de existing_cnpjs)
+    """
+    # Buscar lugares no Google Maps
+    places = search_google_maps(search_term)
+    
+    # Aplicar filtro de deduplicação
+    filtered_places, _ = filter_existing_leads(user_profile, places, days_threshold=30)
+    
+    # Remover CNPJs que já estão no existing_cnpjs
+    new_places = []
+    for place in filtered_places[:quantity * 2]:  # Buscar mais para garantir quantidade suficiente
+        # Tentar encontrar CNPJ
+        cnpj = find_cnpj_by_name(place.get('title', ''))
+        if cnpj and cnpj not in existing_cnpjs:
+            new_places.append(place)
+            existing_cnpjs.add(cnpj)
+            if len(new_places) >= quantity:
+                break
+    
+    return new_places, existing_cnpjs

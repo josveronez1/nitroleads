@@ -14,6 +14,66 @@ class UserProfile(models.Model):
         return f"{self.email} ({self.supabase_user_id})"
 
 
+class NormalizedNiche(models.Model):
+    """
+    Lista de nichos normalizados para padronização de pesquisas.
+    """
+    name = models.CharField(max_length=255, unique=True)  # Nome normalizado (lowercase, sem acentos)
+    display_name = models.CharField(max_length=255)  # Nome para exibição
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_name']
+
+    def __str__(self):
+        return self.display_name
+
+
+class NormalizedLocation(models.Model):
+    """
+    Lista de cidades normalizadas com UF para padronização de pesquisas.
+    """
+    city = models.CharField(max_length=255)
+    state = models.CharField(max_length=2)  # UF (2 caracteres)
+    display_name = models.CharField(max_length=255)  # Formato: "Cidade - UF"
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [['city', 'state']]
+        ordering = ['state', 'city']
+        indexes = [
+            models.Index(fields=['city', 'state']),
+        ]
+
+    def __str__(self):
+        return self.display_name
+
+
+class CachedSearch(models.Model):
+    """
+    Cache global de pesquisas normalizadas para reutilização.
+    """
+    niche_normalized = models.CharField(max_length=255)
+    location_normalized = models.CharField(max_length=255)  # Formato: "Cidade - UF"
+    total_leads_cached = models.IntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+    expires_at = models.DateTimeField()  # Calculado: last_updated + 90 dias
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [['niche_normalized', 'location_normalized']]
+        ordering = ['-last_updated']
+        indexes = [
+            models.Index(fields=['niche_normalized', 'location_normalized']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.niche_normalized} em {self.location_normalized} ({self.total_leads_cached} leads)"
+
+
 class Search(models.Model):
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='searches')
     niche = models.CharField(max_length=255)
@@ -23,6 +83,7 @@ class Search(models.Model):
     credits_used = models.IntegerField(default=0)
     search_data = models.JSONField(default=dict)  # Armazena toda a pesquisa (termos, filtros, etc)
     results_data = models.JSONField(default=dict)  # Armazena resultados completos
+    cached_search = models.ForeignKey(CachedSearch, null=True, blank=True, on_delete=models.SET_NULL, related_name='user_searches')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -55,6 +116,7 @@ class CreditTransaction(models.Model):
 class Lead(models.Model):
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='leads', null=True, blank=True)
     search = models.ForeignKey(Search, null=True, blank=True, on_delete=models.SET_NULL, related_name='leads')
+    cached_search = models.ForeignKey(CachedSearch, null=True, blank=True, on_delete=models.SET_NULL, related_name='cached_leads')
     name = models.CharField(max_length=255)
     address = models.TextField(null=True, blank=True)
     phone_maps = models.CharField(max_length=50, null=True, blank=True)
@@ -75,6 +137,7 @@ class Lead(models.Model):
             models.Index(fields=['user', 'cnpj']),
             models.Index(fields=['user', 'created_at']),
             models.Index(fields=['cnpj']),
+            models.Index(fields=['cached_search']),
         ]
 
     def __str__(self):
