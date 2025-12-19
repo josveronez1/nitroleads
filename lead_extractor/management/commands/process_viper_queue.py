@@ -52,7 +52,7 @@ class Command(BaseCommand):
                                 raise ValueError('CNPJ não encontrado nos dados da requisição')
                             
                             # Chamar função original (sem retry aqui, pois já está na fila)
-                            result = get_partners_internal(cnpj, retry=False)
+                            result = get_partners_internal(cnpj, retry=True)
                             
                             if result is not None:
                                 # Salvar QSA no Lead.viper_data se lead estiver associado
