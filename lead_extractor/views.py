@@ -220,7 +220,7 @@ def dashboard(request):
                                     results.append(company_data)
                     else:
                         # Busca completa (sem cache ou cache insuficiente)
-        places = search_google_maps(search_term)
+                        places = search_google_maps(search_term)
                         filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
                         existing_cnpjs = existing_cnpjs_set
                         
@@ -235,21 +235,21 @@ def dashboard(request):
                             if leads_processed >= quantity:
                                 break
                             
-            company_data = {
-                'name': place.get('title'),
-                'address': place.get('address'),
-                'phone_maps': place.get('phoneNumber'),
-                'cnpj': None,
+                            company_data = {
+                                'name': place.get('title'),
+                                'address': place.get('address'),
+                                'phone_maps': place.get('phoneNumber'),
+                                'cnpj': None,
                                 'viper_data': {}
-            }
-            
-            cnpj = find_cnpj_by_name(company_data['name'])
-            if cnpj:
-                company_data['cnpj'] = cnpj
-                public_data = enrich_company_viper(cnpj)
-                if public_data:
-                    company_data['viper_data'].update(public_data)
-                
+                            }
+                            
+                            cnpj = find_cnpj_by_name(company_data['name'])
+                            if cnpj:
+                                company_data['cnpj'] = cnpj
+                                public_data = enrich_company_viper(cnpj)
+                                if public_data:
+                                    company_data['viper_data'].update(public_data)
+                                
                                 # Buscar ou criar Lead
                                 existing_lead = Lead.objects.filter(
                                     user=user_profile,
@@ -264,13 +264,13 @@ def dashboard(request):
                                     lead_obj = Lead.objects.create(
                                         user=user_profile,
                                         search=search_obj,
-                    name=company_data['name'],
-                    address=company_data['address'],
-                    phone_maps=company_data['phone_maps'],
-                    cnpj=cnpj,
-                    viper_data=company_data['viper_data']
-                )
-            
+                                        name=company_data['name'],
+                                        address=company_data['address'],
+                                        phone_maps=company_data['phone_maps'],
+                                        cnpj=cnpj,
+                                        viper_data=company_data['viper_data']
+                                    )
+                                
                                     success, new_balance, error = debit_credits(
                                         user_profile,
                                         1,
@@ -298,7 +298,7 @@ def dashboard(request):
                                     company_data['viper_data'] = lead_obj.viper_data
                                 
                                 leads_processed += 1
-            results.append(company_data)
+                                results.append(company_data)
 
                         # Criar ou atualizar cache com os novos leads
                         if niche_normalized and location_normalized:
