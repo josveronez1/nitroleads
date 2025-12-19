@@ -137,7 +137,7 @@ class Lead(models.Model):
             models.Index(fields=['user', 'cnpj']),
             models.Index(fields=['user', 'created_at']),
             models.Index(fields=['cnpj']),
-            models.Index(fields=['cached_search']),
+            # Não precisa de índice explícito para cached_search - ForeignKey já cria índice automaticamente
         ]
 
     def __str__(self):
