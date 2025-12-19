@@ -1,0 +1,192 @@
+{% extends "lead_extractor/base.html" %}
+{% load phone_filters %}
+
+{% block title %}Resultado da Busca por CNPJ - NitroLeads{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Resultado da Busca por CNPJ</h5>
+        <a href="{% url 'simple_search' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Nova Busca
+        </a>
+    </div>
+    <div class="card-body">
+        {% if data %}
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">CNPJ</h6>
+                <p class="fw-bold fs-5">{{ cnpj }}</p>
+            </div>
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">Razão Social</h6>
+                <p class="fw-bold fs-5">{{ data.razao_social|default:"-" }}</p>
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">Nome Fantasia</h6>
+                <p>{{ data.nome_fantasia|default:"-" }}</p>
+            </div>
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">Situação</h6>
+                <span class="badge {% if data.situacao == 'ATIVA' %}bg-success{% else %}bg-warning{% endif %}">
+                    {{ data.situacao|default:"-" }}
+                </span>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <h6 class="text-muted mb-2">Endereço</h6>
+                <p>
+                    {{ data.logradouro|default:"" }} {{ data.numero|default:"" }}<br>
+                    {{ data.bairro|default:"" }}{% if data.bairro and data.cidade %}, {% endif %}{{ data.cidade|default:"" }} - {{ data.uf|default:"" }}<br>
+                    CEP: {{ data.cep|default:"-" }}
+                </p>
+            </div>
+        </div>
+
+        {% if data.telefones %}
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <h6 class="text-muted mb-2">Telefones</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for phone in data.telefones %}
+                    <span class="badge bg-primary">{{ phone|format_phone }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if data.emails %}
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <h6 class="text-muted mb-2">E-mails</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for email in data.emails %}
+                    <span class="badge bg-info text-dark">{{ email }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if data.socios_qsa and data.socios_qsa.socios %}
+        <hr>
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <h6 class="text-muted mb-3">Sócios / Decisores</h6>
+                <div class="list-group">
+                    {% for socio in data.socios_qsa.socios %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="fw-bold">{{ socio.NOME|title }}</div>
+                                <small class="text-muted">{{ socio.CARGO|default:"Sócio/Admin"|title }}</small>
+                            </div>
+                            {% if socio.CPF %}
+                            <button class="btn btn-sm btn-outline-primary search-cpf-btn" 
+                                    data-cpf="{{ socio.CPF }}"
+                                    data-name="{{ socio.NOME }}"
+                                    title="Buscar dados por CPF">
+                                <i class="fas fa-search"></i> Buscar CPF
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="alert alert-info mt-3">
+            <i class="fas fa-info-circle me-2"></i>
+            Créditos disponíveis: <strong>{{ available_credits }}</strong>
+        </div>
+
+        {% else %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Nenhum dado encontrado para este CNPJ.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal para resultados de busca por CPF -->
+<div class="modal fade" id="cpfResultModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Resultados da Busca por CPF</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="cpfResultContent">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Busca por CPF inline
+    function searchCpfInline(cpf, name) {
+        const modal = new bootstrap.Modal(document.getElementById('cpfResultModal'));
+        document.getElementById('cpfResultContent').innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
+        modal.show();
+        
+        const csrfTokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
+        const csrfToken = csrfTokenElement ? csrfTokenElement.value : '';
+        fetch('{% url "search_by_cpf" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': csrfToken
+            },
+            body: 'cpf=' + encodeURIComponent(cpf)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                let html = `<h6>CPF: ${cpf}</h6><h6>Nome: ${name}</h6><hr>`;
+                if (data.data.telefones && data.data.telefones.length > 0) {
+                    html += '<h6>Telefones:</h6><ul>';
+                    data.data.telefones.forEach(phone => html += `<li>${phone}</li>`);
+                    html += '</ul>';
+                }
+                if (data.data.emails && data.data.emails.length > 0) {
+                    html += '<h6>Emails:</h6><ul>';
+                    data.data.emails.forEach(email => html += `<li>${email}</li>`);
+                    html += '</ul>';
+                }
+                document.getElementById('cpfResultContent').innerHTML = html;
+            } else {
+                document.getElementById('cpfResultContent').innerHTML = `<div class="alert alert-danger">${data.error || 'Erro na busca'}</div>`;
+            }
+        })
+        .catch(error => {
+            document.getElementById('cpfResultContent').innerHTML = '<div class="alert alert-danger">Erro ao buscar dados do CPF</div>';
+        });
+    }
+
+    document.querySelectorAll('.search-cpf-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            searchCpfInline(this.getAttribute('data-cpf'), this.getAttribute('data-name'));
+        });
+    });
+</script>
+{% endblock %}
+

@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from decouple import config
 from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
-    get_partners_internal, get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper,
+    get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper,
     normalize_niche, normalize_location, get_cached_search, create_cached_search, get_leads_from_cache, search_incremental,
     wait_for_partners_processing
 )
@@ -17,6 +17,9 @@ from .stripe_service import create_checkout_session, create_custom_checkout_sess
 from .decorators import require_user_profile, validate_user_ownership
 import csv
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 def login_view(request):
     """
@@ -54,9 +57,6 @@ def dashboard(request):
     Dashboard principal para busca de leads.
     Garante que leads salvos sejam apenas do usuário.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
     user_profile = request.user_profile
     
     # Middleware já garante que user_profile existe, mas verificamos por segurança
@@ -220,7 +220,7 @@ def dashboard(request):
                                     results.append(company_data)
                     else:
                         # Busca completa (sem cache ou cache insuficiente)
-                        places = search_google_maps(search_term)
+        places = search_google_maps(search_term)
                         filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
                         existing_cnpjs = existing_cnpjs_set
                         
@@ -235,21 +235,21 @@ def dashboard(request):
                             if leads_processed >= quantity:
                                 break
                             
-                            company_data = {
-                                'name': place.get('title'),
-                                'address': place.get('address'),
-                                'phone_maps': place.get('phoneNumber'),
-                                'cnpj': None,
+            company_data = {
+                'name': place.get('title'),
+                'address': place.get('address'),
+                'phone_maps': place.get('phoneNumber'),
+                'cnpj': None,
                                 'viper_data': {}
-                            }
-                            
-                            cnpj = find_cnpj_by_name(company_data['name'])
-                            if cnpj:
-                                company_data['cnpj'] = cnpj
-                                public_data = enrich_company_viper(cnpj)
-                                if public_data:
-                                    company_data['viper_data'].update(public_data)
-                                
+            }
+            
+            cnpj = find_cnpj_by_name(company_data['name'])
+            if cnpj:
+                company_data['cnpj'] = cnpj
+                public_data = enrich_company_viper(cnpj)
+                if public_data:
+                    company_data['viper_data'].update(public_data)
+                
                                 # Buscar ou criar Lead
                                 existing_lead = Lead.objects.filter(
                                     user=user_profile,
@@ -264,13 +264,13 @@ def dashboard(request):
                                     lead_obj = Lead.objects.create(
                                         user=user_profile,
                                         search=search_obj,
-                                        name=company_data['name'],
-                                        address=company_data['address'],
-                                        phone_maps=company_data['phone_maps'],
-                                        cnpj=cnpj,
-                                        viper_data=company_data['viper_data']
-                                    )
-                                    
+                    name=company_data['name'],
+                    address=company_data['address'],
+                    phone_maps=company_data['phone_maps'],
+                    cnpj=cnpj,
+                    viper_data=company_data['viper_data']
+                )
+            
                                     success, new_balance, error = debit_credits(
                                         user_profile,
                                         1,
@@ -298,7 +298,7 @@ def dashboard(request):
                                     company_data['viper_data'] = lead_obj.viper_data
                                 
                                 leads_processed += 1
-                                results.append(company_data)
+            results.append(company_data)
 
                         # Criar ou atualizar cache com os novos leads
                         if niche_normalized and location_normalized:
@@ -560,10 +560,15 @@ def search_by_cnpj(request):
         data = search_cnpj_viper(cnpj)
         
         if data:
-            # Buscar sócios também usando FILA
+            # Buscar sócios também usando FILA (síncrono)
             queue_result = get_partners_internal_queued(cnpj, user_profile)
-            # Retornar queue_id para o frontend fazer polling
-            data['queue_id'] = queue_result.get('queue_id')
+            queue_id = queue_result.get('queue_id')
+            
+            # Aguardar processamento (com timeout)
+            if queue_id:
+                partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+                if partners_data:
+                    data['socios_qsa'] = partners_data
             
             # Debitar crédito
             success, new_balance, error = debit_credits(
@@ -638,9 +643,6 @@ def create_checkout(request):
     """
     Cria sessão de checkout do Stripe.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
     user_profile = request.user_profile
     
     if request.method == 'POST':
@@ -676,9 +678,6 @@ def create_custom_checkout(request):
     """
     Cria sessão de checkout customizada do Stripe para quantidade personalizada de créditos.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
     user_profile = request.user_profile
     
     if request.method == 'POST':
@@ -716,11 +715,7 @@ def stripe_webhook(request):
     """
     Endpoint para receber webhooks do Stripe.
     """
-    import json
     import stripe
-    import logging
-    
-    logger = logging.getLogger(__name__)
     
     payload = request.body
     sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
