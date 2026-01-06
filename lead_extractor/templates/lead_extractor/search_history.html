@@ -1,4 +1,5 @@
 {% extends "lead_extractor/base.html" %}
+{% load phone_filters %}
 
 {% block title %}Minhas Pesquisas - NitroLeads{% endblock %}
 
@@ -10,6 +11,20 @@
     .search-card:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
+    }
+    .last-search-badge {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .enrichment-mode .lead-checkbox {
+        display: block;
+    }
+    .lead-checkbox {
+        display: none;
     }
 </style>
 {% endblock %}
@@ -24,11 +39,28 @@
 
 {% if searches %}
     {% for search in searches %}
-    <div class="card mb-3 search-card">
+    {% with is_last_search=search.id|add:0 == last_search_id|add:0 %}
+    <div class="card mb-3 search-card" id="search-card-{{ search.id }}">
         <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h5 class="mb-1">{{ search.niche }} em {{ search.location }}</h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <h5 class="mb-1">{{ search.niche }} em {{ search.location }}</h5>
+                        {% if is_last_search %}
+                        <span class="last-search-badge">
+                            <i class="fas fa-star"></i> Última Pesquisa
+                        </span>
+                        {% endif %}
+                        {% if search.status == 'processing' %}
+                        <span class="badge bg-warning">
+                            <i class="fas fa-spinner fa-spin"></i> Processando...
+                        </span>
+                        {% elif search.status == 'failed' %}
+                        <span class="badge bg-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Falhou
+                        </span>
+                        {% endif %}
+                    </div>
                     <small class="text-muted">
                         <i class="fas fa-calendar me-1"></i> {{ search.created_at|date:"d/m/Y H:i" }}
                     </small>
@@ -54,6 +86,12 @@
                     <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success">
                         <i class="fas fa-download"></i> Exportar
                     </a>
+                    {% if not is_last_search and search.status == 'completed' %}
+                    <button class="btn btn-sm btn-outline-primary ms-2" type="button" 
+                            onclick="toggleEnrichmentMode({{ search.id }})" id="enrich-btn-{{ search.id }}">
+                        <i class="fas fa-magic"></i> Enriquecer Lista
+                    </button>
+                    {% endif %}
                 </div>
             </div>
             <div>
@@ -61,28 +99,77 @@
                         data-bs-target="#search-{{ search.id }}" aria-expanded="false">
                     <i class="fas fa-chevron-down"></i> Ver leads
                 </button>
+                <button class="btn btn-sm btn-success ms-2" type="button" 
+                        onclick="confirmEnrichment({{ search.id }})" 
+                        id="confirm-enrich-btn-{{ search.id }}" 
+                        style="display: none;">
+                    <i class="fas fa-check"></i> Confirmar Enriquecimento
+                </button>
             </div>
             <div class="collapse mt-3" id="search-{{ search.id }}">
                 <div class="table-responsive">
                     <table class="table table-sm table-hover">
                         <thead>
                             <tr>
+                                <th style="width: 40px;" class="lead-checkbox">
+                                    <input type="checkbox" id="select-all-{{ search.id }}" 
+                                           onchange="toggleAllLeads({{ search.id }})">
+                                </th>
                                 <th>Empresa</th>
                                 <th>CNPJ</th>
                                 <th>Endereço</th>
+                                {% if is_last_search %}
+                                <th>Contatos</th>
+                                <th>Sócios</th>
+                                {% endif %}
                             </tr>
                         </thead>
                         <tbody>
                             {% for lead in search.leads.all|slice:":20" %}
                             <tr>
+                                <td class="lead-checkbox">
+                                    <input type="checkbox" class="lead-checkbox-input" 
+                                           data-lead-id="{{ lead.id }}" 
+                                           data-search-id="{{ search.id }}">
+                                </td>
                                 <td>{{ lead.name }}</td>
                                 <td>{{ lead.cnpj|default:"-" }}</td>
                                 <td>{{ lead.address|default:"-" }}</td>
+                                {% if is_last_search %}
+                                <td>
+                                    {% if lead.viper_data %}
+                                        {% for phone in lead.viper_data|get_phones %}
+                                        <div class="badge bg-light text-dark">{{ phone|format_phone }}</div>
+                                        {% endfor %}
+                                        {% for email in lead.viper_data|get_emails %}
+                                        <div class="badge bg-light text-dark">✉️ {{ email }}</div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="text-muted small">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                                        {% for socio in lead.viper_data.socios_qsa.socios|slice:":3" %}
+                                        <div class="small">
+                                            <strong>{{ socio.NOME|default:socio.nome }}</strong>
+                                            <span class="text-muted">({{ socio.CARGO|default:socio.qualificacao|default:"Sócio" }})</span>
+                                        </div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="text-muted small">-</span>
+                                    {% endif %}
+                                </td>
+                                {% else %}
+                                <td colspan="2" class="text-muted small">
+                                    <i class="fas fa-lock"></i> Dados sensíveis ocultos. Use "Enriquecer Lista" para revelar.
+                                </td>
+                                {% endif %}
                             </tr>
                             {% endfor %}
                             {% if search.leads.count > 20 %}
                             <tr>
-                                <td colspan="3" class="text-center text-muted">
+                                <td colspan="{% if is_last_search %}6{% else %}5{% endif %}" class="text-center text-muted">
                                     ... e mais {{ search.leads.count|add:"-20" }} lead(s)
                                 </td>
                             </tr>
@@ -93,6 +180,7 @@
             </div>
         </div>
     </div>
+    {% endwith %}
     {% endfor %}
 
     <!-- Paginação -->
@@ -124,4 +212,167 @@
         <a href="{% url 'dashboard' %}">Começar uma nova pesquisa</a>
     </div>
 {% endif %}
+
+<!-- Modal de Confirmação de Enriquecimento -->
+<div class="modal fade" id="enrichmentConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar Enriquecimento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Será cobrado <strong id="enrichment-cost">0</strong> crédito(s) para enriquecer os leads selecionados.</p>
+                <p class="text-muted small">1 crédito por lead enriquecido.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirm-enrichment-btn" onclick="processEnrichment()">
+                    Confirmar e Enriquecer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentEnrichmentSearchId = null;
+    let selectedLeads = {};
+
+    function toggleEnrichmentMode(searchId) {
+        const card = document.getElementById(`search-card-${searchId}`);
+        const checkboxes = card.querySelectorAll('.lead-checkbox');
+        const enrichBtn = document.getElementById(`enrich-btn-${searchId}`);
+        const confirmBtn = document.getElementById(`confirm-enrich-btn-${searchId}`);
+        
+        if (card.classList.contains('enrichment-mode')) {
+            // Desativar modo
+            card.classList.remove('enrichment-mode');
+            checkboxes.forEach(cb => cb.style.display = 'none');
+            enrichBtn.innerHTML = '<i class="fas fa-magic"></i> Enriquecer Lista';
+            confirmBtn.style.display = 'none';
+            // Desmarcar todos
+            card.querySelectorAll('.lead-checkbox-input').forEach(cb => cb.checked = false);
+            selectedLeads[searchId] = [];
+        } else {
+            // Ativar modo
+            card.classList.add('enrichment-mode');
+            checkboxes.forEach(cb => cb.style.display = 'block');
+            enrichBtn.innerHTML = '<i class="fas fa-times"></i> Cancelar';
+            confirmBtn.style.display = 'inline-block';
+            selectedLeads[searchId] = [];
+        }
+    }
+
+    function toggleAllLeads(searchId) {
+        const card = document.getElementById(`search-card-${searchId}`);
+        const selectAll = document.getElementById(`select-all-${searchId}`);
+        const checkboxes = card.querySelectorAll('.lead-checkbox-input[data-search-id="' + searchId + '"]');
+        
+        checkboxes.forEach(cb => {
+            cb.checked = selectAll.checked;
+            if (selectAll.checked) {
+                if (!selectedLeads[searchId]) selectedLeads[searchId] = [];
+                if (!selectedLeads[searchId].includes(parseInt(cb.dataset.leadId))) {
+                    selectedLeads[searchId].push(parseInt(cb.dataset.leadId));
+                }
+            } else {
+                selectedLeads[searchId] = [];
+            }
+        });
+        
+        updateConfirmButton(searchId);
+    }
+
+    // Atualizar lista de leads selecionados quando checkbox individual é clicado
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('lead-checkbox-input')) {
+            const leadId = parseInt(e.target.dataset.leadId);
+            const searchId = parseInt(e.target.dataset.searchId);
+            
+            if (!selectedLeads[searchId]) selectedLeads[searchId] = [];
+            
+            if (e.target.checked) {
+                if (!selectedLeads[searchId].includes(leadId)) {
+                    selectedLeads[searchId].push(leadId);
+                }
+            } else {
+                selectedLeads[searchId] = selectedLeads[searchId].filter(id => id !== leadId);
+            }
+            
+            updateConfirmButton(searchId);
+        }
+    });
+
+    function updateConfirmButton(searchId) {
+        const count = selectedLeads[searchId] ? selectedLeads[searchId].length : 0;
+        const confirmBtn = document.getElementById(`confirm-enrich-btn-${searchId}`);
+        if (confirmBtn) {
+            confirmBtn.innerHTML = `<i class="fas fa-check"></i> Confirmar (${count} lead${count !== 1 ? 's' : ''})`;
+            confirmBtn.disabled = count === 0;
+        }
+    }
+
+    function confirmEnrichment(searchId) {
+        const count = selectedLeads[searchId] ? selectedLeads[searchId].length : 0;
+        if (count === 0) {
+            alert('Selecione pelo menos um lead para enriquecer.');
+            return;
+        }
+        
+        currentEnrichmentSearchId = searchId;
+        document.getElementById('enrichment-cost').textContent = count;
+        const modal = new bootstrap.Modal(document.getElementById('enrichmentConfirmModal'));
+        modal.show();
+    }
+
+    function processEnrichment() {
+        if (!currentEnrichmentSearchId || !selectedLeads[currentEnrichmentSearchId] || selectedLeads[currentEnrichmentSearchId].length === 0) {
+            alert('Nenhum lead selecionado.');
+            return;
+        }
+        
+        const leadIds = selectedLeads[currentEnrichmentSearchId];
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        
+        // Fechar modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('enrichmentConfirmModal'));
+        modal.hide();
+        
+        // Mostrar loading
+        const confirmBtn = document.getElementById('confirm-enrich-btn-' + currentEnrichmentSearchId);
+        const originalText = confirmBtn.innerHTML;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
+        confirmBtn.disabled = true;
+        
+        fetch(`/search/${currentEnrichmentSearchId}/enrich/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ lead_ids: leadIds })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`✅ ${data.message}`);
+                // Recarregar página para mostrar dados atualizados
+                window.location.reload();
+            } else {
+                alert(`❌ Erro: ${data.error}`);
+                confirmBtn.innerHTML = originalText;
+                confirmBtn.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('❌ Erro ao processar enriquecimento. Tente novamente.');
+            confirmBtn.innerHTML = originalText;
+            confirmBtn.disabled = false;
+        });
+    }
+</script>
 {% endblock %}

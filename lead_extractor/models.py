@@ -75,6 +75,12 @@ class CachedSearch(models.Model):
 
 
 class Search(models.Model):
+    STATUS_CHOICES = [
+        ('processing', 'Processando'),
+        ('completed', 'Completo'),
+        ('failed', 'Falhou'),
+    ]
+    
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='searches')
     niche = models.CharField(max_length=255)
     location = models.CharField(max_length=255)
@@ -84,10 +90,15 @@ class Search(models.Model):
     search_data = models.JSONField(default=dict)  # Armazena toda a pesquisa (termos, filtros, etc)
     results_data = models.JSONField(default=dict)  # Armazena resultados completos
     cached_search = models.ForeignKey(CachedSearch, null=True, blank=True, on_delete=models.SET_NULL, related_name='user_searches')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='completed')
+    processing_started_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status', 'created_at']),
+        ]
 
     def __str__(self):
         return f"{self.niche} em {self.location} - {self.user.email}"

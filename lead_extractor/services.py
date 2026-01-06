@@ -5,10 +5,12 @@ import os
 import subprocess
 import logging
 import unicodedata
+import threading
+import copy
 from datetime import timedelta
 from django.utils import timezone
 from decouple import config
-from .models import Lead, NormalizedNiche, NormalizedLocation, CachedSearch
+from .models import Lead, NormalizedNiche, NormalizedLocation, CachedSearch, Search
 
 logger = logging.getLogger(__name__)
 
@@ -641,3 +643,314 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
                 break
     
     return new_places, existing_cnpjs
+
+
+def sanitize_lead_data(lead_data, is_last_search=False):
+    """
+    Remove dados sensíveis de leads quando não for a última pesquisa.
+    
+    Args:
+        lead_data: Dict com dados do lead (formato do dashboard)
+        is_last_search: Se True, retorna dados completos; se False, esconde dados sensíveis
+    
+    Returns:
+        dict: Dados sanitizados ou completos
+    """
+    if is_last_search:
+        return lead_data  # Mostrar tudo na última pesquisa
+    
+    # Criar cópia para não modificar o original
+    sanitized = copy.deepcopy(lead_data)
+    
+    # Esconder dados sensíveis
+    if 'viper_data' in sanitized and sanitized['viper_data']:
+        viper_data = sanitized['viper_data'].copy()
+        
+        # Remover telefones e emails
+        viper_data.pop('telefones', None)
+        viper_data.pop('emails', None)
+        
+        # Sanitizar sócios (remover CPF, manter apenas nome e cargo)
+        if 'socios_qsa' in viper_data and viper_data['socios_qsa']:
+            socios_qsa = viper_data['socios_qsa']
+            if isinstance(socios_qsa, dict) and 'socios' in socios_qsa:
+                socios_sanitized = []
+                for socio in socios_qsa['socios']:
+                    socio_sanitized = {
+                        'NOME': socio.get('NOME') or socio.get('nome', ''),
+                        'CARGO': socio.get('CARGO') or socio.get('qualificacao', ''),
+                        # CPF removido intencionalmente
+                    }
+                    socios_sanitized.append(socio_sanitized)
+                viper_data['socios_qsa'] = {'socios': socios_sanitized}
+        
+        # Remover endereço fiscal detalhado (manter apenas básico)
+        viper_data.pop('enderecos', None)
+        
+        sanitized['viper_data'] = viper_data
+    
+    return sanitized
+
+
+def process_search_async(search_id):
+    """
+    Processa uma busca de forma assíncrona em background.
+    Esta função roda em uma thread separada.
+    
+    Args:
+        search_id: ID do objeto Search a processar
+    """
+    from .models import Search as SearchModel
+    from .credit_service import debit_credits
+    from django.contrib import messages
+    
+    try:
+        search_obj = SearchModel.objects.get(id=search_id)
+        user_profile = search_obj.user
+        
+        # Marcar como processando
+        search_obj.status = 'processing'
+        search_obj.processing_started_at = timezone.now()
+        search_obj.save(update_fields=['status', 'processing_started_at'])
+        
+        # Obter dados da busca
+        niche = search_obj.niche
+        location = search_obj.location
+        quantity = search_obj.quantity_requested
+        search_term = f"{niche} em {location}"
+        
+        # Normalizar entrada
+        niche_normalized = normalize_niche(niche)
+        location_normalized = normalize_location(location)
+        
+        cached_search = None
+        use_cache = False
+        
+        # Tentar buscar do cache
+        if niche_normalized and location_normalized:
+            cached_search = get_cached_search(niche_normalized, location_normalized)
+            if cached_search and cached_search.total_leads_cached >= quantity:
+                use_cache = True
+        
+        # Atualizar cached_search no search_obj
+        if use_cache:
+            search_obj.cached_search = cached_search
+            search_obj.save(update_fields=['cached_search'])
+        
+        credits_used = 0
+        leads_processed = 0
+        existing_cnpjs = set()
+        results = []
+        
+        if use_cache:
+            # Buscar leads do cache
+            cached_results = get_leads_from_cache(cached_search, user_profile, quantity)
+            
+            for company_data in cached_results:
+                # Debitar crédito para cada lead do cache
+                success, new_balance, error = debit_credits(
+                    user_profile,
+                    1,
+                    description=f"Lead (cache): {company_data['name']}"
+                )
+                
+                if success:
+                    credits_used += 1
+                    leads_processed += 1
+                    results.append(company_data)
+                    if company_data.get('cnpj'):
+                        existing_cnpjs.add(company_data['cnpj'])
+            
+            # Verificar se precisa buscar mais (busca incremental)
+            if leads_processed < quantity:
+                additional_needed = quantity - leads_processed
+                new_places, existing_cnpjs = search_incremental(
+                    search_term, user_profile, additional_needed, existing_cnpjs
+                )
+                
+                # Processar novos lugares encontrados
+                for place in new_places:
+                    if leads_processed >= quantity:
+                        break
+                    
+                    company_data = {
+                        'name': place.get('title'),
+                        'address': place.get('address'),
+                        'phone_maps': place.get('phoneNumber'),
+                        'cnpj': None,
+                        'viper_data': {}
+                    }
+                    
+                    cnpj = find_cnpj_by_name(company_data['name'])
+                    if cnpj:
+                        company_data['cnpj'] = cnpj
+                        public_data = enrich_company_viper(cnpj)
+                        if public_data:
+                            company_data['viper_data'].update(public_data)
+                        
+                        # Buscar ou criar Lead
+                        existing_lead = Lead.objects.filter(
+                            user=user_profile,
+                            cnpj=cnpj
+                        ).first()
+                        
+                        if not existing_lead:
+                            lead_obj = Lead.objects.create(
+                                user=user_profile,
+                                search=search_obj,
+                                name=company_data['name'],
+                                address=company_data['address'],
+                                phone_maps=company_data['phone_maps'],
+                                cnpj=cnpj,
+                                viper_data=company_data['viper_data']
+                            )
+                            
+                            success, new_balance, error = debit_credits(
+                                user_profile,
+                                1,
+                                description=f"Lead: {company_data['name']}"
+                            )
+                            
+                            if success:
+                                credits_used += 1
+                        else:
+                            lead_obj = existing_lead
+                            existing_lead.last_seen_by_user = timezone.now()
+                            existing_lead.save(update_fields=['last_seen_by_user'])
+                        
+                        # Enfileirar busca de sócios (sem aguardar - processamento assíncrono)
+                        get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
+                        
+                        # Recarregar Lead após um tempo (para pegar QSA se já processado)
+                        import time
+                        time.sleep(2)  # Pequeno delay para dar tempo do processador de fila
+                        lead_obj.refresh_from_db()
+                        
+                        if lead_obj.viper_data:
+                            company_data['viper_data'] = lead_obj.viper_data
+                        
+                        leads_processed += 1
+                        results.append(company_data)
+        else:
+            # Busca completa (sem cache ou cache insuficiente)
+            places = search_google_maps(search_term)
+            filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
+            existing_cnpjs = existing_cnpjs_set
+            
+            # Atualizar search_data
+            search_obj.search_data.update({
+                'total_places_found': len(places),
+                'filtered_places': len(filtered_places),
+            })
+            search_obj.save(update_fields=['search_data'])
+            
+            # Processar até atingir a quantidade solicitada
+            for place in filtered_places[:quantity]:
+                if leads_processed >= quantity:
+                    break
+                
+                company_data = {
+                    'name': place.get('title'),
+                    'address': place.get('address'),
+                    'phone_maps': place.get('phoneNumber'),
+                    'cnpj': None,
+                    'viper_data': {}
+                }
+                
+                cnpj = find_cnpj_by_name(company_data['name'])
+                if cnpj:
+                    company_data['cnpj'] = cnpj
+                    public_data = enrich_company_viper(cnpj)
+                    if public_data:
+                        company_data['viper_data'].update(public_data)
+                    
+                    # Buscar ou criar Lead
+                    existing_lead = Lead.objects.filter(
+                        user=user_profile,
+                        cnpj=cnpj
+                    ).first()
+                    
+                    if existing_lead:
+                        lead_obj = existing_lead
+                        existing_lead.last_seen_by_user = timezone.now()
+                        existing_lead.save(update_fields=['last_seen_by_user'])
+                    else:
+                        lead_obj = Lead.objects.create(
+                            user=user_profile,
+                            search=search_obj,
+                            name=company_data['name'],
+                            address=company_data['address'],
+                            phone_maps=company_data['phone_maps'],
+                            cnpj=cnpj,
+                            viper_data=company_data['viper_data']
+                        )
+                        
+                        success, new_balance, error = debit_credits(
+                            user_profile,
+                            1,
+                            description=f"Lead: {company_data['name']}"
+                        )
+                        
+                        if not success:
+                            logger.warning(f"Erro ao debitar crédito: {error}")
+                            continue
+                        
+                        credits_used += 1
+                    
+                    # Enfileirar busca de sócios (sem aguardar - processamento assíncrono)
+                    get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
+                    
+                    # Pequeno delay para dar tempo do processador de fila
+                    import time
+                    time.sleep(2)
+                    lead_obj.refresh_from_db()
+                    
+                    if lead_obj.viper_data:
+                        company_data['viper_data'] = lead_obj.viper_data
+                    
+                    leads_processed += 1
+                    results.append(company_data)
+            
+            # Criar ou atualizar cache com os novos leads
+            if niche_normalized and location_normalized:
+                cached_search_new = get_cached_search(niche_normalized, location_normalized)
+                if not cached_search_new:
+                    cached_search_new = create_cached_search(niche_normalized, location_normalized, leads_processed)
+                
+                # Associar leads ao cache
+                if cached_search_new:
+                    Lead.objects.filter(
+                        search=search_obj,
+                        cnpj__isnull=False
+                    ).exclude(cnpj='').update(cached_search=cached_search_new)
+                    
+                    search_obj.cached_search = cached_search_new
+                    search_obj.save(update_fields=['cached_search'])
+        
+        # Atualizar search_obj com resultados
+        search_obj.results_count = leads_processed
+        search_obj.credits_used = credits_used
+        search_obj.results_data = {
+            'leads': [
+                {
+                    'name': r['name'],
+                    'cnpj': r.get('cnpj'),
+                }
+                for r in results
+            ]
+        }
+        search_obj.status = 'completed'
+        search_obj.save(update_fields=['results_count', 'credits_used', 'results_data', 'status'])
+        
+        logger.info(f"Busca {search_id} processada com sucesso: {leads_processed} leads, {credits_used} créditos")
+        
+    except SearchModel.DoesNotExist:
+        logger.error(f"Search {search_id} não encontrado")
+    except Exception as e:
+        logger.error(f"Erro ao processar busca {search_id}: {e}", exc_info=True)
+        try:
+            search_obj = SearchModel.objects.get(id=search_id)
+            search_obj.status = 'failed'
+            search_obj.save(update_fields=['status'])
+        except:
+            pass

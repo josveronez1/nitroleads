@@ -9,8 +9,9 @@ from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
     get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper,
     normalize_niche, normalize_location, get_cached_search, create_cached_search, get_leads_from_cache, search_incremental,
-    wait_for_partners_processing
+    wait_for_partners_processing, process_search_async, sanitize_lead_data
 )
+import threading
 from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation
 from .credit_service import debit_credits, check_credits
 from .stripe_service import create_checkout_session, create_custom_checkout_session, handle_webhook_event, CREDIT_PACKAGES, CREDIT_PRICE, MIN_CREDITS, MAX_CREDITS
@@ -104,234 +105,27 @@ def dashboard(request):
                             # Cache tem leads suficientes
                             use_cache = True
                     
-                    # Criar objeto Search para salvar
+                    # Criar objeto Search com status 'processing' para processamento assíncrono
                     search_obj = Search.objects.create(
                         user=user_profile,
                         niche=niche,
                         location=location,
                         quantity_requested=quantity,
                         cached_search=cached_search if use_cache else None,
+                        status='processing',
+                        processing_started_at=timezone.now(),
                         search_data={
                             'query': search_term,
                             'from_cache': use_cache,
                         }
                     )
                     
-                    credits_used = 0
-                    leads_processed = 0
-                    existing_cnpjs = set()
+                    # Iniciar processamento em background
+                    thread = threading.Thread(target=process_search_async, args=(search_obj.id,))
+                    thread.daemon = True
+                    thread.start()
                     
-                    if use_cache:
-                        # Buscar leads do cache
-                        cached_results = get_leads_from_cache(cached_search, user_profile, quantity)
-                        
-                        for company_data in cached_results:
-                            # Debitar crédito para cada lead do cache (mesmo preço)
-                            success, new_balance, error = debit_credits(
-                                user_profile,
-                                1,
-                                description=f"Lead (cache): {company_data['name']}"
-                            )
-                            
-                            if success:
-                                credits_used += 1
-                                leads_processed += 1
-                                results.append(company_data)
-                                if company_data.get('cnpj'):
-                                    existing_cnpjs.add(company_data['cnpj'])
-                            else:
-                                messages.warning(request, f'Erro ao debitar crédito: {error}')
-                        
-                        # Verificar se precisa buscar mais (busca incremental)
-                        if leads_processed < quantity:
-                            additional_needed = quantity - leads_processed
-                            new_places, existing_cnpjs = search_incremental(
-                                search_term, user_profile, additional_needed, existing_cnpjs
-                            )
-                            
-                            # Processar novos lugares encontrados
-                            for place in new_places:
-                                if leads_processed >= quantity:
-                                    break
-                                
-                                company_data = {
-                                    'name': place.get('title'),
-                                    'address': place.get('address'),
-                                    'phone_maps': place.get('phoneNumber'),
-                                    'cnpj': None,
-                                    'viper_data': {}
-                                }
-                                
-                                cnpj = find_cnpj_by_name(company_data['name'])
-                                if cnpj:
-                                    company_data['cnpj'] = cnpj
-                                    public_data = enrich_company_viper(cnpj)
-                                    if public_data:
-                                        company_data['viper_data'].update(public_data)
-                                    
-                                    # Buscar ou criar Lead
-                                    existing_lead = Lead.objects.filter(
-                                        user=user_profile,
-                                        cnpj=cnpj
-                                    ).first()
-                                    
-                                    if not existing_lead:
-                                        lead_obj = Lead.objects.create(
-                                            user=user_profile,
-                                            search=search_obj,
-                                            name=company_data['name'],
-                                            address=company_data['address'],
-                                            phone_maps=company_data['phone_maps'],
-                                            cnpj=cnpj,
-                                            viper_data=company_data['viper_data']
-                                        )
-                                        
-                                        success, new_balance, error = debit_credits(
-                                            user_profile,
-                                            1,
-                                            description=f"Lead: {company_data['name']}"
-                                        )
-                                        
-                                        if not success:
-                                            messages.warning(request, f'Erro ao debitar crédito: {error}')
-                                            continue
-                                        
-                                        credits_used += 1
-                                    else:
-                                        lead_obj = existing_lead
-                                        existing_lead.last_seen_by_user = timezone.now()
-                                        existing_lead.save(update_fields=['last_seen_by_user'])
-                                    
-                                    # Enfileirar busca de sócios e aguardar processamento
-                                    queue_result = get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
-                                    queue_id = queue_result.get('queue_id')
-                                    
-                                    # Aguardar processamento (com timeout)
-                                    partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
-                                    
-                                    # Recarregar Lead para pegar dados atualizados
-                                    lead_obj.refresh_from_db()
-                                    
-                                    # Atualizar company_data com dados completos do Lead
-                                    if lead_obj.viper_data:
-                                        company_data['viper_data'] = lead_obj.viper_data
-                                    
-                                    leads_processed += 1
-                                    results.append(company_data)
-                    else:
-                        # Busca completa (sem cache ou cache insuficiente)
-                        places = search_google_maps(search_term)
-                        filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
-                        existing_cnpjs = existing_cnpjs_set
-                        
-                        # Atualizar search_data
-                        search_obj.search_data.update({
-                            'total_places_found': len(places),
-                            'filtered_places': len(filtered_places),
-                        })
-                        
-                        # Processar até atingir a quantidade solicitada
-                        for place in filtered_places[:quantity]:
-                            if leads_processed >= quantity:
-                                break
-                            
-                            company_data = {
-                                'name': place.get('title'),
-                                'address': place.get('address'),
-                                'phone_maps': place.get('phoneNumber'),
-                                'cnpj': None,
-                                'viper_data': {}
-                            }
-                            
-                            cnpj = find_cnpj_by_name(company_data['name'])
-                            if cnpj:
-                                company_data['cnpj'] = cnpj
-                                public_data = enrich_company_viper(cnpj)
-                                if public_data:
-                                    company_data['viper_data'].update(public_data)
-                                
-                                # Buscar ou criar Lead
-                                existing_lead = Lead.objects.filter(
-                                    user=user_profile,
-                                    cnpj=cnpj
-                                ).first()
-                                
-                                if existing_lead:
-                                    lead_obj = existing_lead
-                                    existing_lead.last_seen_by_user = timezone.now()
-                                    existing_lead.save(update_fields=['last_seen_by_user'])
-                                else:
-                                    lead_obj = Lead.objects.create(
-                                        user=user_profile,
-                                        search=search_obj,
-                                        name=company_data['name'],
-                                        address=company_data['address'],
-                                        phone_maps=company_data['phone_maps'],
-                                        cnpj=cnpj,
-                                        viper_data=company_data['viper_data']
-                                    )
-                                
-                                    success, new_balance, error = debit_credits(
-                                        user_profile,
-                                        1,
-                                        description=f"Lead: {company_data['name']}"
-                                    )
-                                    
-                                    if not success:
-                                        messages.warning(request, f'Erro ao debitar crédito: {error}')
-                                        continue
-                                    
-                                    credits_used += 1
-                                
-                                # Enfileirar busca de sócios e aguardar processamento
-                                queue_result = get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
-                                queue_id = queue_result.get('queue_id')
-                                
-                                # Aguardar processamento (com timeout)
-                                partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
-                                
-                                # Recarregar Lead para pegar dados atualizados
-                                lead_obj.refresh_from_db()
-                                
-                                # Atualizar company_data com dados completos do Lead
-                                if lead_obj.viper_data:
-                                    company_data['viper_data'] = lead_obj.viper_data
-                                
-                                leads_processed += 1
-                                results.append(company_data)
-
-                        # Criar ou atualizar cache com os novos leads
-                        if niche_normalized and location_normalized:
-                            # Buscar ou criar cache
-                            cached_search_new = get_cached_search(niche_normalized, location_normalized)
-                            if not cached_search_new:
-                                cached_search_new = create_cached_search(niche_normalized, location_normalized, leads_processed)
-                            
-                            # Associar leads ao cache e atualizar search_obj
-                            if cached_search_new:
-                                Lead.objects.filter(
-                                    search=search_obj,
-                                    cnpj__isnull=False
-                                ).exclude(cnpj='').update(cached_search=cached_search_new)
-                                
-                                search_obj.cached_search = cached_search_new
-                                search_obj.save(update_fields=['cached_search'])
-                    
-                    # Atualizar search_obj com resultados
-                    search_obj.results_count = leads_processed
-                    search_obj.credits_used = credits_used
-                    search_obj.results_data = {
-                        'leads': [
-                            {
-                                'name': r['name'],
-                                'cnpj': r.get('cnpj'),
-                            }
-                            for r in results
-                        ]
-                    }
-                    search_obj.save()
-                    
-                    messages.success(request, f'Busca concluída! {leads_processed} leads encontrados. {credits_used} créditos utilizados.')
+                    messages.info(request, f'Sua busca está sendo processada. Você pode sair desta página e verificar os resultados em "Minhas Pesquisas" em alguns instantes.')
     
     except Exception as e:
         logger.error(f"Erro ao processar busca no dashboard: {e}", exc_info=True)
@@ -387,11 +181,17 @@ def export_leads_csv(request, search_id=None):
     leads = Lead.objects.filter(user=user_profile).order_by('-created_at')
     
     # Se search_id fornecido, validar ownership e filtrar por pesquisa
+    is_last_search = False
     if search_id:
         try:
             # Garantir que a pesquisa pertence ao usuário
             search_obj = Search.objects.get(id=search_id, user=user_profile)
             leads = leads.filter(search=search_obj)
+            
+            # Verificar se é a última pesquisa (mais recente)
+            last_search = Search.objects.filter(user=user_profile).order_by('-created_at').first()
+            if last_search and last_search.id == search_id:
+                is_last_search = True
         except Search.DoesNotExist:
             messages.error(request, 'Pesquisa não encontrada ou você não tem permissão para acessá-la.')
             return redirect('dashboard')
@@ -399,40 +199,46 @@ def export_leads_csv(request, search_id=None):
     for lead in leads:
         viper = lead.viper_data or {}
         
-        # 1. Telefones Viper
-        phones_list = viper.get('telefones', [])
-        phones_str = " | ".join([str(p) for p in phones_list if p])
-        
-        # 2. Emails
-        emails_list = viper.get('emails', [])
-        emails_str = " | ".join([str(e) for e in emails_list if e])
-        
-        # 3. Sócios (CORREÇÃO AQUI)
-        socios_str = ""
-        qsa = viper.get('socios_qsa')
-        # Verifica se qsa existe e se tem a chave 'socios' dentro
-        if qsa and isinstance(qsa, dict) and 'socios' in qsa:
-            lista_socios = qsa['socios']
-            names = []
-            for s in lista_socios:
-                # Tenta pegar NOME (maiúsculo) ou nome (minúsculo)
-                nome = s.get('NOME') or s.get('nome')
-                cargo = s.get('CARGO') or s.get('qualificacao') or ''
-                if nome:
-                    names.append(f"{nome} ({cargo})")
-            socios_str = " | ".join(names)
+        # Se não for última pesquisa, esconder dados sensíveis
+        if not is_last_search:
+            # Apenas dados básicos
+            phones_str = ""
+            emails_str = ""
+            socios_str = ""
+            endereco_fiscal_str = ""
+        else:
+            # 1. Telefones Viper
+            phones_list = viper.get('telefones', [])
+            phones_str = " | ".join([str(p) for p in phones_list if p])
+            
+            # 2. Emails
+            emails_list = viper.get('emails', [])
+            emails_str = " | ".join([str(e) for e in emails_list if e])
+            
+            # 3. Sócios (sem CPF)
+            socios_str = ""
+            qsa = viper.get('socios_qsa')
+            if qsa and isinstance(qsa, dict) and 'socios' in qsa:
+                lista_socios = qsa['socios']
+                names = []
+                for s in lista_socios:
+                    nome = s.get('NOME') or s.get('nome')
+                    cargo = s.get('CARGO') or s.get('qualificacao') or ''
+                    if nome:
+                        names.append(f"{nome} ({cargo})")
+                socios_str = " | ".join(names)
 
-        # 4. Endereço Fiscal (Viper)
-        endereco_fiscal_str = ""
-        lista_ends = viper.get('enderecos', [])
-        if lista_ends and len(lista_ends) > 0:
-            end = lista_ends[0]
-            logradouro = end.get('LOGRADOURO') or end.get('logradouro') or ''
-            numero = end.get('NUMERO') or end.get('numero') or ''
-            bairro = end.get('BAIRRO') or end.get('bairro') or ''
-            cidade = end.get('CIDADE') or end.get('cidade') or ''
-            uf = end.get('UF') or end.get('uf') or ''
-            endereco_fiscal_str = f"{logradouro}, {numero} - {bairro}, {cidade}/{uf}"
+            # 4. Endereço Fiscal (Viper)
+            endereco_fiscal_str = ""
+            lista_ends = viper.get('enderecos', [])
+            if lista_ends and len(lista_ends) > 0:
+                end = lista_ends[0]
+                logradouro = end.get('LOGRADOURO') or end.get('logradouro') or ''
+                numero = end.get('NUMERO') or end.get('numero') or ''
+                bairro = end.get('BAIRRO') or end.get('bairro') or ''
+                cidade = end.get('CIDADE') or end.get('cidade') or ''
+                uf = end.get('UF') or end.get('uf') or ''
+                endereco_fiscal_str = f"{logradouro}, {numero} - {bairro}, {cidade}/{uf}"
 
         writer.writerow([
             lead.name,
@@ -467,9 +273,11 @@ def simple_search(request):
 
 
 @require_user_profile
+@require_user_profile
 def search_by_cpf(request):
     """
     Busca dados por CPF usando API Viper.
+    Sempre retorna JSON (para uso via AJAX).
     """
     user_profile = request.user_profile
     
@@ -477,20 +285,12 @@ def search_by_cpf(request):
         cpf = request.POST.get('cpf', '').strip()
         
         if not cpf:
-            error_msg = 'CPF não fornecido'
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': error_msg}, status=400)
-            messages.error(request, error_msg)
-            return redirect('simple_search')
+            return JsonResponse({'error': 'CPF não fornecido'}, status=400)
         
         # Verificar créditos
         available_credits = check_credits(user_profile)
         if available_credits < 1:
-            error_msg = 'Créditos insuficientes'
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': error_msg}, status=402)
-            messages.error(request, error_msg)
-            return redirect('simple_search')
+            return JsonResponse({'error': 'Créditos insuficientes'}, status=402)
         
         # Buscar dados do CPF
         data = search_cpf_viper(cpf)
@@ -504,36 +304,17 @@ def search_by_cpf(request):
             )
             
             if success:
-                # Salvar no banco se necessário
-                # Nota: busca por CPF não salva leads automaticamente, apenas retorna dados
-                
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse({
-                        'success': True,
-                        'data': data,
-                        'credits_remaining': new_balance
-                    })
-                
-                messages.success(request, 'Busca realizada com sucesso!')
-                context = {
-                    'cpf': cpf,
+                return JsonResponse({
+                    'success': True,
                     'data': data,
-                    'user_profile': user_profile,
-                    'available_credits': new_balance,
-                }
-                return render(request, 'lead_extractor/cpf_result.html', context)
+                    'credits_remaining': new_balance
+                })
             else:
-                error_msg = f'Erro ao debitar crédito: {error}'
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse({'error': error_msg}, status=500)
-                messages.error(request, error_msg)
+                return JsonResponse({'error': f'Erro ao debitar crédito: {error}'}, status=500)
         else:
-            error_msg = 'CPF não encontrado ou erro na busca'
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': error_msg}, status=404)
-            messages.error(request, error_msg)
+            return JsonResponse({'error': 'CPF não encontrado ou erro na busca'}, status=404)
     
-    return redirect('simple_search')
+    return JsonResponse({'error': 'Método não permitido'}, status=405)
 
 
 @require_user_profile
@@ -599,11 +380,17 @@ def search_history(request):
     """
     Visualiza pesquisas antigas do usuário.
     Garante que apenas pesquisas do usuário sejam exibidas.
+    Dados sensíveis são escondidos exceto na última pesquisa.
     """
     user_profile = request.user_profile
     
     # Garantir que apenas pesquisas do usuário sejam listadas
-    searches = Search.objects.filter(user=user_profile).order_by('-created_at')
+    searches = Search.objects.filter(user=user_profile).select_related('user', 'cached_search').prefetch_related('leads').order_by('-created_at')
+    
+    # Identificar última pesquisa (mais recente)
+    last_search_id = None
+    if searches.exists():
+        last_search_id = searches.first().id
     
     # Paginação
     paginator = Paginator(searches, 20)  # 20 por página
@@ -612,6 +399,7 @@ def search_history(request):
     
     context = {
         'searches': page_obj,
+        'last_search_id': last_search_id,
         'user_profile': user_profile,
         'available_credits': check_credits(user_profile),
     }
@@ -884,3 +672,122 @@ def api_autocomplete_locations(request):
     except Exception as e:
         logger.error(f"Erro ao buscar localizações para autocomplete: {e}", exc_info=True)
         return JsonResponse({'results': []})
+
+
+@require_user_profile
+def api_search_status(request, search_id):
+    """
+    Endpoint para verificar status de uma busca.
+    GET /api/search/<int:search_id>/status/
+    """
+    user_profile = request.user_profile
+    
+    try:
+        search_obj = Search.objects.get(id=search_id, user=user_profile)
+        
+        return JsonResponse({
+            'status': search_obj.status,
+            'results_count': search_obj.results_count,
+            'credits_used': search_obj.credits_used,
+            'processing_started_at': search_obj.processing_started_at.isoformat() if search_obj.processing_started_at else None,
+            'created_at': search_obj.created_at.isoformat(),
+        })
+    except Search.DoesNotExist:
+        return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
+
+
+@require_user_profile
+def enrich_leads(request, search_id):
+    """
+    Enriquece leads selecionados de uma pesquisa.
+    POST /search/<int:search_id>/enrich/
+    Body: {'lead_ids': [1, 2, 3]}
+    """
+    user_profile = request.user_profile
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+    
+    try:
+        # Validar que a pesquisa pertence ao usuário
+        search_obj = Search.objects.get(id=search_id, user=user_profile)
+        
+        # Obter IDs dos leads a enriquecer
+        data = json.loads(request.body) if request.body else {}
+        lead_ids = data.get('lead_ids', [])
+        
+        if not lead_ids:
+            return JsonResponse({'error': 'Nenhum lead selecionado'}, status=400)
+        
+        # Validar créditos suficientes
+        available_credits = check_credits(user_profile)
+        if available_credits < len(lead_ids):
+            return JsonResponse({
+                'error': f'Créditos insuficientes. Necessário: {len(lead_ids)}, Disponível: {available_credits}'
+            }, status=402)
+        
+        # Buscar leads (apenas do usuário e da pesquisa)
+        leads_to_enrich = Lead.objects.filter(
+            id__in=lead_ids,
+            user=user_profile,
+            search=search_obj
+        )
+        
+        if leads_to_enrich.count() != len(lead_ids):
+            return JsonResponse({'error': 'Alguns leads não foram encontrados ou não pertencem a esta pesquisa'}, status=400)
+        
+        credits_used = 0
+        enriched_count = 0
+        
+        # Processar cada lead
+        for lead in leads_to_enrich:
+            if not lead.cnpj:
+                continue
+            
+            # Buscar dados faltantes
+            public_data = enrich_company_viper(lead.cnpj)
+            if public_data:
+                # Atualizar viper_data com novos dados
+                if not lead.viper_data:
+                    lead.viper_data = {}
+                
+                # Adicionar telefones e emails se não existirem
+                if 'telefones' in public_data and public_data['telefones']:
+                    if 'telefones' not in lead.viper_data or not lead.viper_data['telefones']:
+                        lead.viper_data['telefones'] = public_data['telefones']
+                
+                if 'emails' in public_data and public_data['emails']:
+                    if 'emails' not in lead.viper_data or not lead.viper_data['emails']:
+                        lead.viper_data['emails'] = public_data['emails']
+                
+                # Buscar sócios se não existirem
+                if 'socios_qsa' not in lead.viper_data or not lead.viper_data.get('socios_qsa'):
+                    # Enfileirar busca de sócios (sem aguardar)
+                    get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
+            
+            # Debitar crédito
+            success, new_balance, error = debit_credits(
+                user_profile,
+                1,
+                description=f"Enriquecimento: {lead.name}"
+            )
+            
+            if success:
+                lead.save(update_fields=['viper_data'])
+                credits_used += 1
+                enriched_count += 1
+            else:
+                logger.warning(f"Erro ao debitar crédito para lead {lead.id}: {error}")
+        
+        return JsonResponse({
+            'success': True,
+            'enriched_count': enriched_count,
+            'credits_used': credits_used,
+            'message': f'{enriched_count} lead(s) enriquecido(s) com sucesso'
+        })
+        
+    except Search.DoesNotExist:
+        return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
+    except Exception as e:
+        logger.error(f"Erro ao enriquecer leads: {e}", exc_info=True)
+        return JsonResponse({'error': f'Erro ao enriquecer leads: {str(e)}'}, status=500)

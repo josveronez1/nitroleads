@@ -50,6 +50,21 @@
             </div>
         </div>
 
+<!-- Mensagem de Processamento -->
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            {% if message.tags == 'info' %}
+                <div class="mt-2">
+                    <a href="{% url 'search_history' %}" class="btn btn-sm btn-outline-primary">Ver Minhas Pesquisas</a>
+                </div>
+            {% endif %}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    {% endfor %}
+{% endif %}
+
 <!-- Formulário de Busca -->
 <div class="card mb-4">
     <div class="card-header">

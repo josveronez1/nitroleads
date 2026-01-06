@@ -20,7 +20,8 @@ from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
     search_by_cpf, search_by_cnpj, search_history,
     purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success,
-    viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations
+    viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
+    api_search_status, enrich_leads
 )
 
 urlpatterns = [
@@ -43,4 +44,6 @@ urlpatterns = [
     path('api/viper-queue/<int:queue_id>/result/', get_viper_result, name='get_viper_result'),
     path('api/autocomplete/niches/', api_autocomplete_niches, name='api_autocomplete_niches'),
     path('api/autocomplete/locations/', api_autocomplete_locations, name='api_autocomplete_locations'),
+    path('api/search/<int:search_id>/status/', api_search_status, name='api_search_status'),
+    path('search/<int:search_id>/enrich/', enrich_leads, name='enrich_leads'),
 ]
