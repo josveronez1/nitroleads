@@ -199,46 +199,55 @@ def export_leads_csv(request, search_id=None):
     for lead in leads:
         viper = lead.viper_data or {}
         
-        # Se não for última pesquisa, esconder dados sensíveis
-        if not is_last_search:
-            # Apenas dados básicos
-            phones_str = ""
-            emails_str = ""
-            socios_str = ""
-            endereco_fiscal_str = ""
-        else:
-            # 1. Telefones Viper
-            phones_list = viper.get('telefones', [])
-            phones_str = " | ".join([str(p) for p in phones_list if p])
-            
-            # 2. Emails
-            emails_list = viper.get('emails', [])
-            emails_str = " | ".join([str(e) for e in emails_list if e])
-            
-            # 3. Sócios (sem CPF)
-            socios_str = ""
-            qsa = viper.get('socios_qsa')
-            if qsa and isinstance(qsa, dict) and 'socios' in qsa:
-                lista_socios = qsa['socios']
-                names = []
-                for s in lista_socios:
-                    nome = s.get('NOME') or s.get('nome')
-                    cargo = s.get('CARGO') or s.get('qualificacao') or ''
-                    if nome:
-                        names.append(f"{nome} ({cargo})")
-                socios_str = " | ".join(names)
+        # Exportar dados enriquecidos apenas se estiverem disponíveis (usuário pagou para ver)
+        # 1. Telefones Viper
+        phones_list = viper.get('telefones', [])
+        phones_str = " | ".join([str(p) for p in phones_list if p]) if phones_list else ""
+        
+        # 2. Emails
+        emails_list = viper.get('emails', [])
+        emails_str = " | ".join([str(e) for e in emails_list if e]) if emails_list else ""
+        
+        # 3. Sócios (incluir nome, cargo e CPF se disponível)
+        socios_str = ""
+        qsa = viper.get('socios_qsa')
+        if qsa and isinstance(qsa, dict) and 'socios' in qsa:
+            lista_socios = qsa['socios']
+            socios_info = []
+            for s in lista_socios:
+                nome = s.get('NOME') or s.get('nome', '')
+                cargo = s.get('CARGO') or s.get('qualificacao') or 'Sócio'
+                cpf = s.get('CPF') or s.get('cpf', '')
+                
+                socio_text = f"{nome} ({cargo})"
+                if cpf:
+                    socio_text += f" - CPF: {cpf}"
+                
+                # Se tem dados de CPF enriquecidos, incluir telefones e emails
+                if s.get('cpf_enriched') and s.get('cpf_data'):
+                    cpf_data = s.get('cpf_data', {})
+                    telefones_cpf = cpf_data.get('telefones', [])
+                    emails_cpf = cpf_data.get('emails', [])
+                    
+                    if telefones_cpf:
+                        socio_text += f" - Tel: {' | '.join(telefones_cpf)}"
+                    if emails_cpf:
+                        socio_text += f" - Email: {' | '.join(emails_cpf)}"
+                
+                socios_info.append(socio_text)
+            socios_str = " || ".join(socios_info)
 
-            # 4. Endereço Fiscal (Viper)
-            endereco_fiscal_str = ""
-            lista_ends = viper.get('enderecos', [])
-            if lista_ends and len(lista_ends) > 0:
-                end = lista_ends[0]
-                logradouro = end.get('LOGRADOURO') or end.get('logradouro') or ''
-                numero = end.get('NUMERO') or end.get('numero') or ''
-                bairro = end.get('BAIRRO') or end.get('bairro') or ''
-                cidade = end.get('CIDADE') or end.get('cidade') or ''
-                uf = end.get('UF') or end.get('uf') or ''
-                endereco_fiscal_str = f"{logradouro}, {numero} - {bairro}, {cidade}/{uf}"
+        # 4. Endereço Fiscal (Viper)
+        endereco_fiscal_str = ""
+        lista_ends = viper.get('enderecos', [])
+        if lista_ends and len(lista_ends) > 0:
+            end = lista_ends[0]
+            logradouro = end.get('LOGRADOURO') or end.get('logradouro') or ''
+            numero = end.get('NUMERO') or end.get('numero') or ''
+            bairro = end.get('BAIRRO') or end.get('bairro') or ''
+            cidade = end.get('CIDADE') or end.get('cidade') or ''
+            uf = end.get('UF') or end.get('uf') or ''
+            endereco_fiscal_str = f"{logradouro}, {numero} - {bairro}, {cidade}/{uf}"
 
         writer.writerow([
             lead.name,
@@ -791,3 +800,261 @@ def enrich_leads(request, search_id):
     except Exception as e:
         logger.error(f"Erro ao enriquecer leads: {e}", exc_info=True)
         return JsonResponse({'error': f'Erro ao enriquecer leads: {str(e)}'}, status=500)
+
+
+@require_user_profile
+def search_partners(request, search_id):
+    """
+    Busca sócios (QSA) para empresas selecionadas de uma pesquisa.
+    IMPORTANTE: Sempre debita créditos, mesmo se dados já existirem no banco.
+    POST /search/<int:search_id>/partners/
+    Body: {'lead_ids': [1, 2, 3]}
+    """
+    user_profile = request.user_profile
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+    
+    try:
+        # Validar que a pesquisa pertence ao usuário
+        search_obj = Search.objects.get(id=search_id, user=user_profile)
+        
+        # Obter IDs dos leads
+        data = json.loads(request.body) if request.body else {}
+        lead_ids = data.get('lead_ids', [])
+        
+        if not lead_ids:
+            return JsonResponse({'error': 'Nenhum lead selecionado'}, status=400)
+        
+        # Validar créditos suficientes (1 crédito por empresa)
+        available_credits = check_credits(user_profile)
+        if available_credits < len(lead_ids):
+            return JsonResponse({
+                'error': f'Créditos insuficientes. Necessário: {len(lead_ids)}, Disponível: {available_credits}'
+            }, status=402)
+        
+        # Buscar leads (apenas do usuário e da pesquisa)
+        leads_to_process = Lead.objects.filter(
+            id__in=lead_ids,
+            user=user_profile,
+            search=search_obj
+        )
+        
+        if leads_to_process.count() != len(lead_ids):
+            return JsonResponse({
+                'error': 'Alguns leads não foram encontrados ou não pertencem a esta pesquisa'
+            }, status=400)
+        
+        results = []
+        credits_debited = 0
+        errors = []
+        
+        for lead in leads_to_process:
+            try:
+                # IMPORTANTE: Debitar crédito ANTES de buscar/exibir sócios
+                success, new_balance, error = debit_credits(
+                    user_profile,
+                    1,
+                    description=f"Sócios (QSA) para {lead.name} (CNPJ: {lead.cnpj})"
+                )
+                
+                if not success:
+                    errors.append(f"Erro ao debitar crédito para {lead.name}: {error}")
+                    continue
+                
+                credits_debited += 1
+                
+                # Verificar se já tem sócios salvos no banco
+                viper_data = lead.viper_data or {}
+                socios_qsa = viper_data.get('socios_qsa')
+                has_partners = socios_qsa and isinstance(socios_qsa, dict) and socios_qsa.get('socios')
+                
+                if has_partners:
+                    # Dados já existem - usar dados salvos (não fazer nova requisição à API)
+                    logger.info(f"Usando dados de sócios já salvos para Lead {lead.id} (CNPJ: {lead.cnpj})")
+                    partners_data = socios_qsa
+                else:
+                    # Dados não existem - buscar via API
+                    if not lead.cnpj:
+                        errors.append(f"Lead {lead.name} não possui CNPJ")
+                        continue
+                    
+                    queue_result = get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
+                    queue_id = queue_result.get('queue_id')
+                    
+                    if queue_id:
+                        # Aguardar processamento (timeout de 60 segundos)
+                        partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+                        
+                        if not partners_data:
+                            errors.append(f"Não foi possível obter dados de sócios para {lead.name}")
+                            continue
+                    else:
+                        errors.append(f"Erro ao enfileirar busca de sócios para {lead.name}")
+                        continue
+                
+                # Recarregar Lead para pegar dados atualizados
+                lead.refresh_from_db()
+                
+                results.append({
+                    'lead_id': lead.id,
+                    'name': lead.name,
+                    'cnpj': lead.cnpj,
+                    'partners': lead.viper_data.get('socios_qsa', {}) if lead.viper_data else {}
+                })
+                
+            except Exception as e:
+                logger.error(f"Erro ao processar lead {lead.id}: {e}", exc_info=True)
+                errors.append(f"Erro ao processar {lead.name}: {str(e)}")
+        
+        return JsonResponse({
+            'success': True,
+            'processed': len(results),
+            'credits_debited': credits_debited,
+            'results': results,
+            'errors': errors if errors else None
+        })
+        
+    except Search.DoesNotExist:
+        return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
+    except Exception as e:
+        logger.error(f"Erro ao buscar sócios: {e}", exc_info=True)
+        return JsonResponse({'error': f'Erro ao buscar sócios: {str(e)}'}, status=500)
+
+
+@require_user_profile
+def search_cpf_batch(request):
+    """
+    Busca dados de CPF em lote para sócios selecionados.
+    IMPORTANTE: Sempre debita créditos, mesmo se dados já existirem no banco.
+    POST /search/cpf/batch/
+    Body: {'cpfs': [{'lead_id': 1, 'cpf': '12345678900', 'socio_name': 'João Silva'}, ...]}
+    """
+    user_profile = request.user_profile
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+    
+    try:
+        # Obter lista de CPFs
+        data = json.loads(request.body) if request.body else {}
+        cpfs_data = data.get('cpfs', [])
+        
+        if not cpfs_data:
+            return JsonResponse({'error': 'Nenhum CPF fornecido'}, status=400)
+        
+        # Validar créditos suficientes (1 crédito por CPF)
+        available_credits = check_credits(user_profile)
+        if available_credits < len(cpfs_data):
+            return JsonResponse({
+                'error': f'Créditos insuficientes. Necessário: {len(cpfs_data)}, Disponível: {available_credits}'
+            }, status=402)
+        
+        results = []
+        credits_debited = 0
+        errors = []
+        
+        for cpf_item in cpfs_data:
+            lead_id = cpf_item.get('lead_id')
+            cpf = cpf_item.get('cpf', '').strip()
+            socio_name = cpf_item.get('socio_name', '')
+            
+            if not lead_id or not cpf:
+                errors.append(f"Dados incompletos: lead_id={lead_id}, cpf={cpf}")
+                continue
+            
+            try:
+                # Buscar lead (validar ownership)
+                lead = Lead.objects.filter(id=lead_id, user=user_profile).first()
+                if not lead:
+                    errors.append(f"Lead {lead_id} não encontrado ou não pertence ao usuário")
+                    continue
+                
+                # IMPORTANTE: Debitar crédito ANTES de buscar/exibir dados
+                success, new_balance, error = debit_credits(
+                    user_profile,
+                    1,
+                    description=f"Busca por CPF: {cpf} ({socio_name})"
+                )
+                
+                if not success:
+                    errors.append(f"Erro ao debitar crédito para CPF {cpf}: {error}")
+                    continue
+                
+                credits_debited += 1
+                
+                # Verificar se já tem dados do CPF salvos no lead
+                viper_data = lead.viper_data or {}
+                socios_qsa = viper_data.get('socios_qsa', {})
+                socios_list = socios_qsa.get('socios', []) if isinstance(socios_qsa, dict) else []
+                
+                cpf_clean = cpf.replace('.', '').replace('-', '').strip()
+                cpf_data = None
+                found_socio = None
+                
+                # Buscar sócio pelo CPF e verificar se já tem dados enriquecidos
+                for socio in socios_list:
+                    socio_cpf = str(socio.get('CPF') or socio.get('cpf') or '').replace('.', '').replace('-', '').strip()
+                    if socio_cpf == cpf_clean:
+                        found_socio = socio
+                        # Verificar se já tem dados do CPF
+                        if socio.get('cpf_enriched') and socio.get('cpf_data'):
+                            # Usar dados salvos (não fazer nova requisição à API)
+                            logger.info(f"Usando dados de CPF já salvos para {cpf}")
+                            cpf_data = socio.get('cpf_data')
+                        break
+                
+                if not found_socio:
+                    errors.append(f"Sócio com CPF {cpf} não encontrado no lead {lead_id}")
+                    continue
+                
+                if not cpf_data:
+                    # Dados não existem - buscar via API
+                    cpf_data = search_cpf_viper(cpf_clean)
+                    
+                    if not cpf_data:
+                        errors.append(f"Não foi possível obter dados para CPF {cpf}")
+                        continue
+                    
+                    # Atualizar Lead.viper_data com dados do CPF no sócio correspondente
+                    if not lead.viper_data:
+                        lead.viper_data = {}
+                    
+                    if 'socios_qsa' not in lead.viper_data:
+                        lead.viper_data['socios_qsa'] = {}
+                    
+                    if 'socios' not in lead.viper_data['socios_qsa']:
+                        lead.viper_data['socios_qsa']['socios'] = []
+                    
+                    # Atualizar sócio específico
+                    for i, socio in enumerate(lead.viper_data['socios_qsa']['socios']):
+                        socio_cpf = str(socio.get('CPF') or socio.get('cpf') or '').replace('.', '').replace('-', '').strip()
+                        if socio_cpf == cpf_clean:
+                            lead.viper_data['socios_qsa']['socios'][i]['cpf_enriched'] = True
+                            lead.viper_data['socios_qsa']['socios'][i]['cpf_data'] = cpf_data
+                            break
+                    
+                    lead.save(update_fields=['viper_data'])
+                
+                results.append({
+                    'lead_id': lead_id,
+                    'cpf': cpf,
+                    'socio_name': socio_name,
+                    'data': cpf_data
+                })
+                
+            except Exception as e:
+                logger.error(f"Erro ao processar CPF {cpf}: {e}", exc_info=True)
+                errors.append(f"Erro ao processar CPF {cpf}: {str(e)}")
+        
+        return JsonResponse({
+            'success': True,
+            'processed': len(results),
+            'credits_debited': credits_debited,
+            'results': results,
+            'errors': errors if errors else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao buscar CPFs em lote: {e}", exc_info=True)
+        return JsonResponse({'error': f'Erro ao buscar CPFs: {str(e)}'}, status=500)

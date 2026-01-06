@@ -21,7 +21,7 @@ from lead_extractor.views import (
     search_by_cpf, search_by_cnpj, search_history,
     purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success,
     viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
-    api_search_status, enrich_leads
+    api_search_status, enrich_leads, search_partners, search_cpf_batch
 )
 
 urlpatterns = [
@@ -46,4 +46,6 @@ urlpatterns = [
     path('api/autocomplete/locations/', api_autocomplete_locations, name='api_autocomplete_locations'),
     path('api/search/<int:search_id>/status/', api_search_status, name='api_search_status'),
     path('search/<int:search_id>/enrich/', enrich_leads, name='enrich_leads'),
+    path('search/<int:search_id>/partners/', search_partners, name='search_partners'),
+    path('search/cpf/batch/', search_cpf_batch, name='search_cpf_batch'),
 ]

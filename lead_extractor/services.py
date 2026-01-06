@@ -645,20 +645,17 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     return new_places, existing_cnpjs
 
 
-def sanitize_lead_data(lead_data, is_last_search=False):
+def sanitize_lead_data(lead_data, show_partners=False):
     """
-    Remove dados sensíveis de leads quando não for a última pesquisa.
+    Remove dados sensíveis de leads. REGRA CRÍTICA: Sócios só aparecem após busca paga.
     
     Args:
         lead_data: Dict com dados do lead (formato do dashboard)
-        is_last_search: Se True, retorna dados completos; se False, esconde dados sensíveis
+        show_partners: Se True, mostra sócios (apenas quando usuário pagou créditos)
     
     Returns:
-        dict: Dados sanitizados ou completos
+        dict: Dados sanitizados
     """
-    if is_last_search:
-        return lead_data  # Mostrar tudo na última pesquisa
-    
     # Criar cópia para não modificar o original
     sanitized = copy.deepcopy(lead_data)
     
@@ -666,25 +663,15 @@ def sanitize_lead_data(lead_data, is_last_search=False):
     if 'viper_data' in sanitized and sanitized['viper_data']:
         viper_data = sanitized['viper_data'].copy()
         
-        # Remover telefones e emails
+        # Remover telefones e emails do Viper (sempre escondidos)
         viper_data.pop('telefones', None)
         viper_data.pop('emails', None)
         
-        # Sanitizar sócios (remover CPF, manter apenas nome e cargo)
-        if 'socios_qsa' in viper_data and viper_data['socios_qsa']:
-            socios_qsa = viper_data['socios_qsa']
-            if isinstance(socios_qsa, dict) and 'socios' in socios_qsa:
-                socios_sanitized = []
-                for socio in socios_qsa['socios']:
-                    socio_sanitized = {
-                        'NOME': socio.get('NOME') or socio.get('nome', ''),
-                        'CARGO': socio.get('CARGO') or socio.get('qualificacao', ''),
-                        # CPF removido intencionalmente
-                    }
-                    socios_sanitized.append(socio_sanitized)
-                viper_data['socios_qsa'] = {'socios': socios_sanitized}
+        # REGRA CRÍTICA: Sócios só aparecem se show_partners=True (após busca paga)
+        if not show_partners:
+            viper_data.pop('socios_qsa', None)
         
-        # Remover endereço fiscal detalhado (manter apenas básico)
+        # Remover endereço fiscal detalhado
         viper_data.pop('enderecos', None)
         
         sanitized['viper_data'] = viper_data
@@ -818,14 +805,7 @@ def process_search_async(search_id):
                             existing_lead.last_seen_by_user = timezone.now()
                             existing_lead.save(update_fields=['last_seen_by_user'])
                         
-                        # Enfileirar busca de sócios (sem aguardar - processamento assíncrono)
-                        get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
-                        
-                        # Recarregar Lead após um tempo (para pegar QSA se já processado)
-                        import time
-                        time.sleep(2)  # Pequeno delay para dar tempo do processador de fila
-                        lead_obj.refresh_from_db()
-                        
+                        # Não buscar sócios automaticamente - será feito opcionalmente pelo usuário
                         if lead_obj.viper_data:
                             company_data['viper_data'] = lead_obj.viper_data
                         
@@ -897,14 +877,7 @@ def process_search_async(search_id):
                         
                         credits_used += 1
                     
-                    # Enfileirar busca de sócios (sem aguardar - processamento assíncrono)
-                    get_partners_internal_queued(cnpj, user_profile, lead=lead_obj)
-                    
-                    # Pequeno delay para dar tempo do processador de fila
-                    import time
-                    time.sleep(2)
-                    lead_obj.refresh_from_db()
-                    
+                    # Não buscar sócios automaticamente - será feito opcionalmente pelo usuário
                     if lead_obj.viper_data:
                         company_data['viper_data'] = lead_obj.viper_data
                     

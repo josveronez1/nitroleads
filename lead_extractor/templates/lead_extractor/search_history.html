@@ -85,10 +85,11 @@
                     <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success">
                         <i class="fas fa-download"></i> Exportar
                     </a>
-                    {% if search.id != last_search_id and search.status == 'completed' %}
+                    {% if search.status == 'completed' %}
                     <button class="btn btn-sm btn-outline-primary ms-2" type="button" 
-                            onclick="toggleEnrichmentMode({{ search.id }})" id="enrich-btn-{{ search.id }}">
-                        <i class="fas fa-magic"></i> Enriquecer Lista
+                            onclick="togglePartnersSelection({{ search.id }})" 
+                            id="search-partners-btn-{{ search.id }}">
+                        <i class="fas fa-users"></i> Buscar Dados dos Sócios
                     </button>
                     {% endif %}
                 </div>
@@ -98,43 +99,54 @@
                         data-bs-target="#search-{{ search.id }}" aria-expanded="false">
                     <i class="fas fa-chevron-down"></i> Ver leads
                 </button>
-                <button class="btn btn-sm btn-success ms-2" type="button" 
-                        onclick="confirmEnrichment({{ search.id }})" 
-                        id="confirm-enrich-btn-{{ search.id }}" 
-                        style="display: none;">
-                    <i class="fas fa-check"></i> Confirmar Enriquecimento
-                </button>
+            </div>
+            <!-- Modo seleção de empresas para buscar sócios -->
+            <div id="partners-selection-{{ search.id }}" style="display: none;" class="mt-3">
+                <div class="alert alert-info">
+                    <h6 class="mb-2"><i class="fas fa-info-circle"></i> Selecione as empresas para buscar dados dos sócios</h6>
+                    <p class="mb-2 small">Será debitado <strong>1 crédito por empresa</strong> selecionada.</p>
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-primary" type="button" 
+                                onclick="confirmPartnersSearch({{ search.id }})" 
+                                id="confirm-partners-btn-{{ search.id }}">
+                            <i class="fas fa-check"></i> Confirmar (<span id="partners-cost-{{ search.id }}">0</span> créditos)
+                        </button>
+                        <button class="btn btn-sm btn-secondary ms-2" type="button" 
+                                onclick="togglePartnersSelection({{ search.id }})">
+                            <i class="fas fa-times"></i> Cancelar
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="collapse mt-3" id="search-{{ search.id }}">
                 <div class="table-responsive">
                     <table class="table table-sm table-hover">
                         <thead>
                             <tr>
-                                <th style="width: 40px;" class="lead-checkbox">
-                                    <input type="checkbox" id="select-all-{{ search.id }}" 
-                                           onchange="toggleAllLeads({{ search.id }})">
+                                <th style="width: 40px;" id="partners-checkbox-header-{{ search.id }}" style="display: none;">
+                                    <input type="checkbox" id="select-all-partners-{{ search.id }}" 
+                                           onchange="toggleAllPartnersLeads({{ search.id }})">
                                 </th>
                                 <th>Empresa</th>
                                 <th>CNPJ</th>
                                 <th>Endereço</th>
-                                {% if search.id == last_search_id %}
                                 <th>Contatos</th>
                                 <th>Sócios</th>
-                                {% endif %}
                             </tr>
                         </thead>
                         <tbody>
                             {% for lead in search.leads.all|slice:":20" %}
-                            <tr>
-                                <td class="lead-checkbox">
-                                    <input type="checkbox" class="lead-checkbox-input" 
+                            <tr id="lead-row-{{ lead.id }}">
+                                <td id="partners-checkbox-{{ lead.id }}" style="display: none;">
+                                    <input type="checkbox" class="partner-lead-checkbox" 
                                            data-lead-id="{{ lead.id }}" 
-                                           data-search-id="{{ search.id }}">
+                                           data-search-id="{{ search.id }}"
+                                           checked
+                                           onchange="updatePartnersCost({{ search.id }})">
                                 </td>
                                 <td>{{ lead.name }}</td>
                                 <td>{{ lead.cnpj|default:"-" }}</td>
                                 <td>{{ lead.address|default:"-" }}</td>
-                                {% if search.id == last_search_id %}
                                 <td>
                                     {% if lead.viper_data %}
                                         {% for phone in lead.viper_data|get_phones %}
@@ -147,28 +159,60 @@
                                         <span class="text-muted small">-</span>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td id="partners-cell-{{ lead.id }}">
                                     {% if lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
-                                        {% for socio in lead.viper_data.socios_qsa.socios|slice:":3" %}
-                                        <div class="small">
-                                            <strong>{{ socio.NOME|default:socio.nome }}</strong>
-                                            <span class="text-muted">({{ socio.CARGO|default:socio.qualificacao|default:"Sócio" }})</span>
+                                        <div class="partners-list" id="partners-list-{{ lead.id }}">
+                                            {% for socio in lead.viper_data.socios_qsa.socios %}
+                                            <div class="socio-item mb-2" data-socio-cpf="{{ socio.CPF|default:socio.cpf }}">
+                                                <div class="d-flex align-items-center justify-content-between">
+                                                    <div>
+                                                        <strong class="small">{{ socio.NOME|default:socio.nome }}</strong>
+                                                        <span class="text-muted small ms-1">({{ socio.CARGO|default:socio.qualificacao|default:"Sócio" }})</span>
+                                                        {% if socio.CPF or socio.cpf %}
+                                                        <br><span class="text-muted small">CPF: {{ socio.CPF|default:socio.cpf }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                    {% if socio.CPF or socio.cpf %}
+                                                    <input type="checkbox" class="cpf-checkbox ms-2" 
+                                                           data-cpf="{{ socio.CPF|default:socio.cpf }}"
+                                                           data-lead-id="{{ lead.id }}"
+                                                           data-socio-name="{{ socio.NOME|default:socio.nome }}"
+                                                           id="cpf-{{ lead.id }}-{{ forloop.counter }}"
+                                                           style="display: none;">
+                                                    {% endif %}
+                                                </div>
+                                                {% if socio.cpf_enriched and socio.cpf_data %}
+                                                <div class="mt-1">
+                                                    {% if socio.cpf_data.telefones %}
+                                                    {% for phone in socio.cpf_data.telefones %}
+                                                    <span class="badge bg-success me-1">{{ phone }}</span>
+                                                    {% endfor %}
+                                                    {% endif %}
+                                                    {% if socio.cpf_data.emails %}
+                                                    {% for email in socio.cpf_data.emails %}
+                                                    <span class="badge bg-info me-1">✉️ {{ email }}</span>
+                                                    {% endfor %}
+                                                    {% endif %}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                            {% endfor %}
                                         </div>
-                                        {% endfor %}
+                                        <button class="btn btn-sm btn-outline-primary mt-2" 
+                                                type="button"
+                                                onclick="toggleCpfSelection({{ lead.id }})"
+                                                id="search-cpf-btn-{{ lead.id }}">
+                                            <i class="fas fa-search"></i> Buscar CPFs Selecionados
+                                        </button>
                                     {% else %}
                                         <span class="text-muted small">-</span>
                                     {% endif %}
                                 </td>
-                                {% else %}
-                                <td colspan="2" class="text-muted small">
-                                    <i class="fas fa-lock"></i> Dados sensíveis ocultos. Use "Enriquecer Lista" para revelar.
-                                </td>
-                                {% endif %}
                             </tr>
                             {% endfor %}
                             {% if search.leads.count > 20 %}
                             <tr>
-                                <td colspan="{% if search.id == last_search_id %}6{% else %}5{% endif %}" class="text-center text-muted">
+                                <td colspan="6" class="text-center text-muted">
                                     ... e mais {{ search.leads.count|add:"-20" }} lead(s)
                                 </td>
                             </tr>
@@ -236,94 +280,204 @@
 
 {% block extra_js %}
 <script>
-    let currentEnrichmentSearchId = null;
-    let selectedLeads = {};
-
-    function toggleEnrichmentMode(searchId) {
-        const card = document.getElementById(`search-card-${searchId}`);
-        const checkboxes = card.querySelectorAll('.lead-checkbox');
-        const enrichBtn = document.getElementById(`enrich-btn-${searchId}`);
-        const confirmBtn = document.getElementById(`confirm-enrich-btn-${searchId}`);
+    // Função para expandir/contrair seleção de empresas para buscar sócios
+    function togglePartnersSelection(searchId) {
+        const selectionDiv = document.getElementById(`partners-selection-${searchId}`);
+        const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox`);
+        const checkboxHeaders = document.querySelectorAll(`#partners-checkbox-header-${searchId}, #search-${searchId} #partners-checkbox-${searchId}`);
         
-        if (card.classList.contains('enrichment-mode')) {
-            // Desativar modo
-            card.classList.remove('enrichment-mode');
-            checkboxes.forEach(cb => cb.style.display = 'none');
-            enrichBtn.innerHTML = '<i class="fas fa-magic"></i> Enriquecer Lista';
-            confirmBtn.style.display = 'none';
-            // Desmarcar todos
-            card.querySelectorAll('.lead-checkbox-input').forEach(cb => cb.checked = false);
-            selectedLeads[searchId] = [];
+        if (selectionDiv.style.display === 'none' || !selectionDiv.style.display) {
+            // Mostrar seleção
+            selectionDiv.style.display = 'block';
+            checkboxHeaders.forEach(cb => cb.style.display = 'table-cell');
+            checkboxes.forEach(cb => {
+                cb.style.display = 'block';
+                cb.checked = true;
+            });
+            updatePartnersCost(searchId);
         } else {
-            // Ativar modo
-            card.classList.add('enrichment-mode');
-            checkboxes.forEach(cb => cb.style.display = 'block');
-            enrichBtn.innerHTML = '<i class="fas fa-times"></i> Cancelar';
-            confirmBtn.style.display = 'inline-block';
-            selectedLeads[searchId] = [];
+            // Ocultar seleção
+            selectionDiv.style.display = 'none';
+            checkboxHeaders.forEach(cb => cb.style.display = 'none');
+            checkboxes.forEach(cb => cb.style.display = 'none');
         }
     }
 
-    function toggleAllLeads(searchId) {
-        const card = document.getElementById(`search-card-${searchId}`);
-        const selectAll = document.getElementById(`select-all-${searchId}`);
-        const checkboxes = card.querySelectorAll('.lead-checkbox-input[data-search-id="' + searchId + '"]');
+    // Atualizar contador de créditos conforme seleção
+    function updatePartnersCost(searchId) {
+        const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
+        const cost = checkboxes.length;
+        const costSpan = document.getElementById(`partners-cost-${searchId}`);
+        if (costSpan) {
+            costSpan.textContent = cost;
+        }
+    }
+
+    // Selecionar/deselecionar todos os leads
+    function toggleAllPartnersLeads(searchId) {
+        const selectAll = document.getElementById(`select-all-partners-${searchId}`);
+        const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox`);
+        checkboxes.forEach(cb => cb.checked = selectAll.checked);
+        updatePartnersCost(searchId);
+    }
+
+    // Confirmar busca de sócios
+    function confirmPartnersSearch(searchId) {
+        const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
+        const leadIds = Array.from(checkboxes).map(cb => parseInt(cb.dataset.leadId));
         
-        checkboxes.forEach(cb => {
-            cb.checked = selectAll.checked;
-            if (selectAll.checked) {
-                if (!selectedLeads[searchId]) selectedLeads[searchId] = [];
-                if (!selectedLeads[searchId].includes(parseInt(cb.dataset.leadId))) {
-                    selectedLeads[searchId].push(parseInt(cb.dataset.leadId));
-                }
-            } else {
-                selectedLeads[searchId] = [];
-            }
-        });
-        
-        updateConfirmButton(searchId);
-    }
-
-    // Atualizar lista de leads selecionados quando checkbox individual é clicado
-    document.addEventListener('change', function(e) {
-        if (e.target.classList.contains('lead-checkbox-input')) {
-            const leadId = parseInt(e.target.dataset.leadId);
-            const searchId = parseInt(e.target.dataset.searchId);
-            
-            if (!selectedLeads[searchId]) selectedLeads[searchId] = [];
-            
-            if (e.target.checked) {
-                if (!selectedLeads[searchId].includes(leadId)) {
-                    selectedLeads[searchId].push(leadId);
-                }
-            } else {
-                selectedLeads[searchId] = selectedLeads[searchId].filter(id => id !== leadId);
-            }
-            
-            updateConfirmButton(searchId);
-        }
-    });
-
-    function updateConfirmButton(searchId) {
-        const count = selectedLeads[searchId] ? selectedLeads[searchId].length : 0;
-        const confirmBtn = document.getElementById(`confirm-enrich-btn-${searchId}`);
-        if (confirmBtn) {
-            confirmBtn.innerHTML = `<i class="fas fa-check"></i> Confirmar (${count} lead${count !== 1 ? 's' : ''})`;
-            confirmBtn.disabled = count === 0;
-        }
-    }
-
-    function confirmEnrichment(searchId) {
-        const count = selectedLeads[searchId] ? selectedLeads[searchId].length : 0;
-        if (count === 0) {
-            alert('Selecione pelo menos um lead para enriquecer.');
+        if (leadIds.length === 0) {
+            alert('Selecione pelo menos uma empresa para buscar dados dos sócios.');
             return;
         }
         
-        currentEnrichmentSearchId = searchId;
-        document.getElementById('enrichment-cost').textContent = count;
-        const modal = new bootstrap.Modal(document.getElementById('enrichmentConfirmModal'));
-        modal.show();
+        // Mostrar loading
+        const confirmBtn = document.getElementById(`confirm-partners-btn-${searchId}`);
+        const originalText = confirmBtn.innerHTML;
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
+        
+        // Fazer requisição AJAX
+        fetch(`{% url 'search_partners' 0 %}`.replace('0', searchId), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                lead_ids: leadIds
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Sócios buscados com sucesso! ${data.processed} empresa(s) processada(s). ${data.credits_debited} crédito(s) debitado(s).`);
+                // Recarregar página para mostrar os sócios
+                location.reload();
+            } else {
+                alert('Erro ao buscar sócios: ' + (data.error || 'Erro desconhecido'));
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalText;
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao buscar sócios. Tente novamente.');
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = originalText;
+        });
+    }
+
+    // Função para mostrar checkboxes de seleção de CPFs
+    function toggleCpfSelection(leadId) {
+        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        
+        if (checkboxes.length === 0) {
+            alert('Nenhum sócio com CPF encontrado para este lead.');
+            return;
+        }
+        
+        if (checkboxes[0].style.display === 'none' || !checkboxes[0].style.display) {
+            // Mostrar checkboxes
+            checkboxes.forEach(cb => {
+                cb.style.display = 'block';
+                cb.checked = true;
+            });
+            searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca de CPFs';
+        } else {
+            // Buscar CPFs selecionados
+            searchCpfsBatch(leadId);
+        }
+    }
+
+    // Buscar CPFs em lote
+    function searchCpfsBatch(leadId) {
+        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox:checked`);
+        const cpfData = Array.from(checkboxes).map(cb => ({
+            lead_id: parseInt(cb.dataset.leadId),
+            cpf: cb.dataset.cpf,
+            socio_name: cb.dataset.socioName
+        }));
+        
+        if (cpfData.length === 0) {
+            alert('Selecione pelo menos um sócio para buscar dados por CPF.');
+            // Ocultar checkboxes novamente
+            document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
+            document.getElementById(`search-cpf-btn-${leadId}`).innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+            return;
+        }
+        
+        // Mostrar loading
+        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        const originalText = searchBtn.innerHTML;
+        searchBtn.disabled = true;
+        searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+        
+        // Fazer requisição AJAX
+        fetch('{% url "search_cpf_batch" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                cpfs: cpfData
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Atualizar interface com os dados retornados
+                data.results.forEach(result => {
+                    const socioItem = document.querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
+                    if (socioItem && result.data) {
+                        // Adicionar dados ao sócio
+                        let dataDiv = socioItem.querySelector('.cpf-data');
+                        if (!dataDiv) {
+                            dataDiv = document.createElement('div');
+                            dataDiv.className = 'mt-1 cpf-data';
+                            socioItem.appendChild(dataDiv);
+                        }
+                        
+                        dataDiv.innerHTML = '';
+                        if (result.data.telefones) {
+                            result.data.telefones.forEach(phone => {
+                                const badge = document.createElement('span');
+                                badge.className = 'badge bg-success me-1';
+                                badge.textContent = phone;
+                                dataDiv.appendChild(badge);
+                            });
+                        }
+                        if (result.data.emails) {
+                            result.data.emails.forEach(email => {
+                                const badge = document.createElement('span');
+                                badge.className = 'badge bg-info me-1';
+                                badge.textContent = '✉️ ' + email;
+                                dataDiv.appendChild(badge);
+                            });
+                        }
+                    }
+                });
+                
+                alert(`CPFs buscados com sucesso! ${data.processed} CPF(s) processado(s). ${data.credits_debited} crédito(s) debitado(s).`);
+                
+                // Ocultar checkboxes
+                document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
+                searchBtn.disabled = false;
+                searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+            } else {
+                alert('Erro ao buscar CPFs: ' + (data.error || 'Erro desconhecido'));
+                searchBtn.disabled = false;
+                searchBtn.innerHTML = originalText;
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao buscar CPFs. Tente novamente.');
+            searchBtn.disabled = false;
+            searchBtn.innerHTML = originalText;
+        });
     }
 
     function processEnrichment() {
