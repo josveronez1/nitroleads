@@ -873,35 +873,33 @@ def search_partners(request, search_id):
                 if has_partners:
                     # Dados já existem - usar dados salvos (não fazer nova requisição à API)
                     logger.info(f"Usando dados de sócios já salvos para Lead {lead.id} (CNPJ: {lead.cnpj})")
-                    partners_data = socios_qsa
                 else:
-                    # Dados não existem - buscar via API
+                    # Dados não existem - buscar via API (mas não aguardar - processar em background)
                     if not lead.cnpj:
                         errors.append(f"Lead {lead.name} não possui CNPJ")
                         continue
                     
+                    # Enfileirar busca de sócios (processamento assíncrono)
                     queue_result = get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
                     queue_id = queue_result.get('queue_id')
                     
-                    if queue_id:
-                        # Aguardar processamento (timeout de 60 segundos)
-                        partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
-                        
-                        if not partners_data:
-                            errors.append(f"Não foi possível obter dados de sócios para {lead.name}")
-                            continue
-                    else:
+                    if not queue_id:
                         errors.append(f"Erro ao enfileirar busca de sócios para {lead.name}")
                         continue
+                    
+                    # Não aguardar - os dados serão processados pela fila
+                    # O usuário pode recarregar a página depois para ver os resultados
+                    logger.info(f"Busca de sócios enfileirada para Lead {lead.id} (CNPJ: {lead.cnpj}), queue_id: {queue_id}")
                 
-                # Recarregar Lead para pegar dados atualizados
+                # Recarregar Lead para pegar dados atualizados (se já existirem)
                 lead.refresh_from_db()
                 
                 results.append({
                     'lead_id': lead.id,
                     'name': lead.name,
                     'cnpj': lead.cnpj,
-                    'partners': lead.viper_data.get('socios_qsa', {}) if lead.viper_data else {}
+                    'partners': lead.viper_data.get('socios_qsa', {}) if lead.viper_data else {},
+                    'processed': has_partners  # Indica se já tinha dados ou foi enfileirado
                 })
                 
             except Exception as e:

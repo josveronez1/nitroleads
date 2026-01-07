@@ -348,10 +348,32 @@
                 lead_ids: leadIds
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => Promise.reject(err));
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
-                alert(`Sócios buscados com sucesso! ${data.processed} empresa(s) processada(s). ${data.credits_debited} crédito(s) debitado(s).`);
+                const processed = data.processed || 0;
+                const queued = processed - (data.results ? data.results.filter(r => r.processed).length : 0);
+                let message = `Processamento iniciado! ${data.credits_debited} crédito(s) debitado(s).`;
+                
+                if (processed > 0) {
+                    message += `\n\n${processed} empresa(s) processada(s).`;
+                }
+                
+                if (queued > 0) {
+                    message += `\n\n${queued} empresa(s) em processamento. Recarregue a página em alguns instantes para ver os resultados.`;
+                }
+                
+                if (data.errors && data.errors.length > 0) {
+                    message += `\n\nAvisos: ${data.errors.join('; ')}`;
+                }
+                
+                alert(message);
+                
                 // Recarregar página para mostrar os sócios
                 location.reload();
             } else {
@@ -362,7 +384,8 @@
         })
         .catch(error => {
             console.error('Erro:', error);
-            alert('Erro ao buscar sócios. Tente novamente.');
+            const errorMsg = error.error || error.message || 'Erro desconhecido';
+            alert('Erro ao buscar sócios: ' + errorMsg);
             confirmBtn.disabled = false;
             confirmBtn.innerHTML = originalText;
         });
