@@ -30,6 +30,9 @@
 {% endblock %}
 
 {% block content %}
+<!-- Token CSRF para requisições AJAX -->
+{% csrf_token %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="mb-0">Minhas Pesquisas</h2>
     <a href="{% url 'export_csv' %}" class="btn btn-success">
@@ -337,12 +340,22 @@
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
         
+        // Obter token CSRF
+        const csrfTokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (!csrfTokenElement) {
+            alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = originalText;
+            return;
+        }
+        const csrfToken = csrfTokenElement.value;
+        
         // Fazer requisição AJAX
         fetch(`{% url 'search_partners' 0 %}`.replace('0', searchId), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify({
                 lead_ids: leadIds
@@ -437,12 +450,22 @@
         searchBtn.disabled = true;
         searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
         
+        // Obter token CSRF
+        const csrfTokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (!csrfTokenElement) {
+            alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+            searchBtn.disabled = false;
+            searchBtn.innerHTML = originalText;
+            return;
+        }
+        const csrfToken = csrfTokenElement.value;
+        
         // Fazer requisição AJAX
         fetch('{% url "search_cpf_batch" %}', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify({
                 cpfs: cpfData
