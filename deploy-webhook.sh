@@ -9,11 +9,11 @@ source venv/bin/activate
 # Pull das mudanças
 git pull origin main
 
-# Aplicar migrações
-python manage.py migrate --noinput
+# Aplicar migrações (usar caminho completo do Python do venv)
+/home/nitroleads/apps/nitroleads/venv/bin/python manage.py migrate --noinput
 
 # Coletar arquivos estáticos
-python manage.py collectstatic --noinput
+/home/nitroleads/apps/nitroleads/venv/bin/python manage.py collectstatic --noinput
 
 # Reiniciar serviços
 sudo supervisorctl restart nitroleads
