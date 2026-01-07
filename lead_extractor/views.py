@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.core.paginator import Paginator
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from decouple import config
 from .services import (
@@ -386,6 +386,7 @@ def search_by_cnpj(request):
 
 
 @require_user_profile
+@ensure_csrf_cookie
 def search_history(request):
     """
     Visualiza pesquisas antigas do usuário.
