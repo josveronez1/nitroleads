@@ -30,6 +30,9 @@
 {% endblock %}
 
 {% block content %}
+<!-- Token CSRF para requisições AJAX -->
+{% csrf_token %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="mb-0">Minhas Pesquisas</h2>
     <a href="{% url 'export_csv' %}" class="btn btn-success">
@@ -299,14 +302,20 @@
     function getCsrfToken() {
         // Tentar pegar do input hidden
         const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
-        if (csrfInput) {
+        if (csrfInput && csrfInput.value) {
             return csrfInput.value;
         }
-        // Tentar pegar do cookie
+        // Tentar pegar do cookie (Django usa 'csrftoken' como nome do cookie)
         const csrfCookie = getCookie('csrftoken');
         if (csrfCookie) {
             return csrfCookie;
         }
+        // Tentar pegar do meta tag (caso tenha sido definido)
+        const csrfMeta = document.querySelector('meta[name=csrf-token]');
+        if (csrfMeta && csrfMeta.content) {
+            return csrfMeta.content;
+        }
+        console.error('Token CSRF não encontrado em nenhum lugar!');
         return null;
     }
 
@@ -353,81 +362,125 @@
 
     // Confirmar busca de sócios
     function confirmPartnersSearch(searchId) {
-        const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
-        const leadIds = Array.from(checkboxes).map(cb => parseInt(cb.dataset.leadId));
+        console.log('confirmPartnersSearch chamado com searchId:', searchId);
         
-        if (leadIds.length === 0) {
-            alert('Selecione pelo menos uma empresa para buscar dados dos sócios.');
-            return;
-        }
-        
-        // Mostrar loading
-        const confirmBtn = document.getElementById(`confirm-partners-btn-${searchId}`);
-        const originalText = confirmBtn.innerHTML;
-        confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
-        
-        // Obter token CSRF
-        const csrfToken = getCsrfToken();
-        if (!csrfToken) {
-            alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
-            confirmBtn.disabled = false;
-            confirmBtn.innerHTML = originalText;
-            return;
-        }
-        
-        // Fazer requisição AJAX
-        fetch(`{% url 'search_partners' 0 %}`.replace('0', searchId), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
-            body: JSON.stringify({
-                lead_ids: leadIds
-            })
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(err => Promise.reject(err));
+        try {
+            const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
+            const leadIds = Array.from(checkboxes).map(cb => {
+                const leadId = cb.getAttribute('data-lead-id');
+                return leadId ? parseInt(leadId) : null;
+            }).filter(id => id !== null);
+            
+            console.log('Leads selecionados:', leadIds);
+            
+            if (leadIds.length === 0) {
+                alert('Selecione pelo menos uma empresa para buscar dados dos sócios.');
+                return;
             }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                const processed = data.processed || 0;
-                const queued = processed - (data.results ? data.results.filter(r => r.processed).length : 0);
-                let message = `Processamento iniciado! ${data.credits_debited} crédito(s) debitado(s).`;
-                
-                if (processed > 0) {
-                    message += `\n\n${processed} empresa(s) processada(s).`;
+            
+            // Mostrar loading
+            const confirmBtn = document.getElementById(`confirm-partners-btn-${searchId}`);
+            if (!confirmBtn) {
+                alert('Erro: Botão de confirmação não encontrado.');
+                return;
+            }
+            
+            const originalText = confirmBtn.innerHTML;
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
+            
+            // Obter token CSRF com múltiplas tentativas
+            let csrfToken = null;
+            
+            // Tentar função getCsrfToken
+            if (typeof getCsrfToken === 'function') {
+                csrfToken = getCsrfToken();
+            }
+            
+            // Se ainda não tem, tentar diretamente
+            if (!csrfToken) {
+                const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+                if (csrfInput && csrfInput.value) {
+                    csrfToken = csrfInput.value;
+                } else {
+                    // Tentar cookie diretamente
+                    csrfToken = getCookie('csrftoken');
                 }
-                
-                if (queued > 0) {
-                    message += `\n\n${queued} empresa(s) em processamento. Recarregue a página em alguns instantes para ver os resultados.`;
-                }
-                
-                if (data.errors && data.errors.length > 0) {
-                    message += `\n\nAvisos: ${data.errors.join('; ')}`;
-                }
-                
-                alert(message);
-                
-                // Recarregar página para mostrar os sócios
-                location.reload();
-            } else {
-                alert('Erro ao buscar sócios: ' + (data.error || 'Erro desconhecido'));
+            }
+            
+            console.log('CSRF Token obtido:', csrfToken ? 'Sim' : 'Não');
+            
+            if (!csrfToken) {
+                alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
                 confirmBtn.disabled = false;
                 confirmBtn.innerHTML = originalText;
+                return;
             }
-        })
-        .catch(error => {
-            console.error('Erro:', error);
-            const errorMsg = error.error || error.message || 'Erro desconhecido';
-            alert('Erro ao buscar sócios: ' + errorMsg);
-            confirmBtn.disabled = false;
-            confirmBtn.innerHTML = originalText;
-        });
+        
+            // Fazer requisição AJAX
+            const url = `{% url 'search_partners' 0 %}`.replace('0', searchId);
+            console.log('Fazendo requisição para:', url);
+            
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({
+                    lead_ids: leadIds
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => Promise.reject(err));
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    const processed = data.processed || 0;
+                    const queued = processed - (data.results ? data.results.filter(r => r.processed).length : 0);
+                    let message = `Processamento iniciado! ${data.credits_debited} crédito(s) debitado(s).`;
+                    
+                    if (processed > 0) {
+                        message += `\n\n${processed} empresa(s) processada(s).`;
+                    }
+                    
+                    if (queued > 0) {
+                        message += `\n\n${queued} empresa(s) em processamento. Recarregue a página em alguns instantes para ver os resultados.`;
+                    }
+                    
+                    if (data.errors && data.errors.length > 0) {
+                        message += `\n\nAvisos: ${data.errors.join('; ')}`;
+                    }
+                    
+                    alert(message);
+                    
+                    // Recarregar página para mostrar os sócios
+                    location.reload();
+                } else {
+                    alert('Erro ao buscar sócios: ' + (data.error || 'Erro desconhecido'));
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = originalText;
+                }
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                const errorMsg = error.error || error.message || 'Erro desconhecido';
+                alert('Erro ao buscar sócios: ' + errorMsg);
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalText;
+            });
+        } catch (error) {
+            console.error('Erro ao executar confirmPartnersSearch:', error);
+            alert('Erro ao processar requisição. Por favor, tente novamente.');
+            const confirmBtn = document.getElementById(`confirm-partners-btn-${searchId}`);
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar (<span id="partners-cost-' + searchId + '">0</span> créditos)';
+            }
+        }
     }
 
     // Função para mostrar checkboxes de seleção de CPFs
@@ -476,8 +529,27 @@
         searchBtn.disabled = true;
         searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
         
-        // Obter token CSRF
-        const csrfToken = getCsrfToken();
+        // Obter token CSRF com múltiplas tentativas
+        let csrfToken = null;
+        
+        // Tentar função getCsrfToken
+        if (typeof getCsrfToken === 'function') {
+            csrfToken = getCsrfToken();
+        }
+        
+        // Se ainda não tem, tentar diretamente
+        if (!csrfToken) {
+            const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (csrfInput && csrfInput.value) {
+                csrfToken = csrfInput.value;
+            } else {
+                // Tentar cookie diretamente
+                csrfToken = getCookie('csrftoken');
+            }
+        }
+        
+        console.log('CSRF Token obtido para CPF batch:', csrfToken ? 'Sim' : 'Não');
+        
         if (!csrfToken) {
             alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
             searchBtn.disabled = false;
