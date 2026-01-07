@@ -27,6 +27,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/static/',
         '/media/',
         '/webhook/stripe/',  # Webhook do Stripe não precisa de autenticação
+        '/webhook/github/',  # Webhook do GitHub não precisa de autenticação
     ]
     
     def process_request(self, request):
