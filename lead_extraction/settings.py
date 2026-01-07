@@ -157,6 +157,9 @@ SUPABASE_URL = config('SUPABASE_URL', default='')
 SUPABASE_KEY = config('SUPABASE_KEY', default='')
 SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
 
+# GitHub Webhook Configuration
+GITHUB_WEBHOOK_SECRET = config('GITHUB_WEBHOOK_SECRET', default='')
+
 # Logging Configuration
 LOGGING = {
     'version': 1,

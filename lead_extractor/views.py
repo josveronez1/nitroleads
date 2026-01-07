@@ -4,6 +4,7 @@ from django.http import HttpResponse, JsonResponse
 from django.core.paginator import Paginator
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from decouple import config
 from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
@@ -1058,3 +1059,72 @@ def search_cpf_batch(request):
     except Exception as e:
         logger.error(f"Erro ao buscar CPFs em lote: {e}", exc_info=True)
         return JsonResponse({'error': f'Erro ao buscar CPFs: {str(e)}'}, status=500)
+
+
+@csrf_exempt
+@require_POST
+def github_webhook(request):
+    """
+    Webhook do GitHub para deploy automático.
+    Executa deploy quando há push na branch main.
+    """
+    from django.conf import settings
+    import subprocess
+    import hmac
+    import hashlib
+    import os
+    
+    # Verificar secret (opcional mas recomendado)
+    github_secret = getattr(settings, 'GITHUB_WEBHOOK_SECRET', None)
+    
+    if github_secret:
+        signature = request.META.get('HTTP_X_HUB_SIGNATURE_256', '')
+        if not signature:
+            logger.warning("Webhook GitHub: Missing signature")
+            return JsonResponse({'error': 'Missing signature'}, status=401)
+        
+        body = request.body
+        expected_signature = 'sha256=' + hmac.new(
+            github_secret.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(signature, expected_signature):
+            logger.warning("Webhook GitHub: Invalid signature")
+            return JsonResponse({'error': 'Invalid signature'}, status=401)
+    
+    # Verificar se é push na branch main
+    try:
+        payload = json.loads(request.body)
+        ref = payload.get('ref', '')
+        
+        if ref != 'refs/heads/main':
+            logger.info(f"Webhook GitHub: Not main branch ({ref}), skipping")
+            return JsonResponse({'message': 'Not main branch, skipping'}, status=200)
+        
+        # Executar deploy
+        deploy_script = '/home/nitroleads/apps/nitroleads/deploy-webhook.sh'
+        
+        # Verificar se o script existe
+        if not os.path.exists(deploy_script):
+            logger.error(f"Webhook GitHub: Deploy script not found: {deploy_script}")
+            return JsonResponse({'error': 'Deploy script not found'}, status=500)
+        
+        # Executar em background para não travar a requisição
+        subprocess.Popen(
+            [deploy_script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd='/home/nitroleads/apps/nitroleads'
+        )
+        
+        logger.info("Webhook GitHub: Deploy iniciado via webhook")
+        return JsonResponse({'message': 'Deploy iniciado'}, status=200)
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Webhook GitHub: Invalid JSON payload: {e}", exc_info=True)
+        return JsonResponse({'error': 'Invalid JSON payload'}, status=400)
+    except Exception as e:
+        logger.error(f"Webhook GitHub: Erro ao processar webhook: {e}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)

@@ -21,7 +21,7 @@ from lead_extractor.views import (
     search_by_cpf, search_by_cnpj, search_history,
     purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success,
     viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
-    api_search_status, enrich_leads, search_partners, search_cpf_batch
+    api_search_status, enrich_leads, search_partners, search_cpf_batch, github_webhook
 )
 
 urlpatterns = [
@@ -48,4 +48,5 @@ urlpatterns = [
     path('search/<int:search_id>/enrich/', enrich_leads, name='enrich_leads'),
     path('search/<int:search_id>/partners/', search_partners, name='search_partners'),
     path('search/cpf/batch/', search_cpf_batch, name='search_cpf_batch'),
+    path('webhook/github/', github_webhook, name='github_webhook'),
 ]
