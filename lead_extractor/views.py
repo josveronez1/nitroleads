@@ -179,7 +179,9 @@ def export_leads_csv(request, search_id=None):
     writer.writerow(['Empresa', 'CNPJ', 'Telefone (Maps)', 'Telefones (Viper)', 'Emails', 'Sócios / Decisores', 'Endereço (Maps)', 'Endereço (Fiscal)'])
 
     # Filtrar leads do usuário (garantindo ownership)
-    leads = Lead.objects.filter(user=user_profile).order_by('-created_at')
+    # Usar select_related para evitar N+1 queries em search e cached_search
+    # Nota: viper_data é necessário para exportação, então não usamos defer aqui
+    leads = Lead.objects.filter(user=user_profile).select_related('search', 'cached_search').order_by('-created_at')
     
     # Se search_id fornecido, validar ownership e filtrar por pesquisa
     is_last_search = False

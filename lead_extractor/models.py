@@ -4,11 +4,16 @@ from django.utils import timezone
 
 
 class UserProfile(models.Model):
-    supabase_user_id = models.CharField(max_length=255, unique=True)
-    email = models.EmailField()
+    supabase_user_id = models.CharField(max_length=255, unique=True, db_index=True)
+    email = models.EmailField(db_index=True)
     credits = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['supabase_user_id']),  # Índice explícito para buscas frequentes no middleware
+        ]
 
     def __str__(self):
         return f"{self.email} ({self.supabase_user_id})"
@@ -18,13 +23,16 @@ class NormalizedNiche(models.Model):
     """
     Lista de nichos normalizados para padronização de pesquisas.
     """
-    name = models.CharField(max_length=255, unique=True)  # Nome normalizado (lowercase, sem acentos)
-    display_name = models.CharField(max_length=255)  # Nome para exibição
-    is_active = models.BooleanField(default=True)
+    name = models.CharField(max_length=255, unique=True, db_index=True)  # Nome normalizado (lowercase, sem acentos)
+    display_name = models.CharField(max_length=255, db_index=True)  # Nome para exibição (usado em autocomplete)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['display_name']
+        indexes = [
+            models.Index(fields=['display_name', 'is_active']),  # Para autocomplete otimizado
+        ]
 
     def __str__(self):
         return self.display_name
@@ -34,10 +42,10 @@ class NormalizedLocation(models.Model):
     """
     Lista de cidades normalizadas com UF para padronização de pesquisas.
     """
-    city = models.CharField(max_length=255)
-    state = models.CharField(max_length=2)  # UF (2 caracteres)
-    display_name = models.CharField(max_length=255)  # Formato: "Cidade - UF"
-    is_active = models.BooleanField(default=True)
+    city = models.CharField(max_length=255, db_index=True)
+    state = models.CharField(max_length=2, db_index=True)  # UF (2 caracteres)
+    display_name = models.CharField(max_length=255, db_index=True)  # Formato: "Cidade - UF" (usado em autocomplete)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -45,6 +53,7 @@ class NormalizedLocation(models.Model):
         ordering = ['state', 'city']
         indexes = [
             models.Index(fields=['city', 'state']),
+            models.Index(fields=['display_name', 'is_active']),  # Para autocomplete otimizado
         ]
 
     def __str__(self):
@@ -131,14 +140,14 @@ class Lead(models.Model):
     name = models.CharField(max_length=255)
     address = models.TextField(null=True, blank=True)
     phone_maps = models.CharField(max_length=50, null=True, blank=True)
-    cnpj = models.CharField(max_length=30, null=True, blank=True)
+    cnpj = models.CharField(max_length=30, null=True, blank=True, db_index=True)
     cpf_owner = models.CharField(max_length=14, null=True, blank=True)  # Para busca por CPF
     
     # Vamos salvar o retorno do Viper inteiro num campo JSON
     # Assim não precisamos criar 50 colunas agora. O Postgres/Supabase é ÓTIMO com JSON.
     viper_data = models.JSONField(null=True, blank=True)
     
-    last_seen_by_user = models.DateTimeField(auto_now=True)  # Para lógica de reutilização
+    last_seen_by_user = models.DateTimeField(auto_now=True, db_index=True)  # Para lógica de reutilização
     first_extracted_at = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -148,7 +157,8 @@ class Lead(models.Model):
             models.Index(fields=['user', 'cnpj']),
             models.Index(fields=['user', 'created_at']),
             models.Index(fields=['cnpj']),
-            # Não precisa de índice explícito para cached_search - ForeignKey já cria índice automaticamente
+            models.Index(fields=['cached_search', 'cnpj']),  # Para get_leads_from_cache otimizado
+            # ForeignKey já cria índice automaticamente, mas índices compostos ajudam em queries específicas
         ]
 
     def __str__(self):

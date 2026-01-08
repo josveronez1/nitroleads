@@ -2,6 +2,7 @@ from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.deprecation import MiddlewareMixin
 from django.db import IntegrityError
+from django.core.cache import cache
 from supabase import create_client, Client
 from jose import jwt, JWTError
 from decouple import config
@@ -12,6 +13,9 @@ logger = logging.getLogger(__name__)
 SUPABASE_URL = config('SUPABASE_URL', default='')
 SUPABASE_KEY = config('SUPABASE_KEY', default='')
 SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
+
+# TTL do cache de UserProfile (5 minutos)
+USER_PROFILE_CACHE_TTL = 300
 
 
 class SupabaseAuthMiddleware(MiddlewareMixin):
@@ -80,46 +84,11 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
                 request.user_profile = None
                 return None
             
-            # Buscar ou criar UserProfile
-            from .models import UserProfile
+            # Buscar ou criar UserProfile com cache
+            user_profile = self._get_user_profile_cached(user_id, payload)
             
-            # Extrair email do payload JWT
-            email = payload.get('email', '') or payload.get('user_metadata', {}).get('email', '') or payload.get('user', {}).get('email', '')
-            
-            # Se ainda não tem email, usar um placeholder temporário
-            if not email:
-                email = f"user_{user_id[:8]}@temp.com"
-                logger.warning(f"Email não encontrado no JWT para user_id {user_id}, usando placeholder")
-            
-            # Usar get_or_create para evitar race conditions
-            try:
-                user_profile, created = UserProfile.objects.get_or_create(
-                    supabase_user_id=user_id,
-                    defaults={'email': email}
-                )
-                
-                if created:
-                    logger.info(f"UserProfile criado para {email} (user_id: {user_id})")
-                else:
-                    # Se já existe, atualizar email se necessário (caso tenha mudado)
-                    if user_profile.email != email and email != f"user_{user_id[:8]}@temp.com":
-                        user_profile.email = email
-                        user_profile.save(update_fields=['email'])
-                        logger.info(f"Email atualizado para UserProfile (user_id: {user_id})")
-                        
-            except IntegrityError as e:
-                logger.error(f"Erro de integridade ao criar/buscar UserProfile para user_id {user_id}: {e}", exc_info=True)
-                # Se deu erro de integridade, tentar buscar novamente
-                try:
-                    user_profile = UserProfile.objects.get(supabase_user_id=user_id)
-                except UserProfile.DoesNotExist:
-                    logger.error(f"Não foi possível criar nem encontrar UserProfile para user_id {user_id}")
-                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                        return JsonResponse({'error': 'Erro ao acessar perfil de usuário'}, status=500)
-                    login_url = reverse('login')
-                    return HttpResponseRedirect(login_url)
-            except Exception as e:
-                logger.error(f"Erro inesperado ao criar/buscar UserProfile para user_id {user_id}: {e}", exc_info=True)
+            if not user_profile:
+                # Erro ao buscar/criar UserProfile
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return JsonResponse({'error': 'Erro ao acessar perfil de usuário'}, status=500)
                 login_url = reverse('login')
@@ -144,4 +113,69 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             return HttpResponseRedirect(f'{login_url}?next={request.path}')
         
         return None
+    
+    def _get_user_profile_cached(self, user_id, payload):
+        """
+        Busca ou cria UserProfile com cache em memória.
+        Cache baseado em user_id com TTL de 5 minutos.
+        
+        Args:
+            user_id: ID do usuário do Supabase
+            payload: Payload do JWT decodificado
+        
+        Returns:
+            UserProfile ou None em caso de erro
+        """
+        from .models import UserProfile
+        
+        # Chave do cache baseada no user_id
+        cache_key = f'user_profile_{user_id}'
+        
+        # Tentar buscar do cache primeiro
+        user_profile = cache.get(cache_key)
+        if user_profile:
+            return user_profile
+        
+        # Extrair email do payload JWT
+        email = payload.get('email', '') or payload.get('user_metadata', {}).get('email', '') or payload.get('user', {}).get('email', '')
+        
+        # Se ainda não tem email, usar um placeholder temporário
+        if not email:
+            email = f"user_{user_id[:8]}@temp.com"
+            logger.warning(f"Email não encontrado no JWT para user_id {user_id}, usando placeholder")
+        
+        # Buscar ou criar UserProfile (sem cache para garantir consistência)
+        try:
+            user_profile, created = UserProfile.objects.get_or_create(
+                supabase_user_id=user_id,
+                defaults={'email': email}
+            )
+            
+            if created:
+                logger.info(f"UserProfile criado para {email} (user_id: {user_id})")
+            else:
+                # Se já existe, atualizar email se necessário (caso tenha mudado)
+                if user_profile.email != email and email != f"user_{user_id[:8]}@temp.com":
+                    user_profile.email = email
+                    user_profile.save(update_fields=['email'])
+                    logger.info(f"Email atualizado para UserProfile (user_id: {user_id})")
+            
+            # Armazenar no cache
+            cache.set(cache_key, user_profile, USER_PROFILE_CACHE_TTL)
+            return user_profile
+                        
+        except IntegrityError as e:
+            logger.error(f"Erro de integridade ao criar/buscar UserProfile para user_id {user_id}: {e}", exc_info=True)
+            # Se deu erro de integridade, tentar buscar novamente
+            try:
+                user_profile = UserProfile.objects.get(supabase_user_id=user_id)
+                # Armazenar no cache mesmo em caso de erro de integridade (já existe)
+                cache.set(cache_key, user_profile, USER_PROFILE_CACHE_TTL)
+                return user_profile
+            except UserProfile.DoesNotExist:
+                logger.error(f"Não foi possível criar nem encontrar UserProfile para user_id {user_id}")
+                return None
+        except Exception as e:
+            logger.error(f"Erro inesperado ao criar/buscar UserProfile para user_id {user_id}: {e}", exc_info=True)
+            return None
 
