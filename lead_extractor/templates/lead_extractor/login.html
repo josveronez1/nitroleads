@@ -194,6 +194,36 @@
         } else {
             const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
+            // Verificar se há erros no hash da URL (quando Supabase redireciona com erro)
+            window.addEventListener('load', function() {
+                const hash = window.location.hash.substring(1);
+                if (hash) {
+                    const hashParams = new URLSearchParams(hash);
+                    const error = hashParams.get('error');
+                    const errorCode = hashParams.get('error_code');
+                    const errorDescription = hashParams.get('error_description');
+                    
+                    if (error) {
+                        let errorMessage = 'Erro ao processar link de redefinição de senha.';
+                        if (errorCode === 'otp_expired') {
+                            errorMessage = 'O link de redefinição de senha expirou. Por favor, solicite um novo link.';
+                        } else if (errorDescription) {
+                            errorMessage = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
+                        }
+                        
+                        showAlert(
+                            `<i class="fas fa-exclamation-triangle"></i> <strong>Erro:</strong> ${errorMessage}`,
+                            'danger'
+                        );
+                        
+                        // Limpar o hash da URL
+                        if (window.history.replaceState) {
+                            window.history.replaceState(null, null, window.location.pathname);
+                        }
+                    }
+                }
+            });
+
             // Toggle entre login e registro
             document.getElementById('toggle-register').addEventListener('click', function(e) {
                 e.preventDefault();
