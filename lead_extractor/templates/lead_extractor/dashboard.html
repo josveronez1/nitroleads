@@ -112,7 +112,7 @@
         <h5 class="mb-0">Nova Pesquisa de Leads</h5>
     </div>
     <div class="card-body">
-        <form method="POST" id="searchForm">
+        <form method="POST" id="searchForm" novalidate>
             {% csrf_token %}
             <div class="row g-3">
                 <div class="col-md-4 position-relative">
@@ -487,22 +487,26 @@
         
         // Interceptar submit do formulário
         form.addEventListener('submit', function(e) {
+            e.preventDefault(); // Sempre prevenir submit padrão primeiro para evitar validação HTML5
+            removeValidationMessages();
+            
             let isValid = true;
+            let firstInvalidField = null;
             
             // Validar nicho
             if (!nicheInput || !nicheInput.value.trim()) {
-                e.preventDefault();
                 if (nicheInput) {
                     createValidationMessage(nicheInput, 'Por favor, preencha o campo Nicho');
+                    if (!firstInvalidField) firstInvalidField = nicheInput;
                 }
                 isValid = false;
             }
             
             // Validar localização
             if (!locationInput || !locationInput.value.trim()) {
-                e.preventDefault();
                 if (locationInput) {
                     createValidationMessage(locationInput, 'Por favor, preencha o campo Localização');
+                    if (!firstInvalidField) firstInvalidField = locationInput;
                 }
                 isValid = false;
             }
@@ -511,15 +515,19 @@
             if (quantityInput) {
                 const quantity = parseInt(quantityInput.value);
                 if (!quantity || quantity < 1) {
-                    e.preventDefault();
                     createValidationMessage(quantityInput, 'Por favor, informe uma quantidade válida (mínimo 1)');
+                    if (!firstInvalidField) firstInvalidField = quantityInput;
                     isValid = false;
                 }
             }
             
-            // Se tudo estiver válido, permitir submit
+            // Se tudo estiver válido, permitir submit manualmente
             if (isValid) {
                 removeValidationMessages();
+                // Usar submit() diretamente que ignora validação HTML5
+                form.submit();
+            } else if (firstInvalidField) {
+                firstInvalidField.focus();
             }
         });
         
