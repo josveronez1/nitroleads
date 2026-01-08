@@ -218,7 +218,7 @@ def export_leads_csv(request, search_id=None):
             for s in lista_socios:
                 nome = s.get('NOME') or s.get('nome', '')
                 cargo = s.get('CARGO') or s.get('qualificacao') or 'Sócio'
-                cpf = s.get('CPF') or s.get('cpf', '')
+                cpf = s.get('DOCUMENTO') or s.get('CPF') or s.get('cpf', '')
                 
                 socio_text = f"{nome} ({cargo})"
                 if cpf:
@@ -227,8 +227,9 @@ def export_leads_csv(request, search_id=None):
                 # Se tem dados de CPF enriquecidos, incluir telefones e emails
                 if s.get('cpf_enriched') and s.get('cpf_data'):
                     cpf_data = s.get('cpf_data', {})
-                    telefones_cpf = cpf_data.get('telefones', [])
-                    emails_cpf = cpf_data.get('emails', [])
+                    # API Viper retorna telefones_fixos, telefones_moveis e emails
+                    telefones_cpf = [t for t in (cpf_data.get('telefones_fixos', []) + cpf_data.get('telefones_moveis', []) + cpf_data.get('whatsapps', [])) if t]
+                    emails_cpf = [e for e in cpf_data.get('emails', []) if e]
                     
                     if telefones_cpf:
                         socio_text += f" - Tel: {' | '.join(telefones_cpf)}"
@@ -283,24 +284,37 @@ def simple_search(request):
 
 
 @require_user_profile
-@require_user_profile
 def search_by_cpf(request):
     """
     Busca dados por CPF usando API Viper.
-    Sempre retorna JSON (para uso via AJAX).
+    - Se for requisição AJAX (header X-Requested-With ou Accept: application/json): retorna JSON
+    - Se for requisição de formulário HTML: renderiza template com resultado
     """
     user_profile = request.user_profile
+    
+    # Detectar se é requisição AJAX
+    is_ajax = (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest' or
+        'application/json' in request.headers.get('Accept', '') or
+        request.content_type == 'application/json'
+    )
     
     if request.method == 'POST':
         cpf = request.POST.get('cpf', '').strip()
         
         if not cpf:
-            return JsonResponse({'error': 'CPF não fornecido'}, status=400)
+            if is_ajax:
+                return JsonResponse({'error': 'CPF não fornecido'}, status=400)
+            messages.error(request, 'CPF não fornecido')
+            return redirect('simple_search')
         
         # Verificar créditos
         available_credits = check_credits(user_profile)
         if available_credits < 1:
-            return JsonResponse({'error': 'Créditos insuficientes'}, status=402)
+            if is_ajax:
+                return JsonResponse({'error': 'Créditos insuficientes'}, status=402)
+            messages.error(request, 'Créditos insuficientes')
+            return redirect('simple_search')
         
         # Buscar dados do CPF
         data = search_cpf_viper(cpf)
@@ -314,17 +328,32 @@ def search_by_cpf(request):
             )
             
             if success:
-                return JsonResponse({
-                    'success': True,
+                if is_ajax:
+                    return JsonResponse({
+                        'success': True,
+                        'data': data,
+                        'credits_remaining': new_balance
+                    })
+                # Renderizar template com resultado
+                return render(request, 'lead_extractor/cpf_result.html', {
                     'data': data,
+                    'cpf': cpf,
                     'credits_remaining': new_balance
                 })
             else:
-                return JsonResponse({'error': f'Erro ao debitar crédito: {error}'}, status=500)
+                if is_ajax:
+                    return JsonResponse({'error': f'Erro ao debitar crédito: {error}'}, status=500)
+                messages.error(request, f'Erro ao debitar crédito: {error}')
+                return redirect('simple_search')
         else:
-            return JsonResponse({'error': 'CPF não encontrado ou erro na busca'}, status=404)
+            if is_ajax:
+                return JsonResponse({'error': 'CPF não encontrado ou erro na busca'}, status=404)
+            messages.error(request, 'CPF não encontrado ou erro na busca')
+            return redirect('simple_search')
     
-    return JsonResponse({'error': 'Método não permitido'}, status=405)
+    if is_ajax:
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+    return redirect('simple_search')
 
 
 @require_user_profile
@@ -993,8 +1022,9 @@ def search_cpf_batch(request):
                 found_socio = None
                 
                 # Buscar sócio pelo CPF e verificar se já tem dados enriquecidos
+                # NOTA: API Viper retorna CPF no campo 'DOCUMENTO', não 'CPF' ou 'cpf'
                 for socio in socios_list:
-                    socio_cpf = str(socio.get('CPF') or socio.get('cpf') or '').replace('.', '').replace('-', '').strip()
+                    socio_cpf = str(socio.get('DOCUMENTO') or socio.get('CPF') or socio.get('cpf') or '').replace('.', '').replace('-', '').strip()
                     if socio_cpf == cpf_clean:
                         found_socio = socio
                         # Verificar se já tem dados do CPF
@@ -1026,9 +1056,9 @@ def search_cpf_batch(request):
                     if 'socios' not in lead.viper_data['socios_qsa']:
                         lead.viper_data['socios_qsa']['socios'] = []
                     
-                    # Atualizar sócio específico
+                    # Atualizar sócio específico (usando DOCUMENTO como campo principal)
                     for i, socio in enumerate(lead.viper_data['socios_qsa']['socios']):
-                        socio_cpf = str(socio.get('CPF') or socio.get('cpf') or '').replace('.', '').replace('-', '').strip()
+                        socio_cpf = str(socio.get('DOCUMENTO') or socio.get('CPF') or socio.get('cpf') or '').replace('.', '').replace('-', '').strip()
                         if socio_cpf == cpf_clean:
                             lead.viper_data['socios_qsa']['socios'][i]['cpf_enriched'] = True
                             lead.viper_data['socios_qsa']['socios'][i]['cpf_data'] = cpf_data

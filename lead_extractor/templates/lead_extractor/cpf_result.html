@@ -1,0 +1,204 @@
+{% extends "lead_extractor/base.html" %}
+
+{% block title %}Resultado da Busca por CPF - NitroLeads{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Resultado da Busca por CPF</h2>
+                <a href="{% url 'simple_search' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Nova Busca
+                </a>
+            </div>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-circle me-2"></i>{{ error }}
+            </div>
+            {% else %}
+            
+            <!-- Dados Gerais -->
+            {% if data.dados_gerais %}
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-user me-2"></i>Dados Gerais</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Nome:</strong> {{ data.dados_gerais.nome|default:"-" }}</p>
+                            <p><strong>CPF:</strong> {{ data.dados_gerais.CPF|default:cpf }}</p>
+                            <p><strong>Data de Nascimento:</strong> {{ data.dados_gerais.nascimento|default:"-" }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Nome da Mãe:</strong> {{ data.dados_gerais.mae|default:"-" }}</p>
+                            <p><strong>Situação RF:</strong> 
+                                {% if data.dados_gerais.situacao_rf == "REGULAR" %}
+                                <span class="badge bg-success">{{ data.dados_gerais.situacao_rf }}</span>
+                                {% else %}
+                                <span class="badge bg-warning">{{ data.dados_gerais.situacao_rf|default:"-" }}</span>
+                                {% endif %}
+                            </p>
+                            <p><strong>Escolaridade:</strong> {{ data.dados_gerais.escolaridade|default:"-" }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Contatos -->
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="fas fa-phone me-2"></i>Contatos</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-phone-alt me-2"></i>Telefones Fixos</h6>
+                            {% if data.telefones_fixos %}
+                                {% for phone in data.telefones_fixos %}
+                                    {% if phone %}
+                                    <span class="badge bg-secondary me-1 mb-1">{{ phone }}</span>
+                                    {% endif %}
+                                {% empty %}
+                                    <span class="text-muted">Nenhum encontrado</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">Nenhum encontrado</span>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-mobile-alt me-2"></i>Telefones Móveis</h6>
+                            {% if data.telefones_moveis %}
+                                {% for phone in data.telefones_moveis %}
+                                    {% if phone %}
+                                    <span class="badge bg-success me-1 mb-1">{{ phone }}</span>
+                                    {% endif %}
+                                {% empty %}
+                                    <span class="text-muted">Nenhum encontrado</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">Nenhum encontrado</span>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <h6><i class="fab fa-whatsapp me-2"></i>WhatsApp</h6>
+                            {% if data.whatsapps %}
+                                {% for phone in data.whatsapps %}
+                                    {% if phone %}
+                                    <span class="badge bg-success me-1 mb-1">{{ phone }}</span>
+                                    {% endif %}
+                                {% empty %}
+                                    <span class="text-muted">Nenhum encontrado</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">Nenhum encontrado</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-12">
+                            <h6><i class="fas fa-envelope me-2"></i>E-mails</h6>
+                            {% if data.emails %}
+                                {% for email in data.emails %}
+                                    {% if email %}
+                                    <span class="badge bg-info me-1 mb-1">{{ email }}</span>
+                                    {% endif %}
+                                {% empty %}
+                                    <span class="text-muted">Nenhum encontrado</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">Nenhum encontrado</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Endereços -->
+            {% if data.enderecos %}
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-map-marker-alt me-2"></i>Endereços</h5>
+                </div>
+                <div class="card-body">
+                    {% for endereco in data.enderecos %}
+                    <div class="mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
+                        <p class="mb-1">
+                            <strong>{{ endereco.TIPO_LOGRADOURO|default:"" }} {{ endereco.LOGRADOURO|default:"-" }}, {{ endereco.NUMERO|default:"S/N" }}</strong>
+                            {% if endereco.COMPLEMENTO %} - {{ endereco.COMPLEMENTO }}{% endif %}
+                        </p>
+                        <p class="mb-0 text-muted">
+                            {{ endereco.BAIRRO|default:"-" }} - {{ endereco.CIDADE|default:"-" }}/{{ endereco.UF|default:"-" }} - CEP: {{ endereco.CEP|default:"-" }}
+                        </p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Renda Estimada -->
+            {% if data.renda_estimada %}
+            <div class="card mb-4">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0"><i class="fas fa-dollar-sign me-2"></i>Renda Estimada</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Faixa de Renda:</strong> {{ data.renda_estimada.FAIXA_RENDA|default:"-" }}</p>
+                    <p><strong>Valor Estimado:</strong> R$ {{ data.renda_estimada.VALOR_RENDA|default:"-" }}</p>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Ocupação -->
+            {% if data.ocupacao %}
+            <div class="card mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="fas fa-briefcase me-2"></i>Ocupação</h5>
+                </div>
+                <div class="card-body">
+                    {% if data.ocupacao.CNPJ %}
+                    <p><strong>Empresa (CNPJ):</strong> {{ data.ocupacao.CNPJ }}</p>
+                    <p><strong>Razão Social:</strong> {{ data.ocupacao.RAZAO_SOCIAL|default:"-" }}</p>
+                    {% endif %}
+                    <p><strong>CBO:</strong> {{ data.ocupacao.DESCRICAO_CBO|default:data.ocupacao.CBO|default:"-" }}</p>
+                    <p><strong>Benefício INSS:</strong> {{ data.ocupacao.possui_beneficio_inss|default:"-" }}</p>
+                    <p><strong>SIAPE:</strong> {{ data.ocupacao.possui_siape|default:"-" }}</p>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Participações em Empresas -->
+            {% if data.participacoes %}
+            <div class="card mb-4">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0"><i class="fas fa-building me-2"></i>Participações em Empresas</h5>
+                </div>
+                <div class="card-body">
+                    {% for empresa in data.participacoes %}
+                    <div class="mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
+                        <p class="mb-1"><strong>{{ empresa.RAZAO_SOCIAL|default:"-" }}</strong></p>
+                        <p class="mb-0 text-muted">CNPJ: {{ empresa.CNPJ|default:"-" }} - {{ empresa.CARGO|default:"-" }}</p>
+                    </div>
+                    {% empty %}
+                    <span class="text-muted">Nenhuma participação encontrada</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Créditos -->
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>1 crédito utilizado.</strong> Créditos restantes: {{ credits_remaining }}
+            </div>
+            
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+

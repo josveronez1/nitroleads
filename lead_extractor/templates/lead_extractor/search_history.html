@@ -185,17 +185,30 @@
                                                     {% endif %}
                                                 </div>
                                                 {% if socio.cpf_enriched and socio.cpf_data %}
-                                                <div class="mt-1">
-                                                    {% if socio.cpf_data.telefones %}
-                                                    {% for phone in socio.cpf_data.telefones %}
-                                                    <span class="badge bg-success me-1">{{ phone }}</span>
-                                                    {% endfor %}
+                                                <div class="mt-1 cpf-data">
+                                                    {% if socio.cpf_data.dados_gerais.nome %}
+                                                    <div class="small text-muted">👤 {{ socio.cpf_data.dados_gerais.nome }}</div>
                                                     {% endif %}
-                                                    {% if socio.cpf_data.emails %}
+                                                    {% for phone in socio.cpf_data.telefones_fixos %}
+                                                        {% if phone %}
+                                                        <span class="badge bg-success me-1">📞 {{ phone }}</span>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                    {% for phone in socio.cpf_data.telefones_moveis %}
+                                                        {% if phone %}
+                                                        <span class="badge bg-success me-1">📱 {{ phone }}</span>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                    {% for phone in socio.cpf_data.whatsapps %}
+                                                        {% if phone %}
+                                                        <span class="badge bg-success me-1">💬 {{ phone }}</span>
+                                                        {% endif %}
+                                                    {% endfor %}
                                                     {% for email in socio.cpf_data.emails %}
-                                                    <span class="badge bg-info me-1">✉️ {{ email }}</span>
+                                                        {% if email %}
+                                                        <span class="badge bg-info me-1">✉️ {{ email }}</span>
+                                                        {% endif %}
                                                     {% endfor %}
-                                                    {% endif %}
                                                 </div>
                                                 {% endif %}
                                             </div>
@@ -584,21 +597,44 @@
                         }
                         
                         dataDiv.innerHTML = '';
-                        if (result.data.telefones) {
-                            result.data.telefones.forEach(phone => {
-                                const badge = document.createElement('span');
-                                badge.className = 'badge bg-success me-1';
-                                badge.textContent = phone;
-                                dataDiv.appendChild(badge);
-                            });
+                        
+                        // Combinar telefones fixos e móveis (filtrando vazios)
+                        const allPhones = [
+                            ...(result.data.telefones_fixos || []),
+                            ...(result.data.telefones_moveis || []),
+                            ...(result.data.whatsapps || [])
+                        ].filter(p => p && p.trim());
+                        
+                        allPhones.forEach(phone => {
+                            const badge = document.createElement('span');
+                            badge.className = 'badge bg-success me-1';
+                            badge.textContent = '📞 ' + phone;
+                            dataDiv.appendChild(badge);
+                        });
+                        
+                        // Emails (filtrando vazios)
+                        const emails = (result.data.emails || []).filter(e => e && e.trim());
+                        emails.forEach(email => {
+                            const badge = document.createElement('span');
+                            badge.className = 'badge bg-info me-1';
+                            badge.textContent = '✉️ ' + email;
+                            dataDiv.appendChild(badge);
+                        });
+                        
+                        // Se tiver dados gerais, mostrar nome
+                        if (result.data.dados_gerais && result.data.dados_gerais.nome) {
+                            const nameDiv = document.createElement('div');
+                            nameDiv.className = 'small text-muted mt-1';
+                            nameDiv.textContent = '👤 ' + result.data.dados_gerais.nome;
+                            dataDiv.insertBefore(nameDiv, dataDiv.firstChild);
                         }
-                        if (result.data.emails) {
-                            result.data.emails.forEach(email => {
-                                const badge = document.createElement('span');
-                                badge.className = 'badge bg-info me-1';
-                                badge.textContent = '✉️ ' + email;
-                                dataDiv.appendChild(badge);
-                            });
+                        
+                        // Mensagem se não encontrou contatos
+                        if (allPhones.length === 0 && emails.length === 0) {
+                            const noDataSpan = document.createElement('span');
+                            noDataSpan.className = 'text-muted small';
+                            noDataSpan.textContent = 'Nenhum contato encontrado';
+                            dataDiv.appendChild(noDataSpan);
                         }
                     }
                 });
