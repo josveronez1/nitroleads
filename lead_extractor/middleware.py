@@ -46,24 +46,36 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     ]
     
     def process_request(self, request):
-        # DEBUG: Log detalhado
+        # VERIFICAÇÃO ULTRA PRIORITÁRIA - ANTES DE QUALQUER OUTRA COISA
+        # Isso deve ser a PRIMEIRA coisa que fazemos, antes até dos logs
         request_path = request.path
         full_path = request.get_full_path()
+        
+        # Verificar se é URL de password-reset (check mais abrangente possível)
+        is_password_reset = (
+            request_path.startswith('/password-reset') or 
+            full_path.startswith('/password-reset') or
+            'password-reset' in request_path or
+            'password-reset' in full_path
+        )
+        
+        if is_password_reset:
+            # Log apenas para debug
+            logger.info(f"[MIDDLEWARE] ✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ URL DE PASSWORD-RESET DETECTADA - RETORNANDO None IMEDIATAMENTE")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Path: {request_path}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Full path: {full_path}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓")
+            # RETORNAR None IMEDIATAMENTE - NÃO FAZER MAIS NADA
+            return None
+        
+        # Se não for password-reset, continuar com logs normais
         logger.info(f"[MIDDLEWARE] ========================================")
         logger.info(f"[MIDDLEWARE] Processando requisição: {request_path}")
         logger.info(f"[MIDDLEWARE] Full path: {full_path}")
         logger.info(f"[MIDDLEWARE] Method: {request.method}")
         logger.info(f"[MIDDLEWARE] Query string: {request.GET.urlencode()}")
         logger.info(f"[MIDDLEWARE] ========================================")
-        
-        # Verificação EXPLÍCITA e PRIORITÁRIA para password-reset (ANTES DE QUALQUER OUTRA COISA)
-        # Verificar tanto path quanto full_path para garantir
-        if request_path.startswith('/password-reset') or full_path.startswith('/password-reset'):
-            logger.info(f"[MIDDLEWARE] ✓✓✓ URL de password-reset detectada e isenta: {request_path}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Full path: {full_path}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Retornando None - permitindo acesso SEM autenticação")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Middleware NÃO vai interceptar esta requisição")
-            return None
         
         # Skip authentication for admin (usa auth do Django)
         if request_path.startswith('/admin'):
@@ -92,13 +104,19 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             auth_token = auth_header.replace('Bearer ', '')
         
         # Se não tem token, redirecionar para login
+        # IMPORTANTE: NUNCA redirecionar se for password-reset (já verificamos, mas garantia extra)
         if not auth_token:
             # Se for requisição AJAX, retornar JSON
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({'error': 'Não autenticado', 'redirect': '/login/'}, status=401)
-            # Senão, redirecionar para login
-            login_url = reverse('login')
-            return HttpResponseRedirect(f'{login_url}?next={request.path}')
+            # Senão, redirecionar para login (MAS NUNCA se for password-reset)
+            if 'password-reset' not in request_path and 'password-reset' not in full_path:
+                login_url = reverse('login')
+                return HttpResponseRedirect(f'{login_url}?next={request.path}')
+            else:
+                # Se for password-reset, permitir passar (não deveria chegar aqui, mas garantia)
+                logger.warning(f"[MIDDLEWARE] ⚠️ Password-reset detectado sem token, mas permitindo passar: {request_path}")
+                return None
         
         # Se não tem JWT_SECRET configurado, redirecionar para login
         if not SUPABASE_JWT_SECRET:
@@ -139,18 +157,28 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             
         except JWTError as e:
             logger.warning(f"JWT validation failed: {e}")
-            # Token inválido, redirecionar para login
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': 'Token inválido', 'redirect': '/login/'}, status=401)
-            login_url = reverse('login')
-            return HttpResponseRedirect(f'{login_url}?next={request.path}')
+            # Token inválido, redirecionar para login (MAS NUNCA se for password-reset)
+            if 'password-reset' not in request_path and 'password-reset' not in full_path:
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({'error': 'Token inválido', 'redirect': '/login/'}, status=401)
+                login_url = reverse('login')
+                return HttpResponseRedirect(f'{login_url}?next={request.path}')
+            else:
+                # Se for password-reset, permitir passar mesmo com token inválido
+                logger.info(f"[MIDDLEWARE] ⚠️ Password-reset com token inválido, mas permitindo passar: {request_path}")
+                return None
         except Exception as e:
             logger.error(f"Error in SupabaseAuthMiddleware: {e}")
-            # Erro ao processar token, redirecionar para login
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': 'Erro de autenticação', 'redirect': '/login/'}, status=401)
-            login_url = reverse('login')
-            return HttpResponseRedirect(f'{login_url}?next={request.path}')
+            # Erro ao processar token, redirecionar para login (MAS NUNCA se for password-reset)
+            if 'password-reset' not in request_path and 'password-reset' not in full_path:
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({'error': 'Erro de autenticação', 'redirect': '/login/'}, status=401)
+                login_url = reverse('login')
+                return HttpResponseRedirect(f'{login_url}?next={request.path}')
+            else:
+                # Se for password-reset, permitir passar mesmo com erro
+                logger.info(f"[MIDDLEWARE] ⚠️ Password-reset com erro no token, mas permitindo passar: {request_path}")
+                return None
         
         return None
     
