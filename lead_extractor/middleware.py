@@ -48,14 +48,21 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     def process_request(self, request):
         # DEBUG: Log detalhado
         request_path = request.path
+        full_path = request.get_full_path()
+        logger.info(f"[MIDDLEWARE] ========================================")
         logger.info(f"[MIDDLEWARE] Processando requisição: {request_path}")
+        logger.info(f"[MIDDLEWARE] Full path: {full_path}")
         logger.info(f"[MIDDLEWARE] Method: {request.method}")
         logger.info(f"[MIDDLEWARE] Query string: {request.GET.urlencode()}")
+        logger.info(f"[MIDDLEWARE] ========================================")
         
-        # Verificação explícita para password-reset (mais importante primeiro)
-        if request_path.startswith('/password-reset'):
-            logger.info(f"[MIDDLEWARE] ✓ URL de password-reset detectada e isenta: {request_path}")
-            logger.info(f"[MIDDLEWARE] Retornando None - permitindo acesso sem autenticação")
+        # Verificação EXPLÍCITA e PRIORITÁRIA para password-reset (ANTES DE QUALQUER OUTRA COISA)
+        # Verificar tanto path quanto full_path para garantir
+        if request_path.startswith('/password-reset') or full_path.startswith('/password-reset'):
+            logger.info(f"[MIDDLEWARE] ✓✓✓ URL de password-reset detectada e isenta: {request_path}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Full path: {full_path}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Retornando None - permitindo acesso SEM autenticação")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Middleware NÃO vai interceptar esta requisição")
             return None
         
         # Skip authentication for admin (usa auth do Django)
