@@ -376,7 +376,13 @@
     
     function showSuccess(message) {
         const modal = new bootstrap.Modal(document.getElementById('successModal'));
-        document.getElementById('successModalMessage').textContent = message;
+        const messageElement = document.getElementById('successModalMessage');
+        // Se a mensagem já contém HTML (como <br>), usar innerHTML, senão usar textContent
+        if (message.includes('<br>') || message.includes('<')) {
+            messageElement.innerHTML = message;
+        } else {
+            messageElement.textContent = message;
+        }
         modal.show();
     }
     
