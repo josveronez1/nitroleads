@@ -213,7 +213,7 @@
                                                     type="button"
                                                     onclick="toggleCpfSelection({{ lead.id }})"
                                                     id="search-cpf-btn-{{ lead.id }}">
-                                                <i class="fas fa-search"></i> Buscar CPFs Selecionados
+                                                <i class="fas fa-search"></i> Buscar informações dos sócios
                                             </button>
                                             <button class="btn btn-sm btn-outline-secondary" 
                                                     type="button"
@@ -600,7 +600,7 @@
                 cb.style.display = 'block';
                 cb.checked = true;
             });
-            searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca de CPFs';
+            searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca';
             if (cancelBtn) {
                 cancelBtn.style.display = 'inline-block';
             }
@@ -630,7 +630,7 @@
         
         // Restaurar botão
         if (searchBtn) {
-            searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+            searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
         }
         
         // Ocultar botão cancelar
@@ -654,7 +654,7 @@
             document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
             const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
             if (searchBtn) {
-                searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+                searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
             }
             const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
             if (cancelBtn) {
@@ -771,7 +771,7 @@
                 // Ocultar checkboxes
                 document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
                 searchBtn.disabled = false;
-                searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+                searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
                 
                 // Ocultar botão cancelar
                 const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
