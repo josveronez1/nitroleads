@@ -209,26 +209,23 @@
                                             {% endfor %}
                                         </div>
                                         {% comment %} Verificar se há sócios com CPF que ainda não foram enriquecidos {% endcomment %}
-                                        {% for socio in lead.viper_data.socios_qsa.socios %}
-                                            {% if socio.DOCUMENTO and not socio.cpf_enriched %}
-                                                <div class="d-flex align-items-center gap-2 mt-2">
-                                                    <button class="btn btn-sm btn-outline-primary" 
-                                                            type="button"
-                                                            onclick="toggleCpfSelection({{ lead.id }})"
-                                                            id="search-cpf-btn-{{ lead.id }}">
-                                                        <i class="fas fa-search"></i> Buscar informações dos sócios
-                                                    </button>
-                                                    <button class="btn btn-sm btn-outline-secondary" 
-                                                            type="button"
-                                                            onclick="cancelCpfSelection({{ lead.id }})"
-                                                            id="cancel-cpf-btn-{{ lead.id }}"
-                                                            style="display: none;">
-                                                        <i class="fas fa-times"></i>
-                                                    </button>
-                                                </div>
-                                                {% break %}
-                                            {% endif %}
-                                        {% endfor %}
+                                        {% if lead.viper_data|has_unenriched_partners %}
+                                        <div class="d-flex align-items-center gap-2 mt-2">
+                                            <button class="btn btn-sm btn-outline-primary" 
+                                                    type="button"
+                                                    onclick="toggleCpfSelection({{ lead.id }})"
+                                                    id="search-cpf-btn-{{ lead.id }}">
+                                                <i class="fas fa-search"></i> Buscar informações dos sócios
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-secondary" 
+                                                    type="button"
+                                                    onclick="cancelCpfSelection({{ lead.id }})"
+                                                    id="cancel-cpf-btn-{{ lead.id }}"
+                                                    style="display: none;">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                        {% endif %}
                                     {% else %}
                                         <span class="text-muted small">-</span>
                                     {% endif %}

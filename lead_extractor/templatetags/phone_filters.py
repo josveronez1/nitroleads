@@ -49,3 +49,13 @@ def get_phones(viper_data):
     # Remove duplicados e strings vazias
     phones = viper_data.get('telefones', [])
     return list(set([p for p in phones if p]))
+
+@register.filter
+def has_unenriched_partners(viper_data):
+    """Verifica se há sócios com CPF que ainda não foram enriquecidos"""
+    if not viper_data or not viper_data.get('socios_qsa') or not viper_data.get('socios_qsa', {}).get('socios'):
+        return False
+    for socio in viper_data['socios_qsa']['socios']:
+        if socio.get('DOCUMENTO') and not socio.get('cpf_enriched'):
+            return True
+    return False
