@@ -25,25 +25,48 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     """
     
     # URLs que não precisam de autenticação
+    # IMPORTANTE: Incluir tanto com quanto sem barra final para garantir funcionamento
     EXEMPT_URLS = [
+        '/admin',
         '/admin/',
+        '/login',
         '/login/',
-        '/password-reset/',  # Página de reset de senha não precisa de autenticação
-        '/password-reset/confirm/',  # Página de confirmação de reset de senha não precisa de autenticação
+        '/password-reset',  # Página de reset de senha (sem barra)
+        '/password-reset/',  # Página de reset de senha (com barra)
+        '/password-reset/confirm',  # Página de confirmação (sem barra)
+        '/password-reset/confirm/',  # Página de confirmação (com barra)
+        '/static',
         '/static/',
+        '/media',
         '/media/',
-        '/webhook/stripe/',  # Webhook do Stripe não precisa de autenticação
-        '/webhook/github/',  # Webhook do GitHub não precisa de autenticação
+        '/webhook/stripe',
+        '/webhook/stripe/',
+        '/webhook/github',
+        '/webhook/github/',
     ]
     
     def process_request(self, request):
         # Skip authentication for exempt URLs
-        if any(request.path.startswith(url) for url in self.EXEMPT_URLS):
+        request_path = request.path
+        
+        # Verificação explícita para password-reset (mais importante primeiro)
+        if request_path.startswith('/password-reset'):
+            logger.debug(f"URL de password-reset detectada e isenta: {request_path}")
             return None
         
         # Skip authentication for admin (usa auth do Django)
-        if request.path.startswith('/admin'):
+        if request_path.startswith('/admin'):
             return None
+        
+        # Skip authentication for login
+        if request_path.startswith('/login'):
+            return None
+        
+        # Skip authentication for other exempt URLs
+        for exempt_url in self.EXEMPT_URLS:
+            if request_path.startswith(exempt_url):
+                logger.debug(f"URL isenta detectada: {request_path} (isento: {exempt_url})")
+                return None
         
         # Tentar pegar o token do header Authorization
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
