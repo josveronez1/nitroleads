@@ -38,6 +38,7 @@ Thumbs.db
 
 # Project specific
 viper_tokens.json
+secure/
 *.png
 erro_auth.png
 

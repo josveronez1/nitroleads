@@ -5,6 +5,7 @@ from django.core.paginator import Paginator
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_POST
+from django_ratelimit.decorators import ratelimit
 from decouple import config
 from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
@@ -94,6 +95,8 @@ def logout_view(request):
     return response
 
 
+@ratelimit(key='ip', rate='100/m', method='GET', block=True)  # 100 requisições por minuto por IP
+@ratelimit(key='ip', rate='20/m', method='POST', block=True)  # 20 requisições POST por minuto por IP
 @require_user_profile
 def dashboard(request):
     """
@@ -202,6 +205,7 @@ def dashboard(request):
     
     return render(request, 'lead_extractor/dashboard.html', context)
 
+@ratelimit(key='user', rate='10/m', method='GET', block=True)  # 10 exportações por minuto por usuário
 @require_user_profile
 def export_leads_csv(request, search_id=None):
     """
@@ -210,6 +214,18 @@ def export_leads_csv(request, search_id=None):
     Garantimos que apenas leads do usuário sejam exportados.
     """
     user_profile = request.user_profile
+    
+    # Validar ownership se search_id fornecido
+    if search_id:
+        try:
+            search_obj = Search.objects.get(id=search_id, user=user_profile)
+        except Search.DoesNotExist:
+            logger.warning(f"Tentativa de acesso não autorizado: usuário {user_profile.email} tentou exportar pesquisa {search_id}")
+            messages.error(request, 'Pesquisa não encontrada ou você não tem permissão para acessá-la.')
+            return redirect('dashboard')
+    
+    # Log de auditoria para exportação
+    logger.info(f"Exportação CSV iniciada por {user_profile.email} (search_id: {search_id})")
     
     response = HttpResponse(content_type='text/csv')
     filename = f"leads_exportados_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -224,21 +240,15 @@ def export_leads_csv(request, search_id=None):
     # Nota: viper_data é necessário para exportação, então não usamos defer aqui
     leads = Lead.objects.filter(user=user_profile).select_related('search', 'cached_search').order_by('-created_at')
     
-    # Se search_id fornecido, validar ownership e filtrar por pesquisa
+    # Se search_id fornecido, filtrar por pesquisa (já validado acima)
     is_last_search = False
     if search_id:
-        try:
-            # Garantir que a pesquisa pertence ao usuário
-            search_obj = Search.objects.get(id=search_id, user=user_profile)
-            leads = leads.filter(search=search_obj)
-            
-            # Verificar se é a última pesquisa (mais recente)
-            last_search = Search.objects.filter(user=user_profile).order_by('-created_at').first()
-            if last_search and last_search.id == search_id:
-                is_last_search = True
-        except Search.DoesNotExist:
-            messages.error(request, 'Pesquisa não encontrada ou você não tem permissão para acessá-la.')
-            return redirect('dashboard')
+        leads = leads.filter(search=search_obj)
+        
+        # Verificar se é a última pesquisa (mais recente)
+        last_search = Search.objects.filter(user=user_profile).order_by('-created_at').first()
+        if last_search and last_search.id == search_id:
+            is_last_search = True
 
     for lead in leads:
         viper = lead.viper_data or {}
@@ -305,6 +315,9 @@ def export_leads_csv(request, search_id=None):
             endereco_fiscal_str # Endereço do CNPJ
         ])
 
+    # Log de auditoria para conclusão de exportação
+    logger.info(f"[AUDITORIA] Exportação CSV concluída por {user_profile.email} (user_id: {user_profile.id}, leads_exportados: {leads_count})")
+    
     return response
 
 
@@ -474,6 +487,8 @@ def delete_search(request, search_id, **kwargs):
         search = kwargs.get('search_obj')
         if not search:
             search = Search.objects.get(id=search_id, user=request.user_profile)
+        # Log de auditoria para exclusão
+        logger.info(f"[AUDITORIA] Pesquisa {search_id} excluída por {request.user_profile.email} (user_id: {request.user_profile.id})")
         search.delete()  # Isso também deleta os leads associados devido ao CASCADE
         return JsonResponse({'success': True, 'message': 'Pesquisa excluída com sucesso.'})
     except Search.DoesNotExist:
@@ -671,6 +686,7 @@ def payment_success(request):
 def viper_queue_status(request, queue_id):
     """
     Retorna status de uma requisição na fila do Viper.
+    Valida ownership para garantir que usuário só acessa suas próprias requisições.
     """
     user_profile = request.user_profile
     
@@ -702,13 +718,19 @@ def viper_queue_status(request, queue_id):
 def get_viper_result(request, queue_id):
     """
     Busca resultado de uma requisição processada na fila do Viper.
+    Valida ownership para garantir que usuário só acessa suas próprias requisições.
     """
     user_profile = request.user_profile
     
     try:
         queue_item = ViperRequestQueue.objects.get(id=queue_id, user=user_profile)
         
+        # Log de auditoria para acesso a dados sensíveis
+        logger.info(f"[AUDITORIA] Acesso a resultado Viper (queue_id: {queue_id}) por {user_profile.email} (user_id: {user_profile.id})")
+        
         if queue_item.status == 'completed':
+            # result_data já contém apenas dados de sócios (normalizados)
+            # Não precisa sanitizar pois usuário já pagou créditos para ver
             return JsonResponse({
                 'status': 'completed',
                 'result': queue_item.result_data
@@ -804,6 +826,7 @@ def api_search_status(request, search_id):
         return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
 
 
+@ratelimit(key='user', rate='30/m', method='POST', block=True)  # 30 requisições por minuto por usuário
 @require_user_profile
 def enrich_leads(request, search_id):
     """
@@ -903,6 +926,7 @@ def enrich_leads(request, search_id):
         return JsonResponse({'error': f'Erro ao enriquecer leads: {str(e)}'}, status=500)
 
 
+@ratelimit(key='user', rate='30/m', method='POST', block=True)  # 30 requisições por minuto por usuário
 @require_user_profile
 def search_partners(request, search_id):
     """
@@ -910,6 +934,7 @@ def search_partners(request, search_id):
     IMPORTANTE: Sempre debita créditos, mesmo se dados já existirem no banco.
     POST /search/<int:search_id>/partners/
     Body: {'lead_ids': [1, 2, 3]}
+    Valida ownership da pesquisa e dos leads.
     """
     user_profile = request.user_profile
     

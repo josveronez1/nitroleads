@@ -22,7 +22,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-ma91(!7c=$+19zkhs+qyv%p)xqn@58%1_)r&*j=o&zi5*#r#6=')
+SECRET_KEY = config('SECRET_KEY', default=None)
+if not SECRET_KEY:
+    raise ValueError(
+        "SECRET_KEY deve estar configurado no arquivo .env. "
+        "Gere uma chave segura usando: python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'"
+    )
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
@@ -31,6 +36,10 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='', cast=lambda v: [s.strip() fo
 
 # CSRF Protection
 CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=lambda v: [s.strip() for s in v.split(',') if s.strip()])
+
+# Data upload limits (proteção contra DoS)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
 
 
 # Application definition

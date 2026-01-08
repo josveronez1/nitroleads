@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Caminho ABSOLUTO para o arquivo de tokens
-TOKENS_FILE = BASE_DIR / "viper_tokens.json"
+# Usar diretório 'secure' fora de STATIC_ROOT para evitar exposição via web
+SECURE_DIR = BASE_DIR / "secure"
+TOKENS_FILE = SECURE_DIR / "viper_tokens.json"
 
 # Caminho ABSOLUTO para o auth_bot.py
 AUTH_BOT_PATH = BASE_DIR / "auth_bot.py"

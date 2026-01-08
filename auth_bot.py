@@ -19,7 +19,10 @@ from decouple import config
 BASE_DIR = Path(__file__).resolve().parent
 
 # Caminho ABSOLUTO para o arquivo de tokens
-TOKENS_FILE = BASE_DIR / "viper_tokens.json"
+# Usar diretório 'secure' fora de STATIC_ROOT para evitar exposição via web
+SECURE_DIR = BASE_DIR / "secure"
+SECURE_DIR.mkdir(exist_ok=True, mode=0o700)  # Criar diretório com permissões restritas (700)
+TOKENS_FILE = SECURE_DIR / "viper_tokens.json"
 
 # Carrega credenciais do .env
 VIPER_USER = config('VIPER_USER', default='')
@@ -42,7 +45,7 @@ def save_tokens_atomic(data: dict) -> bool:
         fd, temp_path = tempfile.mkstemp(
             suffix='.json.tmp',
             prefix='viper_tokens_',
-            dir=str(BASE_DIR)
+            dir=str(SECURE_DIR)
         )
         
         try:

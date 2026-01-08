@@ -23,16 +23,22 @@ def debit_credits(user_id, amount, description=None):
             # Se user_id é um objeto, usar diretamente, senão buscar
             if isinstance(user_id, UserProfile):
                 user_profile = user_id
+                # Buscar novamente com lock para garantir consistência
+                user_profile = UserProfile.objects.select_for_update().get(id=user_profile.id)
             else:
                 user_profile = UserProfile.objects.select_for_update().get(id=user_id)
             
-            # Verificar se tem créditos suficientes
-            if user_profile.credits < amount:
-                return False, user_profile.credits, f"Créditos insuficientes. Disponível: {user_profile.credits}, Necessário: {amount}"
+            # Verificar e debitar créditos atomicamente usando F() expression
+            # Isso previne race conditions: a verificação e o débito acontecem em uma única operação SQL
+            updated_count = UserProfile.objects.filter(
+                id=user_profile.id,
+                credits__gte=amount  # Verificação condicional no banco
+            ).update(credits=F('credits') - amount)
             
-            # Debitar créditos
-            user_profile.credits = F('credits') - amount
-            user_profile.save(update_fields=['credits'])
+            if updated_count == 0:
+                # Atualizar objeto para obter saldo atual
+                user_profile.refresh_from_db()
+                return False, user_profile.credits, f"Créditos insuficientes. Disponível: {user_profile.credits}, Necessário: {amount}"
             
             # Atualizar o objeto para obter o valor atualizado
             user_profile.refresh_from_db()
