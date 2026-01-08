@@ -33,6 +33,7 @@
             background-color: var(--bg-secondary);
             color: var(--text-primary);
             overflow-x: hidden;
+            font-size: calc(1rem - 2px);
         }
 
         /* Sidebar */
@@ -445,7 +446,7 @@
             <div class="nav-item">
                 <a href="{% url 'search_history' %}" class="nav-link {% if request.resolver_match.url_name == 'search_history' %}active{% endif %}">
                     <i class="fas fa-history"></i>
-                    <span>Minhas Pesquisas</span>
+                    <span>Base de Dados</span>
                 </a>
             </div>
             <div class="nav-item">

@@ -12,14 +12,6 @@
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
     }
-    .last-search-badge {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
     .enrichment-mode .lead-checkbox {
         display: block;
     }
@@ -48,11 +40,6 @@
                 <div>
                     <div class="d-flex align-items-center gap-2">
                         <h5 class="mb-1">{{ search.niche }} em {{ search.location }}</h5>
-                        {% if search.id == last_search_id %}
-                        <span class="last-search-badge">
-                            <i class="fas fa-star"></i> Última Pesquisa
-                        </span>
-                        {% endif %}
                         {% if search.status == 'processing' %}
                         <span class="badge bg-warning">
                             <i class="fas fa-spinner fa-spin"></i> Processando...
@@ -67,9 +54,14 @@
                         <i class="fas fa-calendar me-1"></i> {{ search.created_at|date:"d/m/Y H:i" }}
                     </small>
                 </div>
-                <div class="text-end">
+                <div class="text-end d-flex align-items-center gap-2">
                     <span class="badge bg-primary">{{ search.results_count }} resultados</span>
-                    <span class="badge bg-secondary ms-2">{{ search.credits_used }} créditos</span>
+                    <span class="badge bg-secondary">{{ search.credits_used }} créditos</span>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
+                            data-bs-target="#search-{{ search.id }}" aria-expanded="false"
+                            id="toggle-leads-btn-{{ search.id }}">
+                        <i class="fas fa-chevron-down"></i> Ver leads
+                    </button>
                 </div>
             </div>
         </div>
@@ -81,27 +73,18 @@
                 <div class="col-md-3">
                     <strong>Resultados encontrados:</strong> {{ search.results_count }}
                 </div>
-                <div class="col-md-3">
-                    <strong>Créditos utilizados:</strong> {{ search.credits_used }}
-                </div>
-                <div class="col-md-3 text-end">
+                <div class="col-md-6 text-end" id="action-buttons-{{ search.id }}" style="display: none;">
                     <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success">
                         <i class="fas fa-download"></i> Exportar
                     </a>
                     {% if search.status == 'completed' %}
-                    <button class="btn btn-sm btn-outline-primary ms-2" type="button" 
+                    <button class="btn btn-sm btn-primary ms-2" type="button" 
                             onclick="togglePartnersSelection({{ search.id }})" 
                             id="search-partners-btn-{{ search.id }}">
                         <i class="fas fa-users"></i> Buscar Dados dos Sócios
                     </button>
                     {% endif %}
                 </div>
-            </div>
-            <div>
-                <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
-                        data-bs-target="#search-{{ search.id }}" aria-expanded="false">
-                    <i class="fas fa-chevron-down"></i> Ver leads
-                </button>
             </div>
             <!-- Modo seleção de empresas para buscar sócios -->
             <div id="partners-selection-{{ search.id }}" style="display: none;" class="mt-3">
@@ -156,7 +139,7 @@
                                         <div class="badge bg-light text-dark">{{ phone|format_phone }}</div>
                                         {% endfor %}
                                         {% for email in lead.viper_data|get_emails %}
-                                        <div class="badge bg-light text-dark">✉️ {{ email }}</div>
+                                        <div class="badge bg-light text-dark"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
                                         {% endfor %}
                                     {% else %}
                                         <span class="text-muted small">-</span>
@@ -187,26 +170,26 @@
                                                 {% if socio.cpf_enriched and socio.cpf_data %}
                                                 <div class="mt-1 cpf-data">
                                                     {% if socio.cpf_data.dados_gerais.nome %}
-                                                    <div class="small text-muted">👤 {{ socio.cpf_data.dados_gerais.nome }}</div>
+                                                    <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
                                                     {% endif %}
                                                     {% for phone in socio.cpf_data.telefones_fixos %}
                                                         {% if phone %}
-                                                        <span class="badge bg-success me-1">📞 {{ phone }}</span>
+                                                        <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone }}</span>
                                                         {% endif %}
                                                     {% endfor %}
                                                     {% for phone in socio.cpf_data.telefones_moveis %}
                                                         {% if phone %}
-                                                        <span class="badge bg-success me-1">📱 {{ phone }}</span>
+                                                        <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone }}</span>
                                                         {% endif %}
                                                     {% endfor %}
                                                     {% for phone in socio.cpf_data.whatsapps %}
                                                         {% if phone %}
-                                                        <span class="badge bg-success me-1">💬 {{ phone }}</span>
+                                                        <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone }}</span>
                                                         {% endif %}
                                                     {% endfor %}
                                                     {% for email in socio.cpf_data.emails %}
                                                         {% if email %}
-                                                        <span class="badge bg-info me-1">✉️ {{ email }}</span>
+                                                        <span class="badge bg-info me-1"><i class="fas fa-envelope me-1"></i>{{ email }}</span>
                                                         {% endif %}
                                                     {% endfor %}
                                                 </div>
@@ -296,6 +279,37 @@
 
 {% block extra_js %}
 <script>
+    // Controlar visibilidade dos botões quando a lista estiver expandida
+    document.addEventListener('DOMContentLoaded', function() {
+        // Para cada card de pesquisa
+        {% for search in searches %}
+        const collapseElement{{ search.id }} = document.getElementById('search-{{ search.id }}');
+        const actionButtons{{ search.id }} = document.getElementById('action-buttons-{{ search.id }}');
+        const toggleBtn{{ search.id }} = document.getElementById('toggle-leads-btn-{{ search.id }}');
+        
+        if (collapseElement{{ search.id }} && actionButtons{{ search.id }} && toggleBtn{{ search.id }}) {
+            collapseElement{{ search.id }}.addEventListener('show.bs.collapse', function() {
+                actionButtons{{ search.id }}.style.display = 'block';
+                toggleBtn{{ search.id }}.querySelector('i').classList.remove('fa-chevron-down');
+                toggleBtn{{ search.id }}.querySelector('i').classList.add('fa-chevron-up');
+            });
+            
+            collapseElement{{ search.id }}.addEventListener('hide.bs.collapse', function() {
+                actionButtons{{ search.id }}.style.display = 'none';
+                toggleBtn{{ search.id }}.querySelector('i').classList.remove('fa-chevron-up');
+                toggleBtn{{ search.id }}.querySelector('i').classList.add('fa-chevron-down');
+            });
+            
+            // Verificar estado inicial
+            if (collapseElement{{ search.id }}.classList.contains('show')) {
+                actionButtons{{ search.id }}.style.display = 'block';
+                toggleBtn{{ search.id }}.querySelector('i').classList.remove('fa-chevron-down');
+                toggleBtn{{ search.id }}.querySelector('i').classList.add('fa-chevron-up');
+            }
+        }
+        {% endfor %}
+    });
+    
     // Função auxiliar para obter token CSRF (do cookie ou do input)
     function getCookie(name) {
         let cookieValue = null;
@@ -608,7 +622,7 @@
                         allPhones.forEach(phone => {
                             const badge = document.createElement('span');
                             badge.className = 'badge bg-success me-1';
-                            badge.textContent = '📞 ' + phone;
+                            badge.innerHTML = '<i class="fas fa-phone me-1"></i>' + phone;
                             dataDiv.appendChild(badge);
                         });
                         
@@ -617,7 +631,7 @@
                         emails.forEach(email => {
                             const badge = document.createElement('span');
                             badge.className = 'badge bg-info me-1';
-                            badge.textContent = '✉️ ' + email;
+                            badge.innerHTML = '<i class="fas fa-envelope me-1"></i>' + email;
                             dataDiv.appendChild(badge);
                         });
                         
@@ -625,7 +639,7 @@
                         if (result.data.dados_gerais && result.data.dados_gerais.nome) {
                             const nameDiv = document.createElement('div');
                             nameDiv.className = 'small text-muted mt-1';
-                            nameDiv.textContent = '👤 ' + result.data.dados_gerais.nome;
+                            nameDiv.innerHTML = '<i class="fas fa-user me-1"></i>' + result.data.dados_gerais.nome;
                             dataDiv.insertBefore(nameDiv, dataDiv.firstChild);
                         }
                         
