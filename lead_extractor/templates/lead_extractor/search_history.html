@@ -166,18 +166,18 @@
                                     {% if lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
                                         <div class="partners-list" id="partners-list-{{ lead.id }}">
                                             {% for socio in lead.viper_data.socios_qsa.socios %}
-                                            <div class="socio-item mb-2" data-socio-cpf="{{ socio.CPF|default:socio.cpf }}">
+                                            <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
                                                 <div class="d-flex align-items-center justify-content-between">
                                                     <div>
                                                         <strong class="small">{{ socio.NOME|default:socio.nome }}</strong>
                                                         <span class="text-muted small ms-1">({{ socio.CARGO|default:socio.qualificacao|default:"Sócio" }})</span>
-                                                        {% if socio.CPF or socio.cpf %}
-                                                        <br><span class="text-muted small">CPF: {{ socio.CPF|default:socio.cpf }}</span>
+                                                        {% if socio.DOCUMENTO %}
+                                                        <br><span class="text-muted small">CPF: {{ socio.DOCUMENTO }}</span>
                                                         {% endif %}
                                                     </div>
-                                                    {% if socio.CPF or socio.cpf %}
+                                                    {% if socio.DOCUMENTO %}
                                                     <input type="checkbox" class="cpf-checkbox ms-2" 
-                                                           data-cpf="{{ socio.CPF|default:socio.cpf }}"
+                                                           data-cpf="{{ socio.DOCUMENTO }}"
                                                            data-lead-id="{{ lead.id }}"
                                                            data-socio-name="{{ socio.NOME|default:socio.nome }}"
                                                            id="cpf-{{ lead.id }}-{{ forloop.counter }}"
