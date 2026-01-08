@@ -29,6 +29,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/admin/',
         '/login/',
         '/password-reset/',  # Página de reset de senha não precisa de autenticação
+        '/password-reset/confirm/',  # Página de confirmação de reset de senha não precisa de autenticação
         '/static/',
         '/media/',
         '/webhook/stripe/',  # Webhook do Stripe não precisa de autenticação
