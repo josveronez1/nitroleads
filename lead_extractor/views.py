@@ -83,6 +83,39 @@ def login_view(request):
     return render(request, 'lead_extractor/login.html', context)
 
 
+def password_reset_view(request):
+    """
+    Página para solicitar reset de senha usando Supabase Auth.
+    """
+    # Se já estiver autenticado, redirecionar para dashboard
+    user_profile = getattr(request, 'user_profile', None)
+    if user_profile:
+        return redirect('dashboard')
+    
+    context = {
+        'supabase_url': config('SUPABASE_URL', default=''),
+        'supabase_key': config('SUPABASE_KEY', default=''),
+    }
+    return render(request, 'lead_extractor/password_reset.html', context)
+
+
+def password_reset_confirm_view(request):
+    """
+    Página para confirmar e redefinir a senha usando Supabase Auth.
+    O Supabase gerencia o token via URL hash, então apenas renderizamos o template.
+    """
+    # Se já estiver autenticado, redirecionar para dashboard
+    user_profile = getattr(request, 'user_profile', None)
+    if user_profile:
+        return redirect('dashboard')
+    
+    context = {
+        'supabase_url': config('SUPABASE_URL', default=''),
+        'supabase_key': config('SUPABASE_KEY', default=''),
+    }
+    return render(request, 'lead_extractor/password_reset_confirm.html', context)
+
+
 def logout_view(request):
     """
     Faz logout do usuário.

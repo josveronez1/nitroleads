@@ -21,13 +21,16 @@ from lead_extractor.views import (
     search_by_cpf, search_by_cnpj, search_history, delete_search,
     purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success,
     viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
-    api_search_status, enrich_leads, search_partners, search_cpf_batch, github_webhook
+    api_search_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
+    password_reset_view, password_reset_confirm_view
 )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('login/', login_view, name='login'),
     path('logout/', logout_view, name='logout'),
+    path('password-reset/', password_reset_view, name='password_reset'),
+    path('password-reset/confirm/', password_reset_confirm_view, name='password_reset_confirm'),
     path('', dashboard, name='dashboard'),
     path('export/', export_leads_csv, name='export_csv'),
     path('export/<int:search_id>/', export_leads_csv, name='export_csv_search'),
