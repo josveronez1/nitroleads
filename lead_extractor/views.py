@@ -69,13 +69,13 @@ def dashboard(request):
     search_term = ""
     niche = ""
     location = ""
-    quantity = 50  # Default
+    quantity = 10  # Default
     
     try:
         if request.method == "POST" and user_profile:
             niche = request.POST.get('niche', '').strip()
             location = request.POST.get('location', '').strip()
-            quantity = int(request.POST.get('quantity', 50))
+            quantity = int(request.POST.get('quantity', 10))
             
             if not niche or not location:
                 messages.error(request, 'Por favor, preencha o nicho e a localização.')
