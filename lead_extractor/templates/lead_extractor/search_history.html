@@ -169,8 +169,8 @@
                                             <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
                                                 <div class="d-flex align-items-center justify-content-between">
                                                     <div>
-                                                        <strong class="small">{{ socio.NOME|default:socio.nome }}</strong>
-                                                        <span class="text-muted small ms-1">({{ socio.CARGO|default:socio.qualificacao|default:"Sócio" }})</span>
+                                                        <strong class="small">{{ socio.NOME|default:"N/A" }}</strong>
+                                                        <span class="text-muted small ms-1">({{ socio.CARGO|default:"Sócio" }})</span>
                                                         {% if socio.DOCUMENTO %}
                                                         <br><span class="text-muted small">CPF: {{ socio.DOCUMENTO }}</span>
                                                         {% endif %}
@@ -179,7 +179,7 @@
                                                     <input type="checkbox" class="cpf-checkbox ms-2" 
                                                            data-cpf="{{ socio.DOCUMENTO }}"
                                                            data-lead-id="{{ lead.id }}"
-                                                           data-socio-name="{{ socio.NOME|default:socio.nome }}"
+                                                           data-socio-name="{{ socio.NOME|default:"N/A" }}"
                                                            id="cpf-{{ lead.id }}-{{ forloop.counter }}"
                                                            style="display: none;">
                                                     {% endif %}
