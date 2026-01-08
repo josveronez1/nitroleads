@@ -68,6 +68,23 @@
                             id="toggle-leads-btn-{{ search.id }}">
                         <i class="fas fa-chevron-down"></i> Ver leads
                     </button>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" 
+                                id="dropdownMenuButton-{{ search.id }}" 
+                                data-bs-toggle="dropdown" 
+                                aria-expanded="false"
+                                title="Mais opções">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownMenuButton-{{ search.id }}">
+                            <li>
+                                <a class="dropdown-item text-danger" href="#" 
+                                   onclick="deleteSearch({{ search.id }}); return false;">
+                                    <i class="fas fa-trash me-2"></i>Excluir pesquisa
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -80,12 +97,7 @@
                     <strong>Resultados encontrados:</strong> {{ search.results_count }}
                 </div>
                 <div class="col-md-6 text-end" id="action-buttons-{{ search.id }}" style="display: none;">
-                    <button class="btn btn-sm btn-outline-danger" type="button" 
-                            onclick="deleteSearch({{ search.id }})" 
-                            title="Excluir pesquisa">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                    <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success ms-2">
+                    <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success">
                         <i class="fas fa-download"></i> Exportar
                     </a>
                     {% if search.status == 'completed' %}
@@ -350,6 +362,27 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-danger" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Confirmação -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirmar Exclusão</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="confirmModalBody">
+                <p id="confirmModalMessage">Tem certeza que deseja excluir esta pesquisa? Esta ação não pode ser desfeita.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+                    <i class="fas fa-trash me-2"></i>Excluir
+                </button>
             </div>
         </div>
     </div>
@@ -785,53 +818,86 @@
 
     // Função para deletar pesquisa
     function deleteSearch(searchId) {
-        if (!confirm('Tem certeza que deseja excluir esta pesquisa? Esta ação não pode ser desfeita.')) {
-            return;
-        }
+        const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const confirmBtn = document.getElementById('confirmDeleteBtn');
+        const confirmMessage = document.getElementById('confirmModalMessage');
         
-        const csrfToken = getCsrfToken();
-        if (!csrfToken) {
-            showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
-            return;
-        }
+        confirmMessage.textContent = 'Tem certeza que deseja excluir esta pesquisa? Esta ação não pode ser desfeita.';
         
-        const url = `{% url 'delete_search' 0 %}`.replace('0', searchId);
+        // Remover listeners anteriores clonando o botão
+        const newConfirmBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
         
-        fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
+        // Adicionar listener para confirmação
+        newConfirmBtn.addEventListener('click', function confirmDelete() {
+            confirmModal.hide();
+            
+            const csrfToken = getCsrfToken();
+            if (!csrfToken) {
+                showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+                return;
             }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showSuccess('Pesquisa excluída com sucesso!');
-                // Remover o card da pesquisa da interface
-                const searchCard = document.getElementById(`search-card-${searchId}`);
-                if (searchCard) {
-                    searchCard.style.transition = 'opacity 0.3s';
-                    searchCard.style.opacity = '0';
-                    setTimeout(() => {
-                        searchCard.remove();
-                        // Se não houver mais pesquisas, recarregar a página
-                        if (document.querySelectorAll('.search-card').length === 0) {
-                            location.reload();
-                        }
-                    }, 300);
-                } else {
-                    // Se não encontrou o card, recarregar a página
-                    location.reload();
+            
+            const url = `{% url 'delete_search' 0 %}`.replace('0', searchId);
+            
+            // Mostrar loading
+            newConfirmBtn.disabled = true;
+            const originalBtnText = newConfirmBtn.innerHTML;
+            newConfirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Excluindo...';
+            
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
                 }
-            } else {
-                showError(data.error || 'Erro ao excluir pesquisa.');
-            }
-        })
-        .catch(error => {
-            console.error('Erro:', error);
-            showError('Erro ao excluir pesquisa. Tente novamente.');
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => Promise.reject(err));
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    showSuccess('Pesquisa excluída com sucesso!');
+                    // Remover o card da pesquisa da interface
+                    const searchCard = document.getElementById(`search-card-${searchId}`);
+                    if (searchCard) {
+                        searchCard.style.transition = 'opacity 0.3s';
+                        searchCard.style.opacity = '0';
+                        setTimeout(() => {
+                            searchCard.remove();
+                            // Se não houver mais pesquisas, recarregar a página
+                            if (document.querySelectorAll('.search-card').length === 0) {
+                                location.reload();
+                            }
+                        }, 300);
+                    } else {
+                        // Se não encontrou o card, recarregar a página
+                        location.reload();
+                    }
+                } else {
+                    showError(data.error || 'Erro ao excluir pesquisa.');
+                    newConfirmBtn.disabled = false;
+                    newConfirmBtn.innerHTML = originalBtnText;
+                }
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                let errorMsg = 'Erro ao excluir pesquisa. Tente novamente.';
+                if (error && typeof error === 'object') {
+                    errorMsg = error.error || error.message || errorMsg;
+                } else if (typeof error === 'string') {
+                    errorMsg = error;
+                }
+                showError(errorMsg);
+                newConfirmBtn.disabled = false;
+                newConfirmBtn.innerHTML = originalBtnText;
+            });
         });
+        
+        confirmModal.show();
     }
     
     // Função para mostrar checkboxes de seleção de CPFs
