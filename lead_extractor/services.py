@@ -2,11 +2,14 @@ import requests
 import json
 import re
 import os
+import sys
 import subprocess
 import logging
 import unicodedata
 import threading
 import copy
+import fcntl
+from pathlib import Path
 from datetime import timedelta
 from django.utils import timezone
 from decouple import config
@@ -14,30 +17,145 @@ from .models import Lead, NormalizedNiche, NormalizedLocation, CachedSearch, Sea
 
 logger = logging.getLogger(__name__)
 
+# Diretório base do projeto (2 níveis acima deste arquivo: lead_extractor/services.py -> projeto/)
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Caminho ABSOLUTO para o arquivo de tokens
+TOKENS_FILE = BASE_DIR / "viper_tokens.json"
+
+# Caminho ABSOLUTO para o auth_bot.py
+AUTH_BOT_PATH = BASE_DIR / "auth_bot.py"
+
+# Timeout para execução do auth_bot (em segundos)
+AUTH_BOT_TIMEOUT = 90
+
 # Pegando as chaves do arquivo .env com segurança
 SERPER_API_KEY = config('SERPER_API_KEY', default='')
 VIPER_API_KEY = config('VIPER_API_KEY', default='')
 # Nota: Removemos o VIPER_JWT_TOKEN daqui porque agora ele vem do arquivo JSON
 
+
 def get_auth_headers():
     """
-    Função auxiliar que tenta ler o arquivo 'viper_tokens.json'
-    gerado pelo auth_bot.py para pegar Token e Cookies atualizados.
+    Lê o arquivo 'viper_tokens.json' de forma segura com file locking.
+    
+    Usa caminho ABSOLUTO para garantir que funcione independente do CWD.
+    Usa file locking (fcntl.flock) para evitar race conditions.
+    
+    Returns:
+        dict ou None: Headers de autenticação ou None se falhar
     """
     try:
-        # Tenta abrir o arquivo na raiz do projeto
-        file_path = "viper_tokens.json"
-        
-        if not os.path.exists(file_path):
-            logger.warning("Arquivo 'viper_tokens.json' não encontrado. Rode o auth_bot.py.")
+        if not TOKENS_FILE.exists():
+            logger.warning(f"Arquivo de tokens não encontrado: {TOKENS_FILE}")
             return None
-            
-        with open(file_path, "r") as f:
-            return json.load(f)
-            
+        
+        # Abrir com lock compartilhado (permite múltiplas leituras simultâneas)
+        with open(TOKENS_FILE, "r") as f:
+            try:
+                # Lock compartilhado (LOCK_SH) - permite outras leituras
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+                try:
+                    data = json.load(f)
+                    # Validar que tem os campos necessários
+                    if 'Authorization' in data:
+                        return data
+                    else:
+                        logger.warning("Arquivo de tokens não contém 'Authorization'")
+                        return None
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except BlockingIOError:
+                # Arquivo está sendo escrito, aguardar um pouco e tentar novamente
+                logger.info("Arquivo de tokens está bloqueado, aguardando...")
+                import time
+                time.sleep(0.5)
+                # Tentar novamente sem lock não-bloqueante
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                try:
+                    data = json.load(f)
+                    if 'Authorization' in data:
+                        return data
+                    return None
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    
+    except json.JSONDecodeError as e:
+        logger.error(f"Erro ao decodificar JSON de tokens: {e}")
+        return None
     except Exception as e:
         logger.error(f"Erro ao ler tokens do Viper: {e}", exc_info=True)
         return None
+
+
+def run_auth_bot() -> bool:
+    """
+    Executa o auth_bot.py de forma segura com timeout.
+    
+    - Usa caminho absoluto para o script
+    - Usa o mesmo interpretador Python que está rodando
+    - Preserva e adiciona variáveis de ambiente necessárias
+    - Tem timeout para evitar travamento indefinido
+    
+    Returns:
+        bool: True se executou com sucesso (exit code 0), False caso contrário
+    """
+    logger.info(f"Executando auth_bot: {AUTH_BOT_PATH}")
+    
+    if not AUTH_BOT_PATH.exists():
+        logger.error(f"auth_bot.py não encontrado em: {AUTH_BOT_PATH}")
+        return False
+    
+    # Preparar ambiente
+    env = os.environ.copy()
+    
+    # Garantir que LD_LIBRARY_PATH está definido (necessário para Playwright/Chromium)
+    ld_path = env.get('LD_LIBRARY_PATH', '')
+    if '/usr/lib/x86_64-linux-gnu' not in ld_path:
+        if ld_path:
+            env['LD_LIBRARY_PATH'] = f"/usr/lib/x86_64-linux-gnu:{ld_path}"
+        else:
+            env['LD_LIBRARY_PATH'] = '/usr/lib/x86_64-linux-gnu'
+    
+    # Garantir PLAYWRIGHT_BROWSERS_PATH se não estiver definido
+    if 'PLAYWRIGHT_BROWSERS_PATH' not in env:
+        # Tentar detectar automaticamente
+        home_dir = Path.home()
+        playwright_cache = home_dir / '.cache' / 'ms-playwright'
+        if playwright_cache.exists():
+            env['PLAYWRIGHT_BROWSERS_PATH'] = str(playwright_cache)
+    
+    try:
+        result = subprocess.run(
+            [sys.executable, str(AUTH_BOT_PATH)],
+            env=env,
+            cwd=str(BASE_DIR),
+            timeout=AUTH_BOT_TIMEOUT,
+            capture_output=True,
+            text=True
+        )
+        
+        # Logar output do auth_bot
+        if result.stdout:
+            for line in result.stdout.strip().split('\n'):
+                logger.info(f"[auth_bot] {line}")
+        if result.stderr:
+            for line in result.stderr.strip().split('\n'):
+                logger.warning(f"[auth_bot stderr] {line}")
+        
+        if result.returncode == 0:
+            logger.info("auth_bot executado com sucesso")
+            return True
+        else:
+            logger.error(f"auth_bot falhou com código de saída: {result.returncode}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        logger.error(f"auth_bot excedeu o timeout de {AUTH_BOT_TIMEOUT}s")
+        return False
+    except Exception as e:
+        logger.error(f"Erro ao executar auth_bot: {e}", exc_info=True)
+        return False
 
 def search_google_maps(query):
     """Busca empresas no Google Maps via Serper"""
@@ -106,20 +224,35 @@ def enrich_company_viper(cnpj):
     
     return None
 
-def get_partners_internal(cnpj, retry=True): # Adicionamos o parâmetro retry
+def get_partners_internal(cnpj, retry=True):
     """
-    Busca o QSA com retry automático:
-    Se der 401, roda o auth_bot.py e tenta de novo.
+    Busca o QSA (Quadro de Sócios e Administradores) na API interna do Viper.
+    
+    Fluxo:
+    1. Tenta ler tokens do arquivo
+    2. Se não tem tokens e retry=True, executa auth_bot
+    3. Faz requisição à API
+    4. Se receber 401 e retry=True, renova tokens e tenta novamente
+    
+    Args:
+        cnpj: CNPJ da empresa (apenas números)
+        retry: Se True, tenta renovar tokens automaticamente em caso de erro
+        
+    Returns:
+        list: Lista de sócios ou lista vazia em caso de erro
     """
     auth_headers = get_auth_headers()
     
     # Se não tem headers, tenta gerar agora
     if not auth_headers and retry:
-        logger.info("Nenhum token encontrado. Rodando robô de autenticação do Viper...")
-        subprocess.run(["python", "auth_bot.py"])
-        auth_headers = get_auth_headers()
+        logger.info("Nenhum token encontrado. Executando auth_bot...")
+        if run_auth_bot():
+            auth_headers = get_auth_headers()
+        else:
+            logger.error("Falha ao executar auth_bot")
 
     if not auth_headers:
+        logger.warning("Sem tokens de autenticação disponíveis")
         return []
 
     url = "https://sistemas.vipersolucoes.com.br/server/api/infoqualy/consultaCNPJSocios"
@@ -134,21 +267,25 @@ def get_partners_internal(cnpj, retry=True): # Adicionamos o parâmetro retry
     payload = {"CNPJ": str(cnpj).strip()}
     
     try:
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         
         if response.status_code == 200:
             return response.json()
             
         elif response.status_code == 401 and retry:
-            logger.warning(f"Token do Viper expirado (401). Renovando tokens e tentando novamente (CNPJ: {cnpj})...")
-            # Roda o bot (vai levar uns 10-15s)
-            subprocess.run(["python", "auth_bot.py"])
-            # Chama a função de novo (recursiva), mas sem retry infinito (retry=False)
-            return get_partners_internal(cnpj, retry=False)
+            logger.warning(f"Token do Viper expirado (401). Renovando tokens... (CNPJ: {cnpj})")
+            if run_auth_bot():
+                # Chama a função de novo (recursiva), mas sem retry infinito
+                return get_partners_internal(cnpj, retry=False)
+            else:
+                logger.error("Falha ao renovar tokens após 401")
+                return []
             
         else:
             logger.error(f"Erro ao buscar sócios no Viper (CNPJ: {cnpj}): Status {response.status_code} - {response.text}")
             
+    except requests.Timeout:
+        logger.error(f"Timeout ao buscar sócios no Viper (CNPJ: {cnpj})")
     except requests.RequestException as e:
         logger.error(f"Erro de rede ao buscar sócios no Viper (CNPJ: {cnpj}): {e}", exc_info=True)
     except Exception as e:
