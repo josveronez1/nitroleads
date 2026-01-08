@@ -20,18 +20,19 @@ def format_phone(value):
     if len(nums) > 10 and nums.startswith('55'):
         nums = nums[2:]
         
-    icon = "☎️" # Padrão fixo
+    icon = '<i class="fas fa-phone me-1"></i>' # Padrão fixo
     formatted = nums
     
     # Lógica para formatar
     if len(nums) == 11: # Celular (DDD + 9 dígitos)
-        icon = "📱"
+        icon = '<i class="fas fa-mobile-alt me-1"></i>'
         formatted = f"({nums[:2]}) {nums[2:7]}-{nums[7:]}"
     elif len(nums) == 10: # Fixo (DDD + 8 dígitos)
-        icon = "☎️"
+        icon = '<i class="fas fa-phone me-1"></i>'
         formatted = f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
         
-    return f"{icon} {formatted}"
+    from django.utils.safestring import mark_safe
+    return mark_safe(f"{icon} {formatted}")
 
 @register.filter
 def get_emails(viper_data):

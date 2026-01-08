@@ -1,7 +1,7 @@
 {% extends "lead_extractor/base.html" %}
 {% load phone_filters %}
 
-{% block title %}Minhas Pesquisas - NitroLeads{% endblock %}
+{% block title %}Base de Dados - NitroLeads{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -26,7 +26,7 @@
 {% csrf_token %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="mb-0">Minhas Pesquisas</h2>
+    <h2 class="mb-0">Base de Dados</h2>
     <a href="{% url 'export_csv' %}" class="btn btn-success">
         <i class="fas fa-file-excel"></i> Exportar Todos
     </a>
@@ -109,7 +109,7 @@
                     <table class="table table-sm table-hover">
                         <thead>
                             <tr>
-                                <th style="width: 40px;" id="partners-checkbox-header-{{ search.id }}" style="display: none;">
+                                <th style="width: 40px;" id="partners-checkbox-header-{{ search.id }}" style="display: none !important;">
                                     <input type="checkbox" id="select-all-partners-{{ search.id }}" 
                                            onchange="toggleAllPartnersLeads({{ search.id }})">
                                 </th>
@@ -123,7 +123,7 @@
                         <tbody>
                             {% for lead in search.leads.all|slice:":20" %}
                             <tr id="lead-row-{{ lead.id }}">
-                                <td id="partners-checkbox-{{ lead.id }}" style="display: none;">
+                                <td id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 40px;">
                                     <input type="checkbox" class="partner-lead-checkbox" 
                                            data-lead-id="{{ lead.id }}" 
                                            data-search-id="{{ search.id }}"
@@ -349,13 +349,25 @@
     // Função para expandir/contrair seleção de empresas para buscar sócios
     function togglePartnersSelection(searchId) {
         const selectionDiv = document.getElementById(`partners-selection-${searchId}`);
-        const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox`);
-        const checkboxHeaders = document.querySelectorAll(`#partners-checkbox-header-${searchId}, #search-${searchId} #partners-checkbox-${searchId}`);
+        const searchElement = document.getElementById(`search-${searchId}`);
+        if (!searchElement) return;
+        
+        const checkboxes = searchElement.querySelectorAll('.partner-lead-checkbox');
+        const checkboxHeader = document.getElementById(`partners-checkbox-header-${searchId}`);
+        // Encontrar todos os tds que contêm checkboxes (usando o atributo id que começa com partners-checkbox-)
+        const checkboxTds = Array.from(searchElement.querySelectorAll('td')).filter(td => 
+            td.id && td.id.startsWith('partners-checkbox-')
+        );
         
         if (selectionDiv.style.display === 'none' || !selectionDiv.style.display) {
             // Mostrar seleção
             selectionDiv.style.display = 'block';
-            checkboxHeaders.forEach(cb => cb.style.display = 'table-cell');
+            if (checkboxHeader) {
+                checkboxHeader.style.display = 'table-cell';
+            }
+            checkboxTds.forEach(td => {
+                td.style.display = 'table-cell';
+            });
             checkboxes.forEach(cb => {
                 cb.style.display = 'block';
                 cb.checked = true;
@@ -364,8 +376,15 @@
         } else {
             // Ocultar seleção
             selectionDiv.style.display = 'none';
-            checkboxHeaders.forEach(cb => cb.style.display = 'none');
-            checkboxes.forEach(cb => cb.style.display = 'none');
+            if (checkboxHeader) {
+                checkboxHeader.style.display = 'none';
+            }
+            checkboxTds.forEach(td => {
+                td.style.display = 'none';
+            });
+            checkboxes.forEach(cb => {
+                cb.style.display = 'none';
+            });
         }
     }
 
@@ -383,7 +402,9 @@
     function toggleAllPartnersLeads(searchId) {
         const selectAll = document.getElementById(`select-all-partners-${searchId}`);
         const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox`);
-        checkboxes.forEach(cb => cb.checked = selectAll.checked);
+        checkboxes.forEach(cb => {
+            cb.checked = selectAll.checked;
+        });
         updatePartnersCost(searchId);
     }
 
