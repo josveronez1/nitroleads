@@ -3,6 +3,62 @@
 
 {% block title %}Dashboard - NitroLeads{% endblock %}
 
+{% block extra_css %}
+<style>
+    .custom-validation-message {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: linear-gradient(135deg, #dc3545, #c82333);
+        color: white;
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+        z-index: 1000;
+        display: none;
+        animation: slideDown 0.3s ease-out;
+        max-width: 100%;
+    }
+    
+    .custom-validation-message::before {
+        content: '';
+        position: absolute;
+        bottom: 100%;
+        left: 1.5rem;
+        border: 8px solid transparent;
+        border-bottom-color: #dc3545;
+    }
+    
+    .custom-validation-message.show {
+        display: block;
+    }
+    
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .form-control:invalid:not(:focus):not(:placeholder-shown) {
+        border-color: #dc3545;
+        box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+    }
+    
+    .form-control:invalid:focus {
+        border-color: #dc3545;
+        box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- Cards de Métricas -->
 <div class="row g-4 mb-4">
@@ -376,6 +432,107 @@
             searchCpfInline(this.getAttribute('data-cpf'), this.getAttribute('data-name'));
         });
     });
+    
+    // Validação customizada para substituir avisos HTML5 padrão
+    (function() {
+        const form = document.getElementById('searchForm');
+        const nicheInput = document.getElementById('niche');
+        const locationInput = document.getElementById('location');
+        const quantityInput = document.getElementById('quantity');
+        
+        if (!form) return;
+        
+        // Remover mensagens de validação existentes
+        function removeValidationMessages() {
+            document.querySelectorAll('.custom-validation-message').forEach(msg => {
+                msg.classList.remove('show');
+                setTimeout(() => msg.remove(), 300);
+            });
+        }
+        
+        // Criar mensagem de validação customizada
+        function createValidationMessage(input, message) {
+            removeValidationMessages();
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'custom-validation-message show';
+            messageDiv.innerHTML = `<i class="fas fa-exclamation-circle me-2"></i>${message}`;
+            
+            const inputContainer = input.closest('.position-relative') || input.closest('.col-md-4') || input.parentElement;
+            if (!inputContainer.style.position || inputContainer.style.position === 'static') {
+                inputContainer.style.position = 'relative';
+            }
+            inputContainer.appendChild(messageDiv);
+            
+            // Focar no campo
+            input.focus();
+            input.classList.add('is-invalid');
+            
+            // Remover mensagem após alguns segundos ou quando o usuário começar a digitar
+            const removeTimeout = setTimeout(() => {
+                messageDiv.classList.remove('show');
+                setTimeout(() => {
+                    messageDiv.remove();
+                    input.classList.remove('is-invalid');
+                }, 300);
+            }, 5000);
+            
+            input.addEventListener('input', function() {
+                clearTimeout(removeTimeout);
+                messageDiv.classList.remove('show');
+                input.classList.remove('is-invalid');
+                setTimeout(() => messageDiv.remove(), 300);
+            }, { once: true });
+        }
+        
+        // Interceptar submit do formulário
+        form.addEventListener('submit', function(e) {
+            let isValid = true;
+            
+            // Validar nicho
+            if (!nicheInput || !nicheInput.value.trim()) {
+                e.preventDefault();
+                if (nicheInput) {
+                    createValidationMessage(nicheInput, 'Por favor, preencha o campo Nicho');
+                }
+                isValid = false;
+            }
+            
+            // Validar localização
+            if (!locationInput || !locationInput.value.trim()) {
+                e.preventDefault();
+                if (locationInput) {
+                    createValidationMessage(locationInput, 'Por favor, preencha o campo Localização');
+                }
+                isValid = false;
+            }
+            
+            // Validar quantidade
+            if (quantityInput) {
+                const quantity = parseInt(quantityInput.value);
+                if (!quantity || quantity < 1) {
+                    e.preventDefault();
+                    createValidationMessage(quantityInput, 'Por favor, informe uma quantidade válida (mínimo 1)');
+                    isValid = false;
+                }
+            }
+            
+            // Se tudo estiver válido, permitir submit
+            if (isValid) {
+                removeValidationMessages();
+            }
+        });
+        
+        // Remover mensagens quando campos são preenchidos
+        [nicheInput, locationInput, quantityInput].forEach(input => {
+            if (input) {
+                input.addEventListener('input', function() {
+                    removeValidationMessages();
+                    this.classList.remove('is-invalid');
+                });
+            }
+        });
+    })();
 
 </script>
 {% endblock %}
