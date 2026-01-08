@@ -63,11 +63,6 @@
                 <div class="text-end d-flex align-items-center gap-2">
                     <span class="badge bg-primary">{{ search.results_count }} resultados</span>
                     <span class="badge bg-secondary">{{ search.credits_used }} créditos</span>
-                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
-                            data-bs-target="#search-{{ search.id }}" aria-expanded="false"
-                            id="toggle-leads-btn-{{ search.id }}">
-                        <i class="fas fa-chevron-down"></i> Ver leads
-                    </button>
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary" type="button" 
                                 id="dropdownMenuButton-{{ search.id }}" 
@@ -78,13 +73,19 @@
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownMenuButton-{{ search.id }}">
                             <li>
-                                <a class="dropdown-item text-danger" href="#" 
-                                   onclick="deleteSearch({{ search.id }}); return false;">
+                                <a class="dropdown-item text-danger py-1" href="#" 
+                                   onclick="deleteSearch({{ search.id }}); return false;"
+                                   style="font-size: 0.875rem;">
                                     <i class="fas fa-trash me-2"></i>Excluir pesquisa
                                 </a>
                             </li>
                         </ul>
                     </div>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
+                            data-bs-target="#search-{{ search.id }}" aria-expanded="false"
+                            id="toggle-leads-btn-{{ search.id }}">
+                        <i class="fas fa-chevron-down"></i> Ver leads
+                    </button>
                 </div>
             </div>
         </div>
