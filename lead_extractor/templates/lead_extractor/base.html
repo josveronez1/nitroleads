@@ -207,6 +207,30 @@
             font-size: 1.1rem;
         }
 
+        .purchase-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+            color: white;
+            border-radius: 2rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .purchase-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            color: white;
+        }
+
+        .purchase-btn i {
+            font-size: 1.1rem;
+        }
+
         .topbar-actions {
             display: flex;
             align-items: center;
@@ -455,18 +479,6 @@
                     <span>Busca Rápida</span>
                 </a>
             </div>
-            <div class="nav-item">
-                <a href="{% url 'purchase_credits' %}" class="nav-link {% if request.resolver_match.url_name == 'purchase_credits' %}active{% endif %}">
-                    <i class="fas fa-coins"></i>
-                    <span>Comprar Créditos</span>
-                </a>
-            </div>
-            <div class="nav-item">
-                <a href="{% url 'logout' %}" class="nav-link">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Sair</span>
-                </a>
-            </div>
         </nav>
     </aside>
 
@@ -486,17 +498,18 @@
                 <span>{{ available_credits|default:0 }} créditos</span>
             </div>
             <div class="topbar-actions">
-                <a href="{% url 'purchase_credits' %}" class="btn btn-primary btn-sm">
+                <a href="{% url 'purchase_credits' %}" class="purchase-btn">
                     <i class="fas fa-shopping-cart"></i>
-                    <span class="d-none d-md-inline">Comprar</span>
+                    <span>Comprar</span>
                 </a>
                 <div class="user-menu">
                     <button class="user-dropdown" type="button" data-bs-toggle="dropdown">
                         <i class="fas fa-user-circle"></i>
-                        <span class="d-none d-md-inline">{{ user_profile.email|truncatechars:20 }}</span>
                         <i class="fas fa-chevron-down"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#"><i class="fas fa-envelope me-2"></i>{{ user_profile.email|truncatechars:30 }}</a></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{% url 'logout' %}"><i class="fas fa-sign-out-alt me-2"></i>Sair</a></li>
                     </ul>
                 </div>
