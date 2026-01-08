@@ -132,9 +132,17 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         cache_key = f'user_profile_{user_id}'
         
         # Tentar buscar do cache primeiro
-        user_profile = cache.get(cache_key)
-        if user_profile:
-            return user_profile
+        cached_profile_id = cache.get(cache_key)
+        if cached_profile_id:
+            # Buscar do banco usando o ID do cache para garantir sincronização
+            try:
+                user_profile = UserProfile.objects.get(id=cached_profile_id)
+                # Refresh para garantir que está sincronizado
+                user_profile.refresh_from_db()
+                return user_profile
+            except UserProfile.DoesNotExist:
+                # Cache inválido, limpar e continuar
+                cache.delete(cache_key)
         
         # Extrair email do payload JWT
         email = payload.get('email', '') or payload.get('user_metadata', {}).get('email', '') or payload.get('user', {}).get('email', '')
@@ -160,8 +168,8 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
                     user_profile.save(update_fields=['email'])
                     logger.info(f"Email atualizado para UserProfile (user_id: {user_id})")
             
-            # Armazenar no cache
-            cache.set(cache_key, user_profile, USER_PROFILE_CACHE_TTL)
+            # Armazenar apenas o ID no cache (não o objeto inteiro) para evitar problemas de serialização
+            cache.set(cache_key, user_profile.id, USER_PROFILE_CACHE_TTL)
             return user_profile
                         
         except IntegrityError as e:
@@ -169,8 +177,8 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             # Se deu erro de integridade, tentar buscar novamente
             try:
                 user_profile = UserProfile.objects.get(supabase_user_id=user_id)
-                # Armazenar no cache mesmo em caso de erro de integridade (já existe)
-                cache.set(cache_key, user_profile, USER_PROFILE_CACHE_TTL)
+                # Armazenar apenas o ID no cache mesmo em caso de erro de integridade (já existe)
+                cache.set(cache_key, user_profile.id, USER_PROFILE_CACHE_TTL)
                 return user_profile
             except UserProfile.DoesNotExist:
                 logger.error(f"Não foi possível criar nem encontrar UserProfile para user_id {user_id}")
