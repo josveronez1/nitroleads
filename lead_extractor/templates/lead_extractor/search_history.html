@@ -18,6 +18,15 @@
     .lead-checkbox {
         display: none;
     }
+    .partners-checkbox-header:not([style*="table-cell"]),
+    .partners-checkbox-cell:not([style*="table-cell"]) {
+        display: none !important;
+        width: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        visibility: hidden !important;
+        margin: 0 !important;
+    }
 </style>
 {% endblock %}
 
@@ -109,9 +118,10 @@
                     <table class="table table-sm table-hover">
                         <thead>
                             <tr>
-                                <th style="width: 40px;" id="partners-checkbox-header-{{ search.id }}" style="display: none !important;">
+                                <th class="partners-checkbox-header" id="partners-checkbox-header-{{ search.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
                                     <input type="checkbox" id="select-all-partners-{{ search.id }}" 
-                                           onchange="toggleAllPartnersLeads({{ search.id }})">
+                                           onchange="toggleAllPartnersLeads({{ search.id }})"
+                                           style="display: none !important;">
                                 </th>
                                 <th>Empresa</th>
                                 <th>CNPJ</th>
@@ -123,12 +133,13 @@
                         <tbody>
                             {% for lead in search.leads.all|slice:":20" %}
                             <tr id="lead-row-{{ lead.id }}">
-                                <td id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 40px;">
+                                <td class="partners-checkbox-cell" id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
                                     <input type="checkbox" class="partner-lead-checkbox" 
                                            data-lead-id="{{ lead.id }}" 
                                            data-search-id="{{ search.id }}"
                                            checked
-                                           onchange="updatePartnersCost({{ search.id }})">
+                                           onchange="updatePartnersCost({{ search.id }})"
+                                           style="display: none !important;">
                                 </td>
                                 <td>{{ lead.name }}</td>
                                 <td>{{ lead.cnpj|default:"-" }}</td>
@@ -197,12 +208,21 @@
                                             </div>
                                             {% endfor %}
                                         </div>
-                                        <button class="btn btn-sm btn-outline-primary mt-2" 
-                                                type="button"
-                                                onclick="toggleCpfSelection({{ lead.id }})"
-                                                id="search-cpf-btn-{{ lead.id }}">
-                                            <i class="fas fa-search"></i> Buscar CPFs Selecionados
-                                        </button>
+                                        <div class="d-flex align-items-center gap-2 mt-2">
+                                            <button class="btn btn-sm btn-outline-primary" 
+                                                    type="button"
+                                                    onclick="toggleCpfSelection({{ lead.id }})"
+                                                    id="search-cpf-btn-{{ lead.id }}">
+                                                <i class="fas fa-search"></i> Buscar CPFs Selecionados
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-secondary" 
+                                                    type="button"
+                                                    onclick="cancelCpfSelection({{ lead.id }})"
+                                                    id="cancel-cpf-btn-{{ lead.id }}"
+                                                    style="display: none;">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
                                     {% else %}
                                         <span class="text-muted small">-</span>
                                     {% endif %}
@@ -364,9 +384,25 @@
             selectionDiv.style.display = 'block';
             if (checkboxHeader) {
                 checkboxHeader.style.display = 'table-cell';
+                checkboxHeader.style.width = '40px';
+                checkboxHeader.style.padding = '';
+                checkboxHeader.style.border = '';
+                checkboxHeader.style.visibility = 'visible';
+                const checkboxInput = checkboxHeader.querySelector('input[type="checkbox"]');
+                if (checkboxInput) {
+                    checkboxInput.style.display = 'block';
+                }
             }
             checkboxTds.forEach(td => {
                 td.style.display = 'table-cell';
+                td.style.width = '40px';
+                td.style.padding = '';
+                td.style.border = '';
+                td.style.visibility = 'visible';
+                const checkboxInput = td.querySelector('input[type="checkbox"]');
+                if (checkboxInput) {
+                    checkboxInput.style.display = 'block';
+                }
             });
             checkboxes.forEach(cb => {
                 cb.style.display = 'block';
@@ -378,9 +414,25 @@
             selectionDiv.style.display = 'none';
             if (checkboxHeader) {
                 checkboxHeader.style.display = 'none';
+                checkboxHeader.style.width = '0';
+                checkboxHeader.style.padding = '0';
+                checkboxHeader.style.border = 'none';
+                checkboxHeader.style.visibility = 'hidden';
+                const checkboxInput = checkboxHeader.querySelector('input[type="checkbox"]');
+                if (checkboxInput) {
+                    checkboxInput.style.display = 'none';
+                }
             }
             checkboxTds.forEach(td => {
                 td.style.display = 'none';
+                td.style.width = '0';
+                td.style.padding = '0';
+                td.style.border = 'none';
+                td.style.visibility = 'hidden';
+                const checkboxInput = td.querySelector('input[type="checkbox"]');
+                if (checkboxInput) {
+                    checkboxInput.style.display = 'none';
+                }
             });
             checkboxes.forEach(cb => {
                 cb.style.display = 'none';
@@ -535,6 +587,7 @@
     function toggleCpfSelection(leadId) {
         const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
         const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
         
         if (checkboxes.length === 0) {
             alert('Nenhum sócio com CPF encontrado para este lead.');
@@ -548,9 +601,41 @@
                 cb.checked = true;
             });
             searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca de CPFs';
+            if (cancelBtn) {
+                cancelBtn.style.display = 'inline-block';
+            }
+            // Adicionar listener para ESC
+            document.addEventListener('keydown', function escHandler(e) {
+                if (e.key === 'Escape') {
+                    cancelCpfSelection(leadId);
+                    document.removeEventListener('keydown', escHandler);
+                }
+            });
         } else {
             // Buscar CPFs selecionados
             searchCpfsBatch(leadId);
+        }
+    }
+    
+    // Função para cancelar seleção de CPFs
+    function cancelCpfSelection(leadId) {
+        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+        
+        // Ocultar checkboxes
+        checkboxes.forEach(cb => {
+            cb.style.display = 'none';
+        });
+        
+        // Restaurar botão
+        if (searchBtn) {
+            searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+        }
+        
+        // Ocultar botão cancelar
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
         }
     }
 
@@ -567,7 +652,14 @@
             alert('Selecione pelo menos um sócio para buscar dados por CPF.');
             // Ocultar checkboxes novamente
             document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
-            document.getElementById(`search-cpf-btn-${leadId}`).innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+            const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+            if (searchBtn) {
+                searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+            }
+            const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
+            }
             return;
         }
         
@@ -680,10 +772,20 @@
                 document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
                 searchBtn.disabled = false;
                 searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar CPFs Selecionados';
+                
+                // Ocultar botão cancelar
+                const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+                if (cancelBtn) {
+                    cancelBtn.style.display = 'none';
+                }
             } else {
                 alert('Erro ao buscar CPFs: ' + (data.error || 'Erro desconhecido'));
                 searchBtn.disabled = false;
                 searchBtn.innerHTML = originalText;
+                const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+                if (cancelBtn) {
+                    cancelBtn.style.display = 'none';
+                }
             }
         })
         .catch(error => {
@@ -691,6 +793,10 @@
             alert('Erro ao buscar CPFs. Tente novamente.');
             searchBtn.disabled = false;
             searchBtn.innerHTML = originalText;
+            const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
+            }
         });
     }
 
