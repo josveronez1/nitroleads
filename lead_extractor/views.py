@@ -96,14 +96,7 @@ def password_reset_view(request):
         'supabase_url': config('SUPABASE_URL', default=''),
         'supabase_key': config('SUPABASE_KEY', default=''),
     }
-    try:
-        return render(request, 'lead_extractor/password_reset.html', context)
-    except Exception as e:
-        # Log do erro para debug
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Erro ao renderizar password_reset.html: {e}")
-        raise
+    return render(request, 'lead_extractor/password_reset.html', context)
 
 
 def password_reset_confirm_view(request):
