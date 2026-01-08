@@ -46,27 +46,35 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     ]
     
     def process_request(self, request):
-        # Skip authentication for exempt URLs
+        # DEBUG: Log detalhado
         request_path = request.path
+        logger.info(f"[MIDDLEWARE] Processando requisição: {request_path}")
+        logger.info(f"[MIDDLEWARE] Method: {request.method}")
+        logger.info(f"[MIDDLEWARE] Query string: {request.GET.urlencode()}")
         
         # Verificação explícita para password-reset (mais importante primeiro)
         if request_path.startswith('/password-reset'):
-            logger.debug(f"URL de password-reset detectada e isenta: {request_path}")
+            logger.info(f"[MIDDLEWARE] ✓ URL de password-reset detectada e isenta: {request_path}")
+            logger.info(f"[MIDDLEWARE] Retornando None - permitindo acesso sem autenticação")
             return None
         
         # Skip authentication for admin (usa auth do Django)
         if request_path.startswith('/admin'):
+            logger.info(f"[MIDDLEWARE] ✓ URL admin detectada e isenta: {request_path}")
             return None
         
         # Skip authentication for login
         if request_path.startswith('/login'):
+            logger.info(f"[MIDDLEWARE] ✓ URL login detectada e isenta: {request_path}")
             return None
         
         # Skip authentication for other exempt URLs
         for exempt_url in self.EXEMPT_URLS:
             if request_path.startswith(exempt_url):
-                logger.debug(f"URL isenta detectada: {request_path} (isento: {exempt_url})")
+                logger.info(f"[MIDDLEWARE] ✓ URL isenta detectada: {request_path} (isento: {exempt_url})")
                 return None
+        
+        logger.info(f"[MIDDLEWARE] ✗ URL NÃO está na lista de isentas: {request_path}")
         
         # Tentar pegar o token do header Authorization
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')

@@ -104,15 +104,28 @@ def password_reset_confirm_view(request):
     Página para confirmar e redefinir a senha usando Supabase Auth.
     O Supabase gerencia o token via URL hash, então apenas renderizamos o template.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"[VIEW] password_reset_confirm_view chamada")
+    logger.info(f"[VIEW] Path: {request.path}")
+    logger.info(f"[VIEW] Method: {request.method}")
+    logger.info(f"[VIEW] Query string: {request.GET.urlencode()}")
+    logger.info(f"[VIEW] Headers: {dict(request.headers)}")
+    
     # Se já estiver autenticado, redirecionar para dashboard
     user_profile = getattr(request, 'user_profile', None)
     if user_profile:
+        logger.info(f"[VIEW] User profile encontrado, redirecionando para dashboard")
         return redirect('dashboard')
+    
+    logger.info(f"[VIEW] Nenhum user_profile encontrado, renderizando template")
     
     context = {
         'supabase_url': config('SUPABASE_URL', default=''),
         'supabase_key': config('SUPABASE_KEY', default=''),
     }
+    logger.info(f"[VIEW] Context configurado, renderizando template")
     return render(request, 'lead_extractor/password_reset_confirm.html', context)
 
 
