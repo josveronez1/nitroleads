@@ -417,6 +417,23 @@ def search_by_cnpj(request):
 
 
 @require_user_profile
+@require_POST
+@validate_user_ownership(Search, lookup_field='user')
+def delete_search(request, search_id):
+    """
+    Deleta uma pesquisa e seus leads associados.
+    """
+    try:
+        search = Search.objects.get(id=search_id, user=request.user_profile)
+        search.delete()  # Isso também deleta os leads associados devido ao CASCADE
+        return JsonResponse({'success': True, 'message': 'Pesquisa excluída com sucesso.'})
+    except Search.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Pesquisa não encontrada.'}, status=404)
+    except Exception as e:
+        logger.error(f"Erro ao deletar pesquisa {search_id}: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Erro ao excluir pesquisa.'}, status=500)
+
+@require_user_profile
 @ensure_csrf_cookie
 def search_history(request):
     """

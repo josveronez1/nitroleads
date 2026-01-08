@@ -80,7 +80,12 @@
                     <strong>Resultados encontrados:</strong> {{ search.results_count }}
                 </div>
                 <div class="col-md-6 text-end" id="action-buttons-{{ search.id }}" style="display: none;">
-                    <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success">
+                    <button class="btn btn-sm btn-outline-danger" type="button" 
+                            onclick="deleteSearch({{ search.id }})" 
+                            title="Excluir pesquisa">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success ms-2">
                         <i class="fas fa-download"></i> Exportar
                     </a>
                     {% if search.status == 'completed' %}
@@ -735,23 +740,18 @@
             })
             .then(data => {
                 if (data.success) {
-                    const processed = data.processed || 0;
-                    const queued = processed - (data.results ? data.results.filter(r => r.processed).length : 0);
+                    const queued = data.processed - (data.results ? data.results.filter(r => r.processed).length : 0);
                     let message = `Processamento iniciado! ${data.credits_debited} crédito(s) debitado(s).`;
                     
-                    if (processed > 0) {
-                        message += `\n\n${processed} empresa(s) processada(s).`;
-                    }
-                    
                     if (queued > 0) {
-                        message += `\n\n${queued} empresa(s) em processamento. Recarregue a página em alguns instantes para ver os resultados.`;
+                        message += `<br><br>${queued} empresa(s) em processamento. Recarregue a página em alguns instantes para ver os resultados.`;
                     }
                     
                     if (data.errors && data.errors.length > 0) {
-                        message += `\n\nAvisos: ${data.errors.join('; ')}`;
+                        message += `<br><br>Avisos: ${data.errors.join('; ')}`;
                     }
                     
-                    showSuccess(message.replace(/\n/g, '<br>'));
+                    showSuccess(message);
                     
                     // Aguardar alguns segundos antes de recarregar para dar tempo do processamento
                     setTimeout(() => {
@@ -783,6 +783,57 @@
         }
     }
 
+    // Função para deletar pesquisa
+    function deleteSearch(searchId) {
+        if (!confirm('Tem certeza que deseja excluir esta pesquisa? Esta ação não pode ser desfeita.')) {
+            return;
+        }
+        
+        const csrfToken = getCsrfToken();
+        if (!csrfToken) {
+            showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+            return;
+        }
+        
+        const url = `{% url 'delete_search' 0 %}`.replace('0', searchId);
+        
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showSuccess('Pesquisa excluída com sucesso!');
+                // Remover o card da pesquisa da interface
+                const searchCard = document.getElementById(`search-card-${searchId}`);
+                if (searchCard) {
+                    searchCard.style.transition = 'opacity 0.3s';
+                    searchCard.style.opacity = '0';
+                    setTimeout(() => {
+                        searchCard.remove();
+                        // Se não houver mais pesquisas, recarregar a página
+                        if (document.querySelectorAll('.search-card').length === 0) {
+                            location.reload();
+                        }
+                    }, 300);
+                } else {
+                    // Se não encontrou o card, recarregar a página
+                    location.reload();
+                }
+            } else {
+                showError(data.error || 'Erro ao excluir pesquisa.');
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            showError('Erro ao excluir pesquisa. Tente novamente.');
+        });
+    }
+    
     // Função para mostrar checkboxes de seleção de CPFs
     function toggleCpfSelection(leadId) {
         const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);

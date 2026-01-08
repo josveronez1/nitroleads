@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path
 from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
-    search_by_cpf, search_by_cnpj, search_history,
+    search_by_cpf, search_by_cnpj, search_history, delete_search,
     purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success,
     viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
     api_search_status, enrich_leads, search_partners, search_cpf_batch, github_webhook
@@ -35,6 +35,7 @@ urlpatterns = [
     path('search/cpf/', search_by_cpf, name='search_by_cpf'),
     path('search/cnpj/', search_by_cnpj, name='search_by_cnpj'),
     path('history/', search_history, name='search_history'),
+    path('search/<int:search_id>/delete/', delete_search, name='delete_search'),
     path('purchase/', purchase_credits, name='purchase_credits'),
     path('checkout/create/', create_checkout, name='create_checkout'),
     path('checkout/create-custom/', create_custom_checkout, name='create_custom_checkout'),
