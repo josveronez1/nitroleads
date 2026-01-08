@@ -410,6 +410,7 @@ def search_cnpj_viper(cnpj):
 def get_partners_internal_queued(cnpj, user_profile, lead=None):
     """
     Busca o QSA usando fila para evitar requisições simultâneas.
+    Verifica se já existe requisição pendente/processando antes de criar nova.
     Adiciona a requisição à fila e retorna um dict com status e queue_id.
     
     Args:
@@ -419,15 +420,16 @@ def get_partners_internal_queued(cnpj, user_profile, lead=None):
     
     Returns:
         dict: {
-            'status': 'queued',
+            'status': 'queued' ou 'existing',
             'queue_id': id da requisição na fila,
-            'data': None (será preenchido quando processado)
+            'data': None (será preenchido quando processado),
+            'is_new': True se foi criada nova, False se reutilizada
         }
     """
     from .viper_queue_service import enqueue_viper_request
     
-    # Adicionar à fila
-    queue_item = enqueue_viper_request(
+    # Adicionar à fila (ou reutilizar existente)
+    queue_item, is_new = enqueue_viper_request(
         user_profile=user_profile,
         request_type='partners',
         request_data={'cnpj': str(cnpj).strip()},
@@ -437,9 +439,10 @@ def get_partners_internal_queued(cnpj, user_profile, lead=None):
     
     # Retornar status de enfileirado
     return {
-        'status': 'queued',
+        'status': 'queued' if is_new else 'existing',
         'queue_id': queue_item.id,
-        'data': None
+        'data': None,
+        'is_new': is_new
     }
 
 

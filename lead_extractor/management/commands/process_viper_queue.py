@@ -29,12 +29,71 @@ class Command(BaseCommand):
             default=5,
             help='Intervalo em segundos entre processamentos quando não há itens (default: 5)',
         )
+        parser.add_argument(
+            '--cleanup',
+            action='store_true',
+            help='Executar limpeza de requisições antigas e sair',
+        )
+        parser.add_argument(
+            '--auto-cleanup',
+            action='store_true',
+            help='Executar limpeza automaticamente no início (antes de processar)',
+        )
+
+    def cleanup_old_requests(self):
+        """
+        Remove requisições antigas do banco de dados:
+        - completed com mais de 7 dias
+        - failed com mais de 30 dias
+        """
+        from .models import ViperRequestQueue
+        from datetime import timedelta
+        
+        cutoff_completed = timezone.now() - timedelta(days=7)
+        cutoff_failed = timezone.now() - timedelta(days=30)
+        
+        # Remover completed antigas
+        deleted_completed = ViperRequestQueue.objects.filter(
+            status='completed',
+            completed_at__lt=cutoff_completed
+        ).delete()[0]
+        
+        # Remover failed antigas
+        deleted_failed = ViperRequestQueue.objects.filter(
+            status='failed',
+            completed_at__lt=cutoff_failed
+        ).delete()[0]
+        
+        total_deleted = deleted_completed + deleted_failed
+        
+        if total_deleted > 0:
+            self.stdout.write(self.style.SUCCESS(
+                f'Limpeza concluída: {deleted_completed} completed e {deleted_failed} failed removidas'
+            ))
+            logger.info(f"Limpeza de requisições antigas: {deleted_completed} completed, {deleted_failed} failed")
+        else:
+            self.stdout.write('Nenhuma requisição antiga encontrada para remover')
+        
+        return total_deleted
 
     def handle(self, *args, **options):
         process_once = options['once']
         interval = options['interval']
+        cleanup_only = options['cleanup']
+        auto_cleanup = options['auto_cleanup']
+        
+        # Se --cleanup, executar limpeza e sair
+        if cleanup_only:
+            self.stdout.write(self.style.SUCCESS('Executando limpeza de requisições antigas...'))
+            self.cleanup_old_requests()
+            return
         
         self.stdout.write(self.style.SUCCESS('Iniciando processador de fila do Viper...'))
+        
+        # Se --auto-cleanup, executar limpeza no início
+        if auto_cleanup:
+            self.stdout.write('Executando limpeza automática...')
+            self.cleanup_old_requests()
         
         while True:
             try:
@@ -55,6 +114,20 @@ class Command(BaseCommand):
                             result = get_partners_internal(cnpj, retry=True)
                             
                             if result is not None:
+                                # Normalizar estrutura de dados: garantir formato {'socios': [...]}
+                                # A API pode retornar lista diretamente ou dict com 'socios'
+                                if isinstance(result, list):
+                                    normalized_result = {'socios': result}
+                                elif isinstance(result, dict) and 'socios' in result:
+                                    normalized_result = result
+                                elif isinstance(result, dict):
+                                    # Se é dict mas não tem 'socios', assumir que os dados estão no nível raiz
+                                    normalized_result = {'socios': [result]} if result else {'socios': []}
+                                else:
+                                    # Formato desconhecido, criar estrutura padrão
+                                    normalized_result = {'socios': []}
+                                    logger.warning(f"Formato de resultado inesperado para CNPJ {cnpj}: {type(result)}")
+                                
                                 # Salvar QSA no Lead.viper_data se lead estiver associado
                                 if queue_item.lead:
                                     lead = queue_item.lead
@@ -62,8 +135,8 @@ class Command(BaseCommand):
                                     if not lead.viper_data:
                                         lead.viper_data = {}
                                     
-                                    # Salvar resultado em socios_qsa
-                                    lead.viper_data['socios_qsa'] = result
+                                    # Salvar resultado normalizado em socios_qsa
+                                    lead.viper_data['socios_qsa'] = normalized_result
                                     lead.save(update_fields=['viper_data'])
                                     logger.info(f"QSA salvo no Lead {lead.id} para CNPJ {cnpj}")
                                 else:
@@ -72,11 +145,12 @@ class Command(BaseCommand):
                                     if lead:
                                         if not lead.viper_data:
                                             lead.viper_data = {}
-                                        lead.viper_data['socios_qsa'] = result
+                                        lead.viper_data['socios_qsa'] = normalized_result
                                         lead.save(update_fields=['viper_data'])
                                         logger.info(f"QSA salvo no Lead {lead.id} para CNPJ {cnpj} (encontrado pelo CNPJ)")
                                 
-                                mark_request_completed(queue_item, result)
+                                # Salvar resultado normalizado também no queue_item
+                                mark_request_completed(queue_item, normalized_result)
                                 self.stdout.write(self.style.SUCCESS(f'✓ Requisição {queue_item.id} processada com sucesso'))
                             else:
                                 raise Exception('Resultado vazio da API')

@@ -198,6 +198,8 @@ class ViperRequestQueue(models.Model):
         indexes = [
             models.Index(fields=['status', 'priority', 'created_at']),  # Para buscar próximo item
             models.Index(fields=['user', 'status']),  # Para buscar requisições do usuário
+            models.Index(fields=['user', 'request_type', 'status']),  # Para buscar duplicatas (otimiza find_existing_request)
+            # Nota: Índice funcional para request_data->>'cnpj' será criado via migration customizada
         ]
 
     def __str__(self):

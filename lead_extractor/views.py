@@ -23,6 +23,47 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def has_valid_partners_data(lead):
+    """
+    Verifica se um Lead já possui dados válidos de sócios (QSA) salvos.
+    Aceita múltiplos formatos de dados:
+    - Dict com chave 'socios': {'socios': [...]}
+    - Lista direta: [...]
+    - Dict vazio ou None: não tem dados válidos
+    
+    Args:
+        lead: Objeto Lead
+    
+    Returns:
+        bool: True se tem dados válidos, False caso contrário
+    """
+    if not lead or not lead.viper_data:
+        return False
+    
+    socios_qsa = lead.viper_data.get('socios_qsa')
+    
+    # Se não tem socios_qsa, não tem dados
+    if not socios_qsa:
+        return False
+    
+    # Caso 1: É uma lista diretamente (formato alternativo da API)
+    if isinstance(socios_qsa, list):
+        return len(socios_qsa) > 0
+    
+    # Caso 2: É um dict com chave 'socios'
+    if isinstance(socios_qsa, dict):
+        socios = socios_qsa.get('socios')
+        # Pode ser lista ou None
+        if isinstance(socios, list):
+            return len(socios) > 0
+        # Se tem outras chaves mas não 'socios', considerar inválido
+        return False
+    
+    # Qualquer outro formato é inválido
+    return False
+
+
 def login_view(request):
     """
     Página de login usando Supabase Auth.
@@ -385,6 +426,10 @@ def search_by_cnpj(request):
             # Buscar sócios também usando FILA (síncrono)
             queue_result = get_partners_internal_queued(cnpj, user_profile)
             queue_id = queue_result.get('queue_id')
+            is_new = queue_result.get('is_new', True)
+            
+            if not is_new:
+                logger.info(f"Reutilizando requisição existente para CNPJ {cnpj}, queue_id: {queue_id}")
             
             # Aguardar processamento (com timeout)
             if queue_id:
@@ -826,7 +871,9 @@ def enrich_leads(request, search_id):
                 # Buscar sócios se não existirem
                 if 'socios_qsa' not in lead.viper_data or not lead.viper_data.get('socios_qsa'):
                     # Enfileirar busca de sócios (sem aguardar)
-                    get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
+                    queue_result = get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
+                    if not queue_result.get('is_new', True):
+                        logger.info(f"Reutilizando requisição existente para Lead {lead.id} (CNPJ: {lead.cnpj})")
             
             # Debitar crédito
             success, new_balance, error = debit_credits(
@@ -918,14 +965,12 @@ def search_partners(request, search_id):
                 
                 credits_debited += 1
                 
-                # Verificar se já tem sócios salvos no banco
-                viper_data = lead.viper_data or {}
-                socios_qsa = viper_data.get('socios_qsa')
-                has_partners = socios_qsa and isinstance(socios_qsa, dict) and socios_qsa.get('socios')
+                # Verificar se já tem sócios salvos no banco (usando função helper robusta)
+                has_partners = has_valid_partners_data(lead)
                 
                 if has_partners:
                     # Dados já existem - usar dados salvos (não fazer nova requisição à API)
-                    logger.info(f"Usando dados de sócios já salvos para Lead {lead.id} (CNPJ: {lead.cnpj})")
+                    logger.info(f"Usando dados de sócios já salvos para Lead {lead.id} (CNPJ: {lead.cnpj}) - não será enfileirado")
                 else:
                     # Dados não existem - buscar via API (mas não aguardar - processar em background)
                     if not lead.cnpj:
@@ -935,6 +980,7 @@ def search_partners(request, search_id):
                     # Enfileirar busca de sócios (processamento assíncrono)
                     queue_result = get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
                     queue_id = queue_result.get('queue_id')
+                    is_new = queue_result.get('is_new', True)
                     
                     if not queue_id:
                         errors.append(f"Erro ao enfileirar busca de sócios para {lead.name}")
@@ -942,7 +988,10 @@ def search_partners(request, search_id):
                     
                     # Não aguardar - os dados serão processados pela fila
                     # O usuário pode recarregar a página depois para ver os resultados
-                    logger.info(f"Busca de sócios enfileirada para Lead {lead.id} (CNPJ: {lead.cnpj}), queue_id: {queue_id}")
+                    if is_new:
+                        logger.info(f"Busca de sócios enfileirada para Lead {lead.id} (CNPJ: {lead.cnpj}), queue_id: {queue_id}")
+                    else:
+                        logger.info(f"Reutilizando requisição existente para Lead {lead.id} (CNPJ: {lead.cnpj}), queue_id: {queue_id}")
                 
                 # Recarregar Lead para pegar dados atualizados (se já existirem)
                 lead.refresh_from_db()

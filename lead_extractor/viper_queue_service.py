@@ -11,9 +11,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def find_existing_request(user_profile, request_type, request_data):
+    """
+    Busca requisição existente pendente ou processando para os mesmos parâmetros.
+    
+    Args:
+        user_profile: UserProfile do usuário
+        request_type: Tipo de requisição ('partners', etc)
+        request_data: Dados da requisição (dict, ex: {'cnpj': '12345678901234'})
+    
+    Returns:
+        ViperRequestQueue ou None: Requisição existente ou None se não encontrada
+    """
+    # Para requisições do tipo 'partners', buscar por CNPJ
+    if request_type == 'partners':
+        cnpj = request_data.get('cnpj')
+        if cnpj:
+            # Buscar requisições pendentes ou processando para o mesmo CNPJ e usuário
+            existing = ViperRequestQueue.objects.filter(
+                user=user_profile,
+                request_type=request_type,
+                request_data__cnpj=str(cnpj).strip(),
+                status__in=['pending', 'processing']
+            ).order_by('-created_at').first()
+            
+            return existing
+    
+    return None
+
+
 def enqueue_viper_request(user_profile, request_type, request_data, priority=0, lead=None):
     """
     Adiciona uma requisição à fila do Viper.
+    Verifica se já existe requisição pendente/processando antes de criar nova.
     
     Args:
         user_profile: UserProfile do usuário
@@ -23,8 +53,16 @@ def enqueue_viper_request(user_profile, request_type, request_data, priority=0, 
         lead: Lead opcional para associar à requisição
     
     Returns:
-        ViperRequestQueue: Objeto da requisição enfileirada
+        tuple: (ViperRequestQueue, bool) - Objeto da requisição e se foi criada (True) ou reutilizada (False)
     """
+    # Verificar se já existe requisição pendente/processando
+    existing = find_existing_request(user_profile, request_type, request_data)
+    
+    if existing:
+        logger.info(f"Requisição duplicada detectada - reutilizando requisição {existing.id} (tipo: {request_type}, CNPJ: {request_data.get('cnpj')}, usuário: {user_profile.email})")
+        return existing, False
+    
+    # Criar nova requisição
     queue_item = ViperRequestQueue.objects.create(
         user=user_profile,
         lead=lead,
@@ -35,7 +73,7 @@ def enqueue_viper_request(user_profile, request_type, request_data, priority=0, 
     )
     
     logger.info(f"Requisição {queue_item.id} adicionada à fila do Viper (tipo: {request_type}, usuário: {user_profile.email})")
-    return queue_item
+    return queue_item, True
 
 
 def get_queue_status(user_profile):
