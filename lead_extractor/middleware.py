@@ -28,6 +28,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     EXEMPT_URLS = [
         '/admin/',
         '/login/',
+        '/password-reset/',  # Página de reset de senha não precisa de autenticação
         '/static/',
         '/media/',
         '/webhook/stripe/',  # Webhook do Stripe não precisa de autenticação
