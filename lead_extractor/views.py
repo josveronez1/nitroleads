@@ -126,7 +126,7 @@ def dashboard(request):
                     thread.daemon = True
                     thread.start()
                     
-                    messages.info(request, f'Sua busca está sendo processada. Você pode sair desta página e verificar os resultados em "Minhas Pesquisas" em alguns instantes.')
+                    messages.info(request, f'Sua busca está sendo processada. Você pode sair desta página e verificar os resultados em "Base de Dados" em alguns instantes.')
     
     except Exception as e:
         logger.error(f"Erro ao processar busca no dashboard: {e}", exc_info=True)

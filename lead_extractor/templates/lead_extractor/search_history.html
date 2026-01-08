@@ -208,21 +208,27 @@
                                             </div>
                                             {% endfor %}
                                         </div>
-                                        <div class="d-flex align-items-center gap-2 mt-2">
-                                            <button class="btn btn-sm btn-outline-primary" 
-                                                    type="button"
-                                                    onclick="toggleCpfSelection({{ lead.id }})"
-                                                    id="search-cpf-btn-{{ lead.id }}">
-                                                <i class="fas fa-search"></i> Buscar informações dos sócios
-                                            </button>
-                                            <button class="btn btn-sm btn-outline-secondary" 
-                                                    type="button"
-                                                    onclick="cancelCpfSelection({{ lead.id }})"
-                                                    id="cancel-cpf-btn-{{ lead.id }}"
-                                                    style="display: none;">
-                                                <i class="fas fa-times"></i>
-                                            </button>
-                                        </div>
+                                        {% comment %} Verificar se há sócios com CPF que ainda não foram enriquecidos {% endcomment %}
+                                        {% for socio in lead.viper_data.socios_qsa.socios %}
+                                            {% if socio.DOCUMENTO and not socio.cpf_enriched %}
+                                                <div class="d-flex align-items-center gap-2 mt-2">
+                                                    <button class="btn btn-sm btn-outline-primary" 
+                                                            type="button"
+                                                            onclick="toggleCpfSelection({{ lead.id }})"
+                                                            id="search-cpf-btn-{{ lead.id }}">
+                                                        <i class="fas fa-search"></i> Buscar informações dos sócios
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-secondary" 
+                                                            type="button"
+                                                            onclick="cancelCpfSelection({{ lead.id }})"
+                                                            id="cancel-cpf-btn-{{ lead.id }}"
+                                                            style="display: none;">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </div>
+                                                {% break %}
+                                            {% endif %}
+                                        {% endfor %}
                                     {% else %}
                                         <span class="text-muted small">-</span>
                                     {% endif %}
@@ -295,10 +301,189 @@
         </div>
     </div>
 </div>
+
+<!-- Modal de Aviso Genérico -->
+<div class="modal fade" id="alertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header" id="alertModalHeader">
+                <h5 class="modal-title" id="alertModalTitle">Aviso</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="alertModalBody">
+                <p id="alertModalMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Sucesso -->
+<div class="modal fade" id="successModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Sucesso</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="successModalBody">
+                <p id="successModalMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Erro -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-circle me-2"></i>Erro</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="errorModalBody">
+                <p id="errorModalMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // Funções para mostrar modais ao invés de alerts
+    function showAlert(message, type = 'info') {
+        const modal = new bootstrap.Modal(document.getElementById('alertModal'));
+        const title = document.getElementById('alertModalTitle');
+        const body = document.getElementById('alertModalBody');
+        const header = document.getElementById('alertModalHeader');
+        
+        title.textContent = type === 'info' ? 'Aviso' : (type === 'warning' ? 'Atenção' : 'Informação');
+        document.getElementById('alertModalMessage').textContent = message;
+        
+        // Ajustar cor do header
+        header.className = 'modal-header';
+        if (type === 'warning') {
+            header.classList.add('bg-warning', 'text-dark');
+        } else {
+            header.classList.add('bg-info', 'text-white');
+        }
+        
+        modal.show();
+    }
+    
+    function showSuccess(message) {
+        const modal = new bootstrap.Modal(document.getElementById('successModal'));
+        document.getElementById('successModalMessage').textContent = message;
+        modal.show();
+    }
+    
+    function showError(message) {
+        const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+        document.getElementById('errorModalMessage').textContent = message;
+        modal.show();
+    }
+    
+    // Salvar estado de expansão das pesquisas
+    function saveExpandedSearches() {
+        const expanded = [];
+        document.querySelectorAll('[id^="search-"]').forEach(collapse => {
+            if (collapse.classList.contains('show')) {
+                const searchId = collapse.id.replace('search-', '');
+                expanded.push(searchId);
+            }
+        });
+        localStorage.setItem('expandedSearches', JSON.stringify(expanded));
+    }
+    
+    // Restaurar estado de expansão das pesquisas
+    function restoreExpandedSearches() {
+        const expanded = JSON.parse(localStorage.getItem('expandedSearches') || '[]');
+        expanded.forEach(searchId => {
+            const collapse = document.getElementById(`search-${searchId}`);
+            if (collapse) {
+                const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
+                bsCollapse.show();
+            }
+        });
+    }
+    
+    // Polling para atualizar sócios sem recarregar página
+    let partnersPollingIntervals = {};
+    
+    function startPartnersPolling(searchId, leadIds) {
+        // Limpar intervalo anterior se existir
+        if (partnersPollingIntervals[searchId]) {
+            clearInterval(partnersPollingIntervals[searchId]);
+        }
+        
+        let attempts = 0;
+        const maxAttempts = 30; // 30 tentativas (5 minutos se polling a cada 10s)
+        
+        partnersPollingIntervals[searchId] = setInterval(() => {
+            attempts++;
+            
+            if (attempts > maxAttempts) {
+                clearInterval(partnersPollingIntervals[searchId]);
+                delete partnersPollingIntervals[searchId];
+                showAlert('O processamento está demorando mais que o esperado. Recarregue a página para verificar os resultados.', 'warning');
+                return;
+            }
+            
+            // Fazer requisição para verificar status dos leads
+            const csrfToken = getCsrfToken();
+            if (!csrfToken) return;
+            
+            fetch(`/api/search/${searchId}/partners-status/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ lead_ids: leadIds })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.updated_leads && data.updated_leads.length > 0) {
+                    // Atualizar sócios na interface
+                    data.updated_leads.forEach(leadData => {
+                        updateLeadPartners(leadData.lead_id, leadData.viper_data);
+                    });
+                }
+                
+                // Se todos os leads foram processados, parar polling
+                if (data.all_processed) {
+                    clearInterval(partnersPollingIntervals[searchId]);
+                    delete partnersPollingIntervals[searchId];
+                    showSuccess('Todos os sócios foram atualizados com sucesso!');
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao verificar status dos sócios:', error);
+            });
+        }, 10000); // Polling a cada 10 segundos
+    }
+    
+    // Atualizar sócios de um lead específico na interface
+    function updateLeadPartners(leadId, viperData) {
+        const partnersCell = document.getElementById(`partners-cell-${leadId}`);
+        if (!partnersCell || !viperData || !viperData.socios_qsa || !viperData.socios_qsa.socios) {
+            return;
+        }
+        
+        // Atualizar HTML dos sócios (simplificado - pode ser melhorado)
+        // Por enquanto, vamos apenas recarregar a página após um delay
+        // Uma implementação mais completa atualizaria apenas os elementos necessários
+    }
+    
     // Controlar visibilidade dos botões quando a lista estiver expandida
     document.addEventListener('DOMContentLoaded', function() {
         // Para cada card de pesquisa
@@ -326,8 +511,19 @@
                 toggleBtn{{ search.id }}.querySelector('i').classList.remove('fa-chevron-down');
                 toggleBtn{{ search.id }}.querySelector('i').classList.add('fa-chevron-up');
             }
+            
+            // Salvar estado quando expandir/colapsar
+            collapseElement{{ search.id }}.addEventListener('shown.bs.collapse', function() {
+                saveExpandedSearches();
+            });
+            collapseElement{{ search.id }}.addEventListener('hidden.bs.collapse', function() {
+                saveExpandedSearches();
+            });
         }
         {% endfor %}
+        
+        // Restaurar estado de expansão
+        restoreExpandedSearches();
     });
     
     // Função auxiliar para obter token CSRF (do cookie ou do input)
@@ -474,14 +670,14 @@
             console.log('Leads selecionados:', leadIds);
             
             if (leadIds.length === 0) {
-                alert('Selecione pelo menos uma empresa para buscar dados dos sócios.');
+                showAlert('Selecione pelo menos uma empresa para buscar dados dos sócios.', 'warning');
                 return;
             }
             
             // Mostrar loading
             const confirmBtn = document.getElementById(`confirm-partners-btn-${searchId}`);
             if (!confirmBtn) {
-                alert('Erro: Botão de confirmação não encontrado.');
+                showError('Erro: Botão de confirmação não encontrado.');
                 return;
             }
             
@@ -511,7 +707,7 @@
             console.log('CSRF Token obtido:', csrfToken ? 'Sim' : 'Não');
             
             if (!csrfToken) {
-                alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+                showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
                 confirmBtn.disabled = false;
                 confirmBtn.innerHTML = originalText;
                 return;
@@ -555,12 +751,16 @@
                         message += `\n\nAvisos: ${data.errors.join('; ')}`;
                     }
                     
-                    alert(message);
+                    showSuccess(message.replace(/\n/g, '<br>'));
                     
-                    // Recarregar página para mostrar os sócios
-                    location.reload();
+                    // Aguardar alguns segundos antes de recarregar para dar tempo do processamento
+                    setTimeout(() => {
+                        // Salvar estado de expansão antes de recarregar
+                        saveExpandedSearches();
+                        location.reload();
+                    }, 5000); // 5 segundos de espera
                 } else {
-                    alert('Erro ao buscar sócios: ' + (data.error || 'Erro desconhecido'));
+                    showError('Erro ao buscar sócios: ' + (data.error || 'Erro desconhecido'));
                     confirmBtn.disabled = false;
                     confirmBtn.innerHTML = originalText;
                 }
@@ -568,13 +768,13 @@
             .catch(error => {
                 console.error('Erro:', error);
                 const errorMsg = error.error || error.message || 'Erro desconhecido';
-                alert('Erro ao buscar sócios: ' + errorMsg);
+                showError('Erro ao buscar sócios: ' + errorMsg);
                 confirmBtn.disabled = false;
                 confirmBtn.innerHTML = originalText;
             });
         } catch (error) {
             console.error('Erro ao executar confirmPartnersSearch:', error);
-            alert('Erro ao processar requisição. Por favor, tente novamente.');
+            showError('Erro ao processar requisição. Por favor, tente novamente.');
             const confirmBtn = document.getElementById(`confirm-partners-btn-${searchId}`);
             if (confirmBtn) {
                 confirmBtn.disabled = false;
@@ -590,7 +790,7 @@
         const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
         
         if (checkboxes.length === 0) {
-            alert('Nenhum sócio com CPF encontrado para este lead.');
+            showAlert('Nenhum sócio com CPF encontrado para este lead.', 'warning');
             return;
         }
         
@@ -649,7 +849,7 @@
         }));
         
         if (cpfData.length === 0) {
-            alert('Selecione pelo menos um sócio para buscar dados por CPF.');
+            showAlert('Selecione pelo menos um sócio para buscar dados por CPF.', 'warning');
             // Ocultar checkboxes novamente
             document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
             const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
@@ -691,7 +891,7 @@
         console.log('CSRF Token obtido para CPF batch:', csrfToken ? 'Sim' : 'Não');
         
         if (!csrfToken) {
-            alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+            showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
             searchBtn.disabled = false;
             searchBtn.innerHTML = originalText;
             return;
@@ -766,7 +966,7 @@
                     }
                 });
                 
-                alert(`CPFs buscados com sucesso! ${data.processed} CPF(s) processado(s). ${data.credits_debited} crédito(s) debitado(s).`);
+                showSuccess(`CPFs buscados com sucesso! ${data.processed} CPF(s) processado(s). ${data.credits_debited} crédito(s) debitado(s).`);
                 
                 // Ocultar checkboxes
                 document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
@@ -779,7 +979,7 @@
                     cancelBtn.style.display = 'none';
                 }
             } else {
-                alert('Erro ao buscar CPFs: ' + (data.error || 'Erro desconhecido'));
+                showError('Erro ao buscar CPFs: ' + (data.error || 'Erro desconhecido'));
                 searchBtn.disabled = false;
                 searchBtn.innerHTML = originalText;
                 const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
@@ -790,7 +990,7 @@
         })
         .catch(error => {
             console.error('Erro:', error);
-            alert('Erro ao buscar CPFs. Tente novamente.');
+            showError('Erro ao buscar CPFs. Tente novamente.');
             searchBtn.disabled = false;
             searchBtn.innerHTML = originalText;
             const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
@@ -802,14 +1002,14 @@
 
     function processEnrichment() {
         if (!currentEnrichmentSearchId || !selectedLeads[currentEnrichmentSearchId] || selectedLeads[currentEnrichmentSearchId].length === 0) {
-            alert('Nenhum lead selecionado.');
+            showAlert('Nenhum lead selecionado.', 'warning');
             return;
         }
         
         const leadIds = selectedLeads[currentEnrichmentSearchId];
         const csrfToken = getCsrfToken();
         if (!csrfToken) {
-            alert('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+            showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
             return;
         }
         
@@ -834,18 +1034,18 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert(`✅ ${data.message}`);
+                showSuccess(data.message);
                 // Recarregar página para mostrar dados atualizados
                 window.location.reload();
             } else {
-                alert(`❌ Erro: ${data.error}`);
+                showError('Erro: ' + data.error);
                 confirmBtn.innerHTML = originalText;
                 confirmBtn.disabled = false;
             }
         })
         .catch(error => {
             console.error('Erro:', error);
-            alert('❌ Erro ao processar enriquecimento. Tente novamente.');
+            showError('Erro ao processar enriquecimento. Tente novamente.');
             confirmBtn.innerHTML = originalText;
             confirmBtn.disabled = false;
         });
