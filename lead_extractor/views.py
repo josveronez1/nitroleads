@@ -549,10 +549,14 @@ def search_by_cpf(request):
                             template_data['dados_gerais']['CPF'] = cpf_clean
                     
                     try:
+                        # Garantir que user_profile e available_credits estão no contexto
+                        # (necessários para o base.html renderizar corretamente)
                         response = render(request, 'lead_extractor/cpf_result.html', {
                             'data': template_data,
                             'cpf': cpf_clean,
-                            'credits_remaining': new_balance
+                            'credits_remaining': new_balance,
+                            'user_profile': user_profile,
+                            'available_credits': new_balance
                         })
                         logger.info(f"Template renderizado com sucesso para CPF {cpf_clean}")
                         return response
