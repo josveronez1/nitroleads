@@ -12,7 +12,7 @@
         </a>
     </div>
     <div class="card-body">
-        {% if data %}
+        {% if data and lead %}
         <div class="row mb-4">
             <div class="col-md-6">
                 <h6 class="text-muted mb-2">CNPJ</h6>
@@ -81,7 +81,7 @@
         <div class="row mb-4">
             <div class="col-md-12">
                 <h6 class="text-muted mb-3">Sócios / Decisores</h6>
-                <div class="partners-list" id="partners-list-{{ temp_lead_id }}">
+                <div class="partners-list" id="partners-list-{{ lead.id }}">
                     {% for socio in data.socios_qsa.socios %}
                     <div class="socio-item mb-2 border rounded p-3" data-socio-cpf="{{ socio.DOCUMENTO|default:socio.CPF }}">
                         <div class="d-flex align-items-center justify-content-between">
@@ -95,10 +95,10 @@
                             {% if socio.DOCUMENTO or socio.CPF %}
                             <input type="checkbox" class="cpf-checkbox ms-2" 
                                    data-cpf="{{ socio.DOCUMENTO|default:socio.CPF }}"
-                                   data-lead-id="{{ temp_lead_id }}"
+                                   data-lead-id="{{ lead.id }}"
                                    data-socio-name="{{ socio.NOME|default:"N/A" }}"
                                    data-cnpj="{{ cnpj }}"
-                                   id="cpf-{{ temp_lead_id }}-{{ forloop.counter }}"
+                                   id="cpf-{{ lead.id }}-{{ forloop.counter }}"
                                    style="display: none;">
                             {% endif %}
                         </div>
@@ -136,14 +136,14 @@
                 <div class="d-flex align-items-center gap-2 mt-3">
                     <button class="btn btn-sm btn-outline-primary" 
                             type="button"
-                            onclick="toggleCpfSelection('{{ temp_lead_id }}')"
-                            id="search-cpf-btn-{{ temp_lead_id }}">
+                            onclick="toggleCpfSelection({{ lead.id }})"
+                            id="search-cpf-btn-{{ lead.id }}">
                         <i class="fas fa-search"></i> Buscar informações dos sócios
                     </button>
                     <button class="btn btn-sm btn-outline-secondary" 
                             type="button"
-                            onclick="cancelCpfSelection('{{ temp_lead_id }}')"
-                            id="cancel-cpf-btn-{{ temp_lead_id }}"
+                            onclick="cancelCpfSelection({{ lead.id }})"
+                            id="cancel-cpf-btn-{{ lead.id }}"
                             style="display: none;">
                         <i class="fas fa-times"></i> Cancelar
                     </button>
@@ -280,23 +280,23 @@
         }
     }
 
-    // Buscar CPFs em lote (versão simplificada para busca rápida - não salva no banco)
-    function searchCpfsBatch(tempLeadId) {
-        const checkboxes = document.querySelectorAll(`#partners-list-${tempLeadId} .cpf-checkbox:checked`);
-        const cpfsToSearch = Array.from(checkboxes).map(cb => ({
+    // Buscar CPFs em lote usando search_cpf_batch (lead está salvo no banco)
+    function searchCpfsBatch(leadId) {
+        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox:checked`);
+        const cpfData = Array.from(checkboxes).map(cb => ({
+            lead_id: parseInt(cb.dataset.leadId),
             cpf: cb.dataset.cpf,
-            socio_name: cb.dataset.socioName,
-            cnpj: cb.dataset.cnpj || ''
+            socio_name: cb.dataset.socioName
         }));
         
-        if (cpfsToSearch.length === 0) {
+        if (cpfData.length === 0) {
             showAlert('Selecione pelo menos um sócio para buscar dados por CPF.', 'warning');
-            cancelCpfSelection(tempLeadId);
+            cancelCpfSelection(leadId);
             return;
         }
         
         // Mostrar loading
-        const searchBtn = document.getElementById(`search-cpf-btn-${tempLeadId}`);
+        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
         const originalText = searchBtn.innerHTML;
         searchBtn.disabled = true;
         searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
@@ -309,29 +309,24 @@
             return;
         }
         
-        // Buscar cada CPF individualmente usando search_by_cpf
-        let completed = 0;
-        let creditsDebited = 0;
-        let errors = [];
-        
-        cpfsToSearch.forEach((item, index) => {
-            fetch('{% url "search_by_cpf" %}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: 'cpf=' + encodeURIComponent(item.cpf)
+        // Fazer requisição AJAX usando search_cpf_batch
+        fetch('{% url "search_cpf_batch" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({
+                cpfs: cpfData
             })
-            .then(response => response.json())
-            .then(data => {
-                completed++;
-                if (data.success) {
-                    creditsDebited++;
-                    // Atualizar interface com os dados retornados
-                    const socioItem = document.querySelector(`#partners-list-${tempLeadId} .socio-item[data-socio-cpf="${item.cpf}"]`);
-                    if (socioItem && data.data) {
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Atualizar interface com os dados retornados
+                data.results.forEach(result => {
+                    const socioItem = document.querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
+                    if (socioItem && result.cpf_data) {
                         // Adicionar dados ao sócio
                         let dataDiv = socioItem.querySelector('.cpf-data');
                         if (!dataDiv) {
@@ -342,9 +337,17 @@
                         
                         dataDiv.innerHTML = '';
                         
-                        // Adicionar telefones
-                        if (data.data.telefones && data.data.telefones.length > 0) {
-                            data.data.telefones.forEach(phone => {
+                        // Adicionar nome se disponível
+                        if (result.cpf_data.dados_gerais && result.cpf_data.dados_gerais.nome) {
+                            const nomeDiv = document.createElement('div');
+                            nomeDiv.className = 'small text-muted mb-1';
+                            nomeDiv.innerHTML = `<i class="fas fa-user me-1"></i>${result.cpf_data.dados_gerais.nome}`;
+                            dataDiv.appendChild(nomeDiv);
+                        }
+                        
+                        // Adicionar telefones fixos
+                        if (result.cpf_data.telefones_fixos) {
+                            result.cpf_data.telefones_fixos.forEach(phone => {
                                 if (phone) {
                                     const badge = document.createElement('span');
                                     badge.className = 'badge bg-success me-1';
@@ -354,9 +357,33 @@
                             });
                         }
                         
+                        // Adicionar telefones móveis
+                        if (result.cpf_data.telefones_moveis) {
+                            result.cpf_data.telefones_moveis.forEach(phone => {
+                                if (phone) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'badge bg-success me-1';
+                                    badge.innerHTML = `<i class="fas fa-mobile-alt me-1"></i>${phone}`;
+                                    dataDiv.appendChild(badge);
+                                }
+                            });
+                        }
+                        
+                        // Adicionar WhatsApps
+                        if (result.cpf_data.whatsapps) {
+                            result.cpf_data.whatsapps.forEach(phone => {
+                                if (phone) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'badge bg-success me-1';
+                                    badge.innerHTML = `<i class="fab fa-whatsapp me-1"></i>${phone}`;
+                                    dataDiv.appendChild(badge);
+                                }
+                            });
+                        }
+                        
                         // Adicionar emails
-                        if (data.data.emails && data.data.emails.length > 0) {
-                            data.data.emails.forEach(email => {
+                        if (result.cpf_data.emails) {
+                            result.cpf_data.emails.forEach(email => {
                                 if (email) {
                                     const badge = document.createElement('span');
                                     badge.className = 'badge bg-info me-1';
@@ -366,43 +393,28 @@
                             });
                         }
                     }
-                } else {
-                    errors.push(`Erro ao buscar CPF ${item.cpf}: ${data.error || 'Erro desconhecido'}`);
-                }
+                });
                 
-                // Quando todas as buscas terminarem
-                if (completed === cpfsToSearch.length) {
-                    if (creditsDebited > 0) {
-                        showSuccess(`Busca concluída! ${creditsDebited} crédito(s) debitado(s).`);
-                    }
-                    if (errors.length > 0) {
-                        showError('Alguns CPFs não puderam ser buscados: ' + errors.join('; '));
-                    }
-                    
-                    // Ocultar checkboxes e restaurar botão
-                    cancelCpfSelection(tempLeadId);
-                    searchBtn.disabled = false;
-                    searchBtn.innerHTML = originalText;
-                }
-            })
-            .catch(error => {
-                completed++;
-                errors.push(`Erro ao buscar CPF ${item.cpf}`);
-                console.error('Erro:', error);
+                showSuccess(`Busca concluída! ${data.credits_debited} crédito(s) debitado(s).`);
                 
-                if (completed === cpfsToSearch.length) {
-                    if (creditsDebited > 0) {
-                        showSuccess(`Busca concluída! ${creditsDebited} crédito(s) debitado(s).`);
-                    }
-                    if (errors.length > 0) {
-                        showError('Alguns CPFs não puderam ser buscados: ' + errors.join('; '));
-                    }
-                    
-                    cancelCpfSelection(tempLeadId);
-                    searchBtn.disabled = false;
-                    searchBtn.innerHTML = originalText;
-                }
-            });
+                // Ocultar checkboxes e restaurar botão
+                cancelCpfSelection(leadId);
+                
+                // Recarregar página após alguns segundos para atualizar dados do servidor
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else {
+                showError('Erro ao buscar CPFs: ' + (data.error || 'Erro desconhecido'));
+                searchBtn.disabled = false;
+                searchBtn.innerHTML = originalText;
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            showError('Erro ao buscar dados dos sócios. Tente novamente.');
+            searchBtn.disabled = false;
+            searchBtn.innerHTML = originalText;
         });
     }
 </script>

@@ -424,21 +424,53 @@ def search_by_cpf(request):
             return redirect('simple_search')
         
         # Buscar dados do CPF
-        data = search_cpf_viper(cpf)
+        cpf_clean = ''.join(filter(str.isdigit, cpf))
+        data = search_cpf_viper(cpf_clean)
         
         if data:
+            # Normalizar estrutura de dados para garantir compatibilidade
+            # A API pode retornar em formatos diferentes, normalizar para o formato esperado
+            normalized_data = {
+                'telefones': [],
+                'emails': [],
+                'telefones_fixos': data.get('telefones_fixos', []),
+                'telefones_moveis': data.get('telefones_moveis', []),
+                'whatsapps': data.get('whatsapps', []),
+                'dados_gerais': data.get('dados_gerais', {})
+            }
+            
+            # Combinar todos os telefones em uma lista única para compatibilidade
+            all_phones = []
+            if normalized_data.get('telefones_fixos'):
+                all_phones.extend(normalized_data['telefones_fixos'])
+            if normalized_data.get('telefones_moveis'):
+                all_phones.extend(normalized_data['telefones_moveis'])
+            if normalized_data.get('whatsapps'):
+                all_phones.extend(normalized_data['whatsapps'])
+            normalized_data['telefones'] = list(set([p for p in all_phones if p]))
+            
+            # Emails
+            if data.get('emails'):
+                normalized_data['emails'] = data.get('emails', [])
+            elif isinstance(data, dict):
+                # Tentar encontrar emails em outras estruturas
+                for key in ['email', 'emails_list', 'contatos']:
+                    if key in data and isinstance(data[key], list):
+                        normalized_data['emails'] = data[key]
+                        break
+            
             # Debitar crédito
             success, new_balance, error = debit_credits(
                 user_profile,
                 1,
-                description=f"Busca por CPF: {cpf}"
+                description=f"Busca por CPF: {cpf_clean}"
             )
             
             if success:
                 if is_ajax:
                     return JsonResponse({
                         'success': True,
-                        'data': data,
+                        'data': normalized_data,
                         'credits_remaining': new_balance
                     })
                 # Renderizar template com resultado
@@ -468,8 +500,8 @@ def search_by_cpf(request):
 def search_by_cnpj(request):
     """
     Busca dados por CNPJ usando API Viper.
-    Dados são exibidos temporariamente e NÃO são salvos no banco para o usuário.
-    Quando o usuário sair da página, as informações desaparecem.
+    Salva o Lead no banco de dados, mas NÃO cria uma Search visível para o usuário.
+    O Lead fica salvo no banco mas não aparece no histórico do usuário.
     """
     user_profile = request.user_profile
     
@@ -493,28 +525,77 @@ def search_by_cnpj(request):
             messages.error(request, 'Créditos insuficientes')
             return redirect('simple_search')
         
-        # Buscar dados do CNPJ
-        data = search_cnpj_viper(cnpj_clean)
+        # Verificar se já existe Lead com este CNPJ (pode ser de qualquer usuário ou sem usuário)
+        existing_lead = Lead.objects.filter(cnpj=cnpj_clean).first()
         
-        if not data:
-            messages.error(request, 'CNPJ não encontrado ou erro na busca')
-            return redirect('simple_search')
+        if existing_lead and existing_lead.viper_data:
+            # Já existe - usar dados existentes
+            logger.info(f"Reutilizando Lead existente {existing_lead.id} para CNPJ {cnpj_clean}")
+            lead = existing_lead
+            data = lead.viper_data.copy()
+            
+            # Verificar se precisa buscar sócios
+            if not has_valid_partners_data(lead):
+                queue_result = get_partners_internal_queued(cnpj_clean, user_profile, lead=lead)
+                queue_id = queue_result.get('queue_id')
+                if queue_id:
+                    partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+                    if partners_data:
+                        data['socios_qsa'] = partners_data
+                        lead.viper_data = data
+                        lead.save(update_fields=['viper_data'])
+        else:
+            # Buscar dados do CNPJ
+            data = search_cnpj_viper(cnpj_clean)
+            
+            if not data:
+                messages.error(request, 'CNPJ não encontrado ou erro na busca')
+                return redirect('simple_search')
+            
+            # Buscar sócios também usando FILA
+            queue_result = get_partners_internal_queued(cnpj_clean, user_profile)
+            queue_id = queue_result.get('queue_id')
+            is_new = queue_result.get('is_new', True)
+            
+            if not is_new:
+                logger.info(f"Reutilizando requisição existente para CNPJ {cnpj_clean}, queue_id: {queue_id}")
+            
+            # Aguardar processamento (com timeout)
+            if queue_id:
+                partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+                if partners_data:
+                    data['socios_qsa'] = partners_data
+            
+            # Criar Lead com os dados encontrados (SEM criar Search - não aparece no histórico)
+            lead_name = data.get('razao_social') or data.get('nome_fantasia') or f'Empresa CNPJ {cnpj_clean}'
+            address_parts = []
+            if data.get('logradouro'):
+                address_parts.append(data.get('logradouro'))
+            if data.get('numero'):
+                address_parts.append(data.get('numero'))
+            if data.get('bairro'):
+                address_parts.append(data.get('bairro'))
+            if data.get('cidade'):
+                address_parts.append(data.get('cidade'))
+            if data.get('uf'):
+                address_parts.append(data.get('uf'))
+            if data.get('cep'):
+                address_parts.append(f"CEP: {data.get('cep')}")
+            
+            # Criar Lead SEM associar a usuário (user=None) para não aparecer no histórico
+            # Mas salvar no banco para reutilização futura
+            lead = Lead.objects.create(
+                user=None,  # Não associar ao usuário - não aparece no histórico
+                search=None,  # Sem Search - não aparece no histórico
+                name=lead_name,
+                cnpj=cnpj_clean,
+                address=', '.join(address_parts) if address_parts else None,
+                viper_data=data
+            )
+            
+            logger.info(f"Lead {lead.id} criado para busca rápida por CNPJ {cnpj_clean} (não associado a usuário)")
         
-        # Buscar sócios também usando FILA
-        queue_result = get_partners_internal_queued(cnpj_clean, user_profile)
-        queue_id = queue_result.get('queue_id')
-        is_new = queue_result.get('is_new', True)
-        
-        if not is_new:
-            logger.info(f"Reutilizando requisição existente para CNPJ {cnpj_clean}, queue_id: {queue_id}")
-        
-        # Aguardar processamento (com timeout)
-        if queue_id:
-            partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
-            if partners_data:
-                data['socios_qsa'] = partners_data
-        
-        # Debitar crédito ANTES de exibir os dados
+        # Debitar crédito
         success, new_balance, error = debit_credits(
             user_profile,
             1,
@@ -523,16 +604,10 @@ def search_by_cnpj(request):
         
         if success:
             messages.success(request, 'Busca realizada com sucesso!')
-            # Criar um ID temporário apenas para o template (não salvo no banco)
-            # Usar hash do CNPJ + timestamp para garantir unicidade na sessão
-            import hashlib
-            import time
-            temp_id = hashlib.md5(f"{cnpj_clean}_{time.time()}".encode()).hexdigest()[:8]
-            
             context = {
-                'temp_lead_id': temp_id,  # ID temporário apenas para JavaScript
+                'lead': lead,  # Usar lead real para o template
                 'cnpj': cnpj_clean,
-                'data': data,
+                'data': lead.viper_data,
                 'user_profile': user_profile,
                 'available_credits': new_balance,
             }
@@ -1173,10 +1248,15 @@ def search_cpf_batch(request):
                 continue
             
             try:
-                # Buscar lead (validar ownership)
-                lead = Lead.objects.filter(id=lead_id, user=user_profile).first()
+                # Buscar lead (pode ser sem usuário - busca rápida por CNPJ)
+                lead = Lead.objects.filter(id=lead_id).first()
                 if not lead:
-                    errors.append(f"Lead {lead_id} não encontrado ou não pertence ao usuário")
+                    errors.append(f"Lead {lead_id} não encontrado")
+                    continue
+                
+                # Se o lead tem usuário, validar ownership
+                if lead.user and lead.user != user_profile:
+                    errors.append(f"Lead {lead_id} não pertence ao usuário")
                     continue
                 
                 # IMPORTANTE: Debitar crédito ANTES de buscar/exibir dados
@@ -1250,7 +1330,7 @@ def search_cpf_batch(request):
                     'lead_id': lead_id,
                     'cpf': cpf,
                     'socio_name': socio_name,
-                    'data': cpf_data
+                    'cpf_data': cpf_data  # Usar cpf_data para compatibilidade com template
                 })
                 
             except Exception as e:
