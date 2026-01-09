@@ -1,8 +1,10 @@
 #!/bin/bash
 # Script para atualizar CSP no nginx
 # Execute este script no servidor para aplicar as correções de CSP
+# IMPORTANTE: Execute com sudo: sudo ./ATUALIZAR_NGINX_CSP.sh
 
 echo "=== Atualizando CSP no Nginx ==="
+echo "NOTA: Este script precisa ser executado com sudo para editar o nginx"
 
 # Caminho do arquivo de configuração do nginx (ajuste se necessário)
 NGINX_CONFIG="/etc/nginx/sites-available/nitroleads"
@@ -23,6 +25,13 @@ fi
 
 echo "Arquivo encontrado: $CONFIG_FILE"
 
+# Verificar se está rodando com sudo
+if [ "$EUID" -ne 0 ]; then 
+    echo "ERRO: Este script precisa ser executado com sudo!"
+    echo "Execute: sudo ./ATUALIZAR_NGINX_CSP.sh"
+    exit 1
+fi
+
 # Fazer backup
 BACKUP_FILE="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 cp "$CONFIG_FILE" "$BACKUP_FILE"
@@ -31,7 +40,7 @@ echo "Backup criado: $BACKUP_FILE"
 # Nova linha CSP com cdn.jsdelivr.net
 NEW_CSP='add_header Content-Security-Policy "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\'' '\''unsafe-eval'\'' https://js.stripe.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src '\''self'\'' '\''unsafe-inline'\'' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src '\''self'\'' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:; img-src '\''self'\'' data: https:; connect-src '\''self'\'' https://api.stripe.com https://*.supabase.co https://cdn.jsdelivr.net; frame-src https://js.stripe.com https://hooks.stripe.com; object-src '\''none'\''; base-uri '\''self'\''; form-action '\''self'\'';" always;'
 
-# Remover linha CSP antiga e adicionar nova
+# Remover TODAS as linhas CSP antigas (pode haver múltiplas)
 sed -i '/add_header Content-Security-Policy/d' "$CONFIG_FILE"
 
 # Adicionar nova linha CSP (antes da linha "Ocultar versão do Nginx" ou no final)

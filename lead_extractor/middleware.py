@@ -152,12 +152,17 @@ class CSPMiddleware(MiddlewareMixin):
     """
     
     def process_response(self, request, response):
-        # Remover qualquer header CSP existente (do nginx ou outro middleware)
-        # para garantir que nosso CSP seja o único aplicado
-        if 'Content-Security-Policy' in response:
-            del response['Content-Security-Policy']
-        if 'content-security-policy' in response:
-            del response['content-security-policy']
+        # Remover TODOS os headers CSP existentes (do nginx ou outro middleware)
+        # Verificar todas as variações possíveis do nome do header
+        headers_to_remove = [
+            'Content-Security-Policy',
+            'content-security-policy',
+            'CONTENT-SECURITY-POLICY',
+        ]
+        
+        for header_name in headers_to_remove:
+            if header_name in response:
+                del response[header_name]
         
         # Construir diretiva CSP completa
         # Permitir: self, api.stripe.com, *.supabase.co, cdn.jsdelivr.net
@@ -177,7 +182,21 @@ class CSPMiddleware(MiddlewareMixin):
         ]
         
         csp_header = "; ".join(csp_directives)
+        
         # Forçar sobrescrita do header CSP
+        # Usar del para garantir remoção completa antes de adicionar o novo
+        # Django HttpResponse usa case-insensitive headers, mas vamos garantir todas as variações
+        if hasattr(response, '_headers'):
+            # Para Django < 3.2
+            response._headers.pop('content-security-policy', None)
+        else:
+            # Para Django >= 3.2 (usa headers case-insensitive)
+            if 'Content-Security-Policy' in response.headers:
+                del response.headers['Content-Security-Policy']
+            if 'content-security-policy' in response.headers:
+                del response.headers['content-security-policy']
+        
+        # Adicionar o header correto (Django vai normalizar para Content-Security-Policy)
         response['Content-Security-Policy'] = csp_header
         
         return response
