@@ -17,10 +17,14 @@
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-circle me-2"></i>{{ error }}
             </div>
+            {% elif not data %}
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>Nenhum dado encontrado para este CPF.
+            </div>
             {% else %}
             
             <!-- Dados Gerais -->
-            {% if data.dados_gerais %}
+            {% if data.dados_gerais and data.dados_gerais.nome %}
             <div class="card mb-4">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0"><i class="fas fa-user me-2"></i>Dados Gerais</h5>
