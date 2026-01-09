@@ -25,7 +25,7 @@
             {% else %}
             
             <!-- Dados Gerais -->
-            {% if data.dados_gerais and data.dados_gerais.nome %}
+            {% if data.dados_gerais %}
             <div class="card mb-4">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0"><i class="fas fa-user me-2"></i>Dados Gerais</h5>
@@ -107,13 +107,11 @@
                     <div class="row">
                         <div class="col-12">
                             <h6><i class="fas fa-envelope me-2"></i>E-mails</h6>
-                            {% if data.emails %}
+                            {% if data.emails and data.emails|length > 0 %}
                                 {% for email in data.emails %}
                                     {% if email %}
                                     <span class="badge bg-info me-1 mb-1">{{ email }}</span>
                                     {% endif %}
-                                {% empty %}
-                                    <span class="text-muted">Nenhum encontrado</span>
                                 {% endfor %}
                             {% else %}
                                 <span class="text-muted">Nenhum encontrado</span>
