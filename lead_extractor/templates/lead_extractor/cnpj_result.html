@@ -83,18 +83,18 @@
                 <h6 class="text-muted mb-3">Sócios / Decisores</h6>
                 <div class="partners-list" id="partners-list-{{ lead.id }}">
                     {% for socio in data.socios_qsa.socios %}
-                    <div class="socio-item mb-2 border rounded p-3" data-socio-cpf="{{ socio.DOCUMENTO|default:socio.CPF }}">
+                    <div class="socio-item mb-2 border rounded p-3" data-socio-cpf="{{ socio.DOCUMENTO|default:'' }}">
                         <div class="d-flex align-items-center justify-content-between">
                             <div class="flex-grow-1">
                                 <strong class="small">{{ socio.NOME|default:"N/A" }}</strong>
                                 <span class="text-muted small ms-1">({{ socio.CARGO|default:"Sócio" }})</span>
-                                {% if socio.DOCUMENTO or socio.CPF %}
-                                <br><span class="text-muted small">CPF: {{ socio.DOCUMENTO|default:socio.CPF }}</span>
+                                {% if socio.DOCUMENTO %}
+                                <br><span class="text-muted small">CPF: {{ socio.DOCUMENTO }}</span>
                                 {% endif %}
                             </div>
-                            {% if socio.DOCUMENTO or socio.CPF %}
+                            {% if socio.DOCUMENTO %}
                             <input type="checkbox" class="cpf-checkbox ms-2" 
-                                   data-cpf="{{ socio.DOCUMENTO|default:socio.CPF }}"
+                                   data-cpf="{{ socio.DOCUMENTO }}"
                                    data-lead-id="{{ lead.id }}"
                                    data-socio-name="{{ socio.NOME|default:"N/A" }}"
                                    data-cnpj="{{ cnpj }}"
