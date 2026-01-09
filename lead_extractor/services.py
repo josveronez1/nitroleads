@@ -1125,7 +1125,7 @@ def process_search_async(search_id):
                 
                 results.append(company_data)
             
-            # Se faltam leads, fazer busca incremental (sem limite de páginas)
+            # Se faltam leads, fazer busca incremental com limites de segurança
             if leads_processed < quantity:
                 additional_needed = quantity - leads_processed
                 logger.info(f"Faltam {additional_needed} leads, iniciando busca incremental...")
@@ -1134,21 +1134,36 @@ def process_search_async(search_id):
                 results_per_page = 10
                 start_offset = len(places)  # Começar após os leads já buscados
                 incremental_page = 0
-                max_incremental_iterations = 1000  # Praticamente sem limite
+                max_incremental_iterations = 20  # Limite de 20 iterações (200 requisições máx)
+                max_api_requests = 50  # Limite máximo de requisições à API Serper
+                consecutive_empty_iterations = 0  # Contador de iterações sem leads válidos
+                max_consecutive_empty = 3  # Parar após 3 iterações consecutivas sem leads válidos
+                api_requests_made = 0
                 
                 while leads_processed < quantity and incremental_page < max_incremental_iterations:
-                    # Buscar mais leads usando offset crescente para evitar duplicatas
-                    current_offset = start_offset + (incremental_page * results_per_page * 20)  # 20 páginas por iteração
-                    logger.info(f"Buscando busca incremental (iteração {incremental_page + 1}, offset: {current_offset})...")
+                    # Verificar limite de requisições à API
+                    if api_requests_made >= max_api_requests:
+                        logger.warning(f"Limite de requisições à API atingido ({max_api_requests}). Parando busca incremental.")
+                        break
                     
-                    # Buscar uma página por vez para ter controle fino
+                    # Buscar mais leads usando offset crescente para evitar duplicatas
+                    # Reduzir para 5 páginas por iteração (50 leads) ao invés de 20 (200 leads)
+                    pages_per_iteration = 5
+                    current_offset = start_offset + (incremental_page * results_per_page * pages_per_iteration)
+                    logger.info(f"Busca incremental (iteração {incremental_page + 1}, offset: {current_offset}, páginas: {pages_per_iteration})...")
+                    
+                    # Buscar páginas em lotes menores
                     incremental_places_batch = []
-                    for page_in_batch in range(20):  # Buscar até 20 páginas por iteração
+                    for page_in_batch in range(pages_per_iteration):
                         if leads_processed >= quantity:
+                            break
+                        
+                        if api_requests_made >= max_api_requests:
                             break
                         
                         page_offset = current_offset + (page_in_batch * results_per_page)
                         places_page = search_google_maps(search_term, num=results_per_page, start=page_offset)
+                        api_requests_made += 1
                         
                         if not places_page:
                             logger.info(f"Não há mais resultados disponíveis na página {page_in_batch + 1} (offset: {page_offset}).")
@@ -1161,13 +1176,23 @@ def process_search_async(search_id):
                             break
                     
                     if not incremental_places_batch:
-                        logger.info("Não há mais resultados disponíveis. Busca incremental encerrada.")
-                        break
+                        consecutive_empty_iterations += 1
+                        logger.info(f"Nenhum resultado encontrado nesta iteração. Iterações consecutivas vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
+                        
+                        if consecutive_empty_iterations >= max_consecutive_empty:
+                            logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar resultados.")
+                            break
+                        
+                        incremental_page += 1
+                        continue
                     
                     # Filtrar leads já processados
                     incremental_filtered, _ = filter_existing_leads(user_profile, incremental_places_batch, days_threshold=30)
                     
                     leads_found_in_batch = 0
+                    leads_without_cnpj = 0
+                    leads_duplicated = 0
+                    
                     for place in incremental_filtered:
                         if leads_processed >= quantity:
                             break
@@ -1182,13 +1207,14 @@ def process_search_async(search_id):
                         
                         cnpj = find_cnpj_by_name(company_data['name'])
                         
-                        # Se não tem CNPJ, pular
+                        # Se não tem CNPJ, pular (sem log individual para reduzir spam)
                         if not cnpj:
-                            logger.info(f"Lead '{company_data['name']}' não tem CNPJ, pulando...")
+                            leads_without_cnpj += 1
                             continue
                         
                         # Se CNPJ já foi processado nesta busca, pular
                         if cnpj in processed_cnpjs_in_search:
+                            leads_duplicated += 1
                             continue
                         
                         company_data['cnpj'] = cnpj
@@ -1240,20 +1266,25 @@ def process_search_async(search_id):
                         
                         results.append(company_data)
                     
-                    # Se não encontrou leads válidos nesta iteração, incrementar página
-                    if leads_found_in_batch == 0:
-                        incremental_page += 1
-                        additional_needed = quantity - leads_processed
-                        if additional_needed <= 0:
-                            break
+                    # Log resumido da iteração
+                    if leads_found_in_batch > 0:
+                        consecutive_empty_iterations = 0  # Resetar contador se encontrou leads
+                        logger.info(f"Busca incremental: {leads_found_in_batch} leads válidos, {leads_without_cnpj} sem CNPJ, {leads_duplicated} duplicados. Total: {leads_processed}/{quantity} (requisições: {api_requests_made}/{max_api_requests})")
                     else:
-                        # Se encontrou leads, continuar na próxima iteração
-                        incremental_page += 1
-                        additional_needed = quantity - leads_processed
-                        logger.info(f"Busca incremental: encontrados {leads_found_in_batch} leads válidos. Total: {leads_processed}/{quantity}")
+                        consecutive_empty_iterations += 1
+                        logger.info(f"Busca incremental: nenhum lead válido encontrado ({leads_without_cnpj} sem CNPJ, {leads_duplicated} duplicados). Iterações vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
+                        
+                        if consecutive_empty_iterations >= max_consecutive_empty:
+                            logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar leads válidos.")
+                            break
+                    
+                    incremental_page += 1
+                    additional_needed = quantity - leads_processed
+                    if additional_needed <= 0:
+                        break
                 
                 if leads_processed < quantity:
-                    logger.info(f"Busca incremental concluída. Processados {leads_processed} de {quantity} leads solicitados.")
+                    logger.info(f"Busca incremental concluída. Processados {leads_processed} de {quantity} leads solicitados. Requisições à API: {api_requests_made}")
             
             # Criar ou atualizar cache com os novos leads
             if niche_normalized and location_normalized:
