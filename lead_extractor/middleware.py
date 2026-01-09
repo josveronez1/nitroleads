@@ -152,15 +152,22 @@ class CSPMiddleware(MiddlewareMixin):
     """
     
     def process_response(self, request, response):
-        # Construir diretiva CSP
+        # Remover qualquer header CSP existente (do nginx ou outro middleware)
+        # para garantir que nosso CSP seja o único aplicado
+        if 'Content-Security-Policy' in response:
+            del response['Content-Security-Policy']
+        if 'content-security-policy' in response:
+            del response['content-security-policy']
+        
+        # Construir diretiva CSP completa
         # Permitir: self, api.stripe.com, *.supabase.co, cdn.jsdelivr.net
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://js.stripe.com",
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
-            "connect-src 'self' https://api.stripe.com https://*.supabase.co https://cdn.jsdelivr.net",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://js.stripe.com",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
+            "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https:",
-            "font-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
+            "connect-src 'self' https://api.stripe.com https://*.supabase.co https://cdn.jsdelivr.net",
             "frame-src https://js.stripe.com https://hooks.stripe.com",
             "object-src 'none'",
             "base-uri 'self'",
@@ -170,6 +177,7 @@ class CSPMiddleware(MiddlewareMixin):
         ]
         
         csp_header = "; ".join(csp_directives)
+        # Forçar sobrescrita do header CSP
         response['Content-Security-Policy'] = csp_header
         
         return response
