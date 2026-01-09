@@ -42,43 +42,65 @@
     </div>
 
     <script>
-        console.log('[ROOT_REDIRECT] Página carregada');
-        console.log('[ROOT_REDIRECT] URL:', window.location.href);
+        console.log('========================================');
+        console.log('[ROOT_REDIRECT] PÁGINA CARREGADA');
+        console.log('========================================');
+        console.log('[ROOT_REDIRECT] URL completa:', window.location.href);
         console.log('[ROOT_REDIRECT] Pathname:', window.location.pathname);
         console.log('[ROOT_REDIRECT] Hash:', window.location.hash);
+        console.log('[ROOT_REDIRECT] Hash length:', window.location.hash ? window.location.hash.length : 0);
         console.log('[ROOT_REDIRECT] Search:', window.location.search);
         console.log('[ROOT_REDIRECT] Referer:', document.referrer);
+        console.log('========================================');
         
-        // Detectar hash de recovery
-        if (window.location.hash) {
-            var hash = window.location.hash.substring(1);
-            var hashParams = new URLSearchParams(hash);
-            var accessToken = hashParams.get('access_token');
-            var type = hashParams.get('type');
-            var error = hashParams.get('error');
-            var errorCode = hashParams.get('error_code');
+        // Detectar hash de recovery - IMPORTANTE: verificar imediatamente
+        var hash = window.location.hash;
+        console.log('[ROOT_REDIRECT] Verificando hash:', hash);
+        
+        if (hash && hash.length > 1) {
+            var hashString = hash.substring(1);
+            console.log('[ROOT_REDIRECT] Hash string:', hashString);
             
-            console.log('[ROOT_REDIRECT] Hash params:', {
-                accessToken: accessToken ? 'PRESENTE' : 'AUSENTE',
-                type: type,
-                error: error,
-                errorCode: errorCode
-            });
-            
-            // Se há token de recovery, redirecionar para página de confirmação
-            if (accessToken && type === 'recovery') {
-                console.log('[ROOT_REDIRECT] Token de recovery detectado!');
-                console.log('[ROOT_REDIRECT] Redirecionando para /password-reset/confirm/ mantendo hash...');
-                window.location.replace('/password-reset/confirm/' + window.location.hash);
-            } else if (error) {
-                // Se há erro, redirecionar para página de reset com erro
-                console.log('[ROOT_REDIRECT] Erro detectado:', error, errorCode);
-                var errorParams = new URLSearchParams();
-                errorParams.set('error', error);
-                if (errorCode) errorParams.set('error_code', errorCode);
-                var errorDesc = hashParams.get('error_description');
-                if (errorDesc) errorParams.set('error_description', errorDesc);
-                window.location.replace('/password-reset/?' + errorParams.toString());
+            try {
+                var hashParams = new URLSearchParams(hashString);
+                var accessToken = hashParams.get('access_token');
+                var type = hashParams.get('type');
+                var error = hashParams.get('error');
+                var errorCode = hashParams.get('error_code');
+                
+                console.log('[ROOT_REDIRECT] Hash params extraídos:');
+                console.log('  - accessToken:', accessToken ? 'PRESENTE (' + accessToken.substring(0, 20) + '...)' : 'AUSENTE');
+                console.log('  - type:', type);
+                console.log('  - error:', error);
+                console.log('  - errorCode:', errorCode);
+                
+                // Se há token de recovery, redirecionar para página de confirmação
+                if (accessToken && type === 'recovery') {
+                    console.log('[ROOT_REDIRECT] ✓✓✓ TOKEN DE RECOVERY DETECTADO! ✓✓✓');
+                    console.log('[ROOT_REDIRECT] Redirecionando para /password-reset/confirm/ mantendo hash...');
+                    var targetUrl = '/password-reset/confirm/' + hash;
+                    console.log('[ROOT_REDIRECT] Target URL:', targetUrl);
+                    window.location.replace(targetUrl);
+                } else if (error) {
+                    // Se há erro, redirecionar para página de reset com erro
+                    console.log('[ROOT_REDIRECT] ✗✗✗ ERRO DETECTADO:', error, errorCode);
+                    var errorParams = new URLSearchParams();
+                    errorParams.set('error', error);
+                    if (errorCode) errorParams.set('error_code', errorCode);
+                    var errorDesc = hashParams.get('error_description');
+                    if (errorDesc) errorParams.set('error_description', errorDesc);
+                    var errorUrl = '/password-reset/?' + errorParams.toString();
+                    console.log('[ROOT_REDIRECT] Redirecionando para:', errorUrl);
+                    window.location.replace(errorUrl);
+                } else {
+                    console.log('[ROOT_REDIRECT] ⚠️ Hash presente mas sem token de recovery ou erro reconhecido');
+                    console.log('[ROOT_REDIRECT] Redirecionando para login...');
+                    window.location.replace('/login/');
+                }
+            } catch (e) {
+                console.error('[ROOT_REDIRECT] Erro ao processar hash:', e);
+                console.log('[ROOT_REDIRECT] Redirecionando para login...');
+                window.location.replace('/login/');
             }
         } else {
             // Se não há hash, verificar referer do Supabase

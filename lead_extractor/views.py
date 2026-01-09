@@ -102,7 +102,8 @@ def password_reset_view(request):
 def root_redirect_view(request):
     """
     View especial para a raiz que detecta hash de recovery e redireciona.
-    Se não há hash, redireciona direto para login ou dashboard.
+    SEMPRE renderiza a página HTML, pois o hash só pode ser detectado no client-side.
+    O JavaScript na página decide o que fazer baseado no hash.
     """
     try:
         import logging
@@ -111,22 +112,14 @@ def root_redirect_view(request):
         logger.info(f"[ROOT_REDIRECT] View chamada para raiz")
         logger.info(f"[ROOT_REDIRECT] Path: {request.path}")
         logger.info(f"[ROOT_REDIRECT] Referer: {request.META.get('HTTP_REFERER', 'N/A')}")
+        logger.info(f"[ROOT_REDIRECT] Query string: {request.GET.urlencode()}")
         
-        # Verificar se veio do Supabase (provavelmente tem hash de recovery)
-        referer = request.META.get('HTTP_REFERER', '')
-        if 'supabase.co' in referer:
-            logger.info(f"[ROOT_REDIRECT] Referer do Supabase detectado - renderizando página de redirecionamento")
-            # Renderizar página HTML que detecta hash no client-side
-            return render(request, 'lead_extractor/root_redirect.html', {})
-        
-        # Se não veio do Supabase, verificar autenticação e redirecionar
-        user_profile = getattr(request, 'user_profile', None)
-        if user_profile:
-            logger.info(f"[ROOT_REDIRECT] User autenticado - redirecionando para dashboard")
-            return redirect('dashboard')
-        else:
-            logger.info(f"[ROOT_REDIRECT] User não autenticado - redirecionando para login")
-            return redirect('login')
+        # SEMPRE renderizar a página HTML
+        # O JavaScript vai detectar o hash (que só está disponível no client-side)
+        # e redirecionar apropriadamente
+        logger.info(f"[ROOT_REDIRECT] Renderizando página de redirecionamento")
+        logger.info(f"[ROOT_REDIRECT] JavaScript vai detectar hash e redirecionar")
+        return render(request, 'lead_extractor/root_redirect.html', {})
             
     except Exception as e:
         import logging
