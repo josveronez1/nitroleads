@@ -622,13 +622,16 @@ def create_checkout(request):
                 return JsonResponse({'checkout_url': session.url, 'session_id': session.id})
             else:
                 logger.error(f"Erro ao criar checkout: função retornou None")
-                return JsonResponse({'error': 'Erro ao criar sessão de checkout'}, status=500)
+                return JsonResponse({'error': 'Erro ao criar sessão de checkout. Verifique os logs do servidor.'}, status=500)
                 
         except ValueError as e:
             logger.error(f"Erro de valor ao criar checkout: {e}")
             return JsonResponse({'error': 'ID de pacote inválido'}, status=400)
         except Exception as e:
             logger.error(f"Erro inesperado ao criar checkout: {e}", exc_info=True)
+            import traceback
+            error_trace = traceback.format_exc()
+            logger.error(f"Traceback completo: {error_trace}")
             return JsonResponse({'error': f'Erro ao criar checkout: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Método não permitido'}, status=405)

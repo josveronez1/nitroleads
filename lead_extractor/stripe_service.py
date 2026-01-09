@@ -109,17 +109,9 @@ def create_checkout_session(package_id, user_id, user_email):
         
         # Definir métodos de pagamento (PIX só se estiver habilitado)
         payment_method_types = ['card']
-        payment_method_options = {}
-        
-        if ENABLE_PIX:
-            payment_method_types.append('pix')
-            payment_method_options['pix'] = {
-                'expires_after_seconds': 3600,  # 1 hora para PIX
-            }
-        
-        session = stripe.checkout.Session.create(
-            payment_method_types=payment_method_types,
-            line_items=[{
+        session_params = {
+            'payment_method_types': payment_method_types,
+            'line_items': [{
                 'price_data': {
                     'currency': 'brl',
                     'product_data': {
@@ -130,17 +122,27 @@ def create_checkout_session(package_id, user_id, user_email):
                 },
                 'quantity': 1,
             }],
-            mode='payment',
-            success_url=success_url,
-            cancel_url=cancel_url,
-            customer_email=user_email,
-            payment_method_options=payment_method_options if payment_method_options else None,
-            metadata={
+            'mode': 'payment',
+            'success_url': success_url,
+            'cancel_url': cancel_url,
+            'customer_email': user_email,
+            'metadata': {
                 'user_id': str(user_id),
                 'package_id': str(package_id),
                 'credits': str(package['credits']),
             },
-        )
+        }
+        
+        # Adicionar PIX se estiver habilitado
+        if ENABLE_PIX:
+            payment_method_types.append('pix')
+            session_params['payment_method_options'] = {
+                'pix': {
+                    'expires_after_seconds': 3600,  # 1 hora para PIX
+                }
+            }
+        
+        session = stripe.checkout.Session.create(**session_params)
         
         return session
         
@@ -190,17 +192,9 @@ def create_custom_checkout_session(credits, user_id, user_email):
         
         # Definir métodos de pagamento (PIX só se estiver habilitado)
         payment_method_types = ['card']
-        payment_method_options = {}
-        
-        if ENABLE_PIX:
-            payment_method_types.append('pix')
-            payment_method_options['pix'] = {
-                'expires_after_seconds': 3600,  # 1 hora para PIX
-            }
-        
-        session = stripe.checkout.Session.create(
-            payment_method_types=payment_method_types,
-            line_items=[{
+        session_params = {
+            'payment_method_types': payment_method_types,
+            'line_items': [{
                 'price_data': {
                     'currency': 'brl',
                     'product_data': {
@@ -211,17 +205,27 @@ def create_custom_checkout_session(credits, user_id, user_email):
                 },
                 'quantity': 1,
             }],
-            mode='payment',
-            success_url=success_url,
-            cancel_url=cancel_url,
-            customer_email=user_email,
-            payment_method_options=payment_method_options if payment_method_options else None,
-            metadata={
+            'mode': 'payment',
+            'success_url': success_url,
+            'cancel_url': cancel_url,
+            'customer_email': user_email,
+            'metadata': {
                 'user_id': str(user_id),
                 'credits': str(credits),
                 'custom': 'true',  # Marcar como compra customizada
             },
-        )
+        }
+        
+        # Adicionar PIX se estiver habilitado
+        if ENABLE_PIX:
+            payment_method_types.append('pix')
+            session_params['payment_method_options'] = {
+                'pix': {
+                    'expires_after_seconds': 3600,  # 1 hora para PIX
+                }
+            }
+        
+        session = stripe.checkout.Session.create(**session_params)
         
         return session
         
