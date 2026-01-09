@@ -43,6 +43,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/webhook/stripe/',
         '/webhook/github',
         '/webhook/github/',
+        '/favicon.ico',  # Favicon não precisa de autenticação
     ]
     
     def process_request(self, request):
@@ -65,9 +66,15 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             logger.info(f"[MIDDLEWARE] ✓✓✓ URL DE PASSWORD-RESET DETECTADA - RETORNANDO None IMEDIATAMENTE")
             logger.info(f"[MIDDLEWARE] ✓✓✓ Path: {request_path}")
             logger.info(f"[MIDDLEWARE] ✓✓✓ Full path: {full_path}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Method: {request.method}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Referer: {request.META.get('HTTP_REFERER', 'N/A')}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ User-Agent: {request.META.get('HTTP_USER_AGENT', 'N/A')[:100]}")
             logger.info(f"[MIDDLEWARE] ✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓")
             # RETORNAR None IMEDIATAMENTE - NÃO FAZER MAIS NADA
             return None
+        
+        # Log ANTES de qualquer verificação para capturar TODAS as URLs
+        logger.info(f"[MIDDLEWARE] 📍 REQUISIÇÃO RECEBIDA - Path: {request_path} | Full: {full_path} | Method: {request.method}")
         
         # Se não for password-reset, continuar com logs normais
         logger.info(f"[MIDDLEWARE] ========================================")
