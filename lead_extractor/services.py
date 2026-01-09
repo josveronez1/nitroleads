@@ -159,23 +159,94 @@ def run_auth_bot() -> bool:
         logger.error(f"Erro ao executar auth_bot: {e}", exc_info=True)
         return False
 
-def search_google_maps(query):
-    """Busca empresas no Google Maps via Serper"""
+def search_google_maps(query, num=10, start=0):
+    """
+    Busca empresas no Google Maps via Serper com suporte a paginação.
+    
+    Args:
+        query: Termo de busca (ex: "Advogado em São Paulo - SP")
+        num: Número de resultados por página (padrão: 10)
+        start: Offset/página inicial (padrão: 0)
+    
+    Returns:
+        list: Lista de lugares encontrados
+    """
     url = "https://google.serper.dev/places"
-    payload = json.dumps({"q": query})
+    payload = {
+        "q": query,
+        "num": num,
+        "start": start
+    }
     headers = {
         'X-API-KEY': SERPER_API_KEY,
         'Content-Type': 'application/json'
     }
     try:
-        response = requests.post(url, headers=headers, data=payload)
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        response.raise_for_status()  # Levanta exceção para status HTTP de erro
         return response.json().get('places', [])
     except requests.RequestException as e:
-        logger.error(f"Erro ao buscar no Google Maps via Serper: {e}", exc_info=True)
+        logger.error(f"Erro ao buscar no Google Maps via Serper (query: {query}, num: {num}, start: {start}): {e}", exc_info=True)
         return []
     except Exception as e:
         logger.error(f"Erro inesperado ao buscar no Google Maps: {e}", exc_info=True)
         return []
+
+
+def search_google_maps_paginated(query, max_results, max_pages=20):
+    """
+    Busca empresas no Google Maps via Serper com paginação automática.
+    Faz múltiplas requisições até atingir a quantidade desejada ou esgotar os resultados.
+    
+    Args:
+        query: Termo de busca (ex: "Advogado em São Paulo - SP")
+        max_results: Quantidade máxima de resultados desejada
+        max_pages: Limite máximo de páginas para evitar consumo excessivo (padrão: 20)
+    
+    Returns:
+        list: Lista completa de lugares encontrados (pode ser menor que max_results se não houver mais resultados)
+    """
+    all_places = []
+    page = 0
+    results_per_page = 10  # API Serper retorna ~10 resultados por página
+    max_results_safe = min(max_results, 200)  # Limite de segurança: máximo 200 resultados
+    
+    logger.info(f"Iniciando busca paginada para '{query}': solicitando até {max_results_safe} resultados (máx. {max_pages} páginas)")
+    
+    while len(all_places) < max_results_safe and page < max_pages:
+        start = page * results_per_page
+        logger.info(f"Buscando página {page + 1} para '{query}' (start: {start}, num: {results_per_page})...")
+        
+        try:
+            places = search_google_maps(query, num=results_per_page, start=start)
+            
+            if not places:
+                logger.info(f"Página {page + 1} retornou 0 resultados. Sem mais resultados disponíveis.")
+                break
+            
+            all_places.extend(places)
+            logger.info(f"Página {page + 1} retornou {len(places)} resultados. Total acumulado: {len(all_places)}")
+            
+            # Se retornou menos que o esperado, provavelmente não há mais páginas
+            if len(places) < results_per_page:
+                logger.info(f"Página {page + 1} retornou menos que {results_per_page} resultados. Assumindo fim dos resultados.")
+                break
+            
+            page += 1
+            
+            # Verificar se já atingimos a quantidade desejada
+            if len(all_places) >= max_results_safe:
+                logger.info(f"Quantidade solicitada atingida: {len(all_places)} resultados encontrados (solicitado: {max_results_safe})")
+                break
+                
+        except Exception as e:
+            logger.error(f"Erro ao buscar página {page + 1} para '{query}': {e}. Continuando com resultados já encontrados...", exc_info=True)
+            # Continuar com os resultados já encontrados ao invés de abortar
+            break
+    
+    logger.info(f"Busca paginada concluída para '{query}': {len(all_places)} resultados encontrados em {page + 1} página(s)")
+    return all_places[:max_results_safe]  # Garantir que não exceda o limite
+
 
 def find_cnpj_by_name(company_name):
     """Busca 'CNPJ [Nome]' no Google e extrai via Regex"""
@@ -757,6 +828,7 @@ def get_leads_from_cache(cached_search, user_profile, quantity):
 def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     """
     Busca incremental apenas os leads que ainda não foram encontrados.
+    Usa paginação se necessário, mas com limite menor (busca incremental precisa de menos resultados).
     
     Args:
         search_term: Termo de busca para Google Maps
@@ -767,15 +839,17 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     Returns:
         tuple: (lista de novos places, set atualizado de existing_cnpjs)
     """
-    # Buscar lugares no Google Maps
-    places = search_google_maps(search_term)
+    # Buscar lugares no Google Maps com paginação (limite menor para busca incremental)
+    # Buscar mais do que necessário para garantir quantidade suficiente após filtros
+    max_results = min(quantity * 3, 50)  # Buscar até 3x a quantidade ou máximo 50
+    places = search_google_maps_paginated(search_term, max_results, max_pages=5)
     
     # Aplicar filtro de deduplicação
     filtered_places, _ = filter_existing_leads(user_profile, places, days_threshold=30)
     
     # Remover CNPJs que já estão no existing_cnpjs
     new_places = []
-    for place in filtered_places[:quantity * 2]:  # Buscar mais para garantir quantidade suficiente
+    for place in filtered_places:
         # Tentar encontrar CNPJ
         cnpj = find_cnpj_by_name(place.get('title', ''))
         if cnpj and cnpj not in existing_cnpjs:
@@ -955,19 +1029,28 @@ def process_search_async(search_id):
                         results.append(company_data)
         else:
             # Busca completa (sem cache ou cache insuficiente)
-            places = search_google_maps(search_term)
+            # Usar busca paginada para obter múltiplas páginas até atingir quantity
+            places = search_google_maps_paginated(search_term, quantity)
             filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
             existing_cnpjs = existing_cnpjs_set
             
-            # Atualizar search_data
+            # Calcular número de páginas buscadas (aproximado)
+            results_per_page = 10
+            pages_searched = (len(places) + results_per_page - 1) // results_per_page if places else 0
+            api_calls_made = pages_searched
+            
+            # Atualizar search_data com informações de paginação
             search_obj.search_data.update({
                 'total_places_found': len(places),
                 'filtered_places': len(filtered_places),
+                'pages_searched': pages_searched,
+                'api_calls_made': api_calls_made,
             })
             search_obj.save(update_fields=['search_data'])
             
             # Processar até atingir a quantidade solicitada
-            for place in filtered_places[:quantity]:
+            # Não precisa mais de [:quantity] pois search_google_maps_paginated já limita
+            for place in filtered_places:
                 if leads_processed >= quantity:
                     break
                 
