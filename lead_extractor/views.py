@@ -464,9 +464,12 @@ def search_by_cpf(request):
 
 
 @require_user_profile
+@require_user_profile
 def search_by_cnpj(request):
     """
     Busca dados por CNPJ usando API Viper.
+    Dados são exibidos temporariamente e NÃO são salvos no banco para o usuário.
+    Quando o usuário sair da página, as informações desaparecem.
     """
     user_profile = request.user_profile
     
@@ -477,6 +480,13 @@ def search_by_cnpj(request):
             messages.error(request, 'CNPJ não fornecido')
             return redirect('simple_search')
         
+        # Limpar CNPJ (remover formatação)
+        cnpj_clean = ''.join(filter(str.isdigit, cnpj))
+        
+        if len(cnpj_clean) != 14:
+            messages.error(request, 'CNPJ inválido')
+            return redirect('simple_search')
+        
         # Verificar créditos
         available_credits = check_credits(user_profile)
         if available_credits < 1:
@@ -484,43 +494,51 @@ def search_by_cnpj(request):
             return redirect('simple_search')
         
         # Buscar dados do CNPJ
-        data = search_cnpj_viper(cnpj)
+        data = search_cnpj_viper(cnpj_clean)
         
-        if data:
-            # Buscar sócios também usando FILA (síncrono)
-            queue_result = get_partners_internal_queued(cnpj, user_profile)
-            queue_id = queue_result.get('queue_id')
-            is_new = queue_result.get('is_new', True)
-            
-            if not is_new:
-                logger.info(f"Reutilizando requisição existente para CNPJ {cnpj}, queue_id: {queue_id}")
-            
-            # Aguardar processamento (com timeout)
-            if queue_id:
-                partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
-                if partners_data:
-                    data['socios_qsa'] = partners_data
-            
-            # Debitar crédito
-            success, new_balance, error = debit_credits(
-                user_profile,
-                1,
-                description=f"Busca por CNPJ: {cnpj}"
-            )
-            
-            if success:
-                messages.success(request, 'Busca realizada com sucesso!')
-                context = {
-                    'cnpj': cnpj,
-                    'data': data,
-                    'user_profile': user_profile,
-                    'available_credits': new_balance,
-                }
-                return render(request, 'lead_extractor/cnpj_result.html', context)
-            else:
-                messages.error(request, f'Erro ao debitar crédito: {error}')
-        else:
+        if not data:
             messages.error(request, 'CNPJ não encontrado ou erro na busca')
+            return redirect('simple_search')
+        
+        # Buscar sócios também usando FILA
+        queue_result = get_partners_internal_queued(cnpj_clean, user_profile)
+        queue_id = queue_result.get('queue_id')
+        is_new = queue_result.get('is_new', True)
+        
+        if not is_new:
+            logger.info(f"Reutilizando requisição existente para CNPJ {cnpj_clean}, queue_id: {queue_id}")
+        
+        # Aguardar processamento (com timeout)
+        if queue_id:
+            partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+            if partners_data:
+                data['socios_qsa'] = partners_data
+        
+        # Debitar crédito ANTES de exibir os dados
+        success, new_balance, error = debit_credits(
+            user_profile,
+            1,
+            description=f"Busca rápida por CNPJ: {cnpj_clean}"
+        )
+        
+        if success:
+            messages.success(request, 'Busca realizada com sucesso!')
+            # Criar um ID temporário apenas para o template (não salvo no banco)
+            # Usar hash do CNPJ + timestamp para garantir unicidade na sessão
+            import hashlib
+            import time
+            temp_id = hashlib.md5(f"{cnpj_clean}_{time.time()}".encode()).hexdigest()[:8]
+            
+            context = {
+                'temp_lead_id': temp_id,  # ID temporário apenas para JavaScript
+                'cnpj': cnpj_clean,
+                'data': data,
+                'user_profile': user_profile,
+                'available_credits': new_balance,
+            }
+            return render(request, 'lead_extractor/cnpj_result.html', context)
+        else:
+            messages.error(request, f'Erro ao debitar crédito: {error}')
     
     return redirect('simple_search')
 

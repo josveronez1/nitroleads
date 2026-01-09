@@ -55,7 +55,7 @@
             <div class="col-md-12">
                 <h6 class="text-muted mb-2">Telefones</h6>
                 <div class="d-flex flex-wrap gap-2">
-                    {% for phone in data.telefones %}
+                    {% for phone in data|get_phones %}
                     <span class="badge bg-primary">{{ phone|format_phone }}</span>
                     {% endfor %}
                 </div>
@@ -68,8 +68,8 @@
             <div class="col-md-12">
                 <h6 class="text-muted mb-2">E-mails</h6>
                 <div class="d-flex flex-wrap gap-2">
-                    {% for email in data.emails %}
-                    <span class="badge bg-info text-dark">{{ email }}</span>
+                    {% for email in data|get_emails %}
+                    <span class="badge bg-info text-dark"><i class="fas fa-envelope me-1"></i>{{ email }}</span>
                     {% endfor %}
                 </div>
             </div>
@@ -81,26 +81,74 @@
         <div class="row mb-4">
             <div class="col-md-12">
                 <h6 class="text-muted mb-3">Sócios / Decisores</h6>
-                <div class="list-group">
+                <div class="partners-list" id="partners-list-{{ temp_lead_id }}">
                     {% for socio in data.socios_qsa.socios %}
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <div class="fw-bold">{{ socio.NOME|title }}</div>
-                                <small class="text-muted">{{ socio.CARGO|default:"Sócio/Admin"|title }}</small>
+                    <div class="socio-item mb-2 border rounded p-3" data-socio-cpf="{{ socio.DOCUMENTO|default:socio.CPF }}">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="flex-grow-1">
+                                <strong class="small">{{ socio.NOME|default:"N/A" }}</strong>
+                                <span class="text-muted small ms-1">({{ socio.CARGO|default:"Sócio" }})</span>
+                                {% if socio.DOCUMENTO or socio.CPF %}
+                                <br><span class="text-muted small">CPF: {{ socio.DOCUMENTO|default:socio.CPF }}</span>
+                                {% endif %}
                             </div>
-                            {% if socio.CPF %}
-                            <button class="btn btn-sm btn-outline-primary search-cpf-btn" 
-                                    data-cpf="{{ socio.CPF }}"
-                                    data-name="{{ socio.NOME }}"
-                                    title="Buscar dados por CPF">
-                                <i class="fas fa-search"></i> Buscar CPF
-                            </button>
+                            {% if socio.DOCUMENTO or socio.CPF %}
+                            <input type="checkbox" class="cpf-checkbox ms-2" 
+                                   data-cpf="{{ socio.DOCUMENTO|default:socio.CPF }}"
+                                   data-lead-id="{{ temp_lead_id }}"
+                                   data-socio-name="{{ socio.NOME|default:"N/A" }}"
+                                   data-cnpj="{{ cnpj }}"
+                                   id="cpf-{{ temp_lead_id }}-{{ forloop.counter }}"
+                                   style="display: none;">
                             {% endif %}
                         </div>
+                        {% if socio.cpf_enriched and socio.cpf_data %}
+                        <div class="mt-2 cpf-data">
+                            {% if socio.cpf_data.dados_gerais.nome %}
+                            <div class="small text-muted mb-1"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
+                            {% endif %}
+                            {% for phone in socio.cpf_data.telefones_fixos %}
+                                {% if phone %}
+                                <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone }}</span>
+                                {% endif %}
+                            {% endfor %}
+                            {% for phone in socio.cpf_data.telefones_moveis %}
+                                {% if phone %}
+                                <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone }}</span>
+                                {% endif %}
+                            {% endfor %}
+                            {% for phone in socio.cpf_data.whatsapps %}
+                                {% if phone %}
+                                <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone }}</span>
+                                {% endif %}
+                            {% endfor %}
+                            {% for email in socio.cpf_data.emails %}
+                                {% if email %}
+                                <span class="badge bg-info me-1"><i class="fas fa-envelope me-1"></i>{{ email }}</span>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
+                {% if data|has_unenriched_partners %}
+                <div class="d-flex align-items-center gap-2 mt-3">
+                    <button class="btn btn-sm btn-outline-primary" 
+                            type="button"
+                            onclick="toggleCpfSelection('{{ temp_lead_id }}')"
+                            id="search-cpf-btn-{{ temp_lead_id }}">
+                        <i class="fas fa-search"></i> Buscar informações dos sócios
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" 
+                            type="button"
+                            onclick="cancelCpfSelection('{{ temp_lead_id }}')"
+                            id="cancel-cpf-btn-{{ temp_lead_id }}"
+                            style="display: none;">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -141,52 +189,222 @@
 
 {% block extra_js %}
 <script>
-    // Busca por CPF inline
-    function searchCpfInline(cpf, name) {
-        const modal = new bootstrap.Modal(document.getElementById('cpfResultModal'));
-        document.getElementById('cpfResultContent').innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
-        modal.show();
-        
-        const csrfTokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
-        const csrfToken = csrfTokenElement ? csrfTokenElement.value : '';
-        fetch('{% url "search_by_cpf" %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRFToken': csrfToken
-            },
-            body: 'cpf=' + encodeURIComponent(cpf)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                let html = `<h6>CPF: ${cpf}</h6><h6>Nome: ${name}</h6><hr>`;
-                if (data.data.telefones && data.data.telefones.length > 0) {
-                    html += '<h6>Telefones:</h6><ul>';
-                    data.data.telefones.forEach(phone => html += `<li>${phone}</li>`);
-                    html += '</ul>';
+    // Função auxiliar para obter token CSRF
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
                 }
-                if (data.data.emails && data.data.emails.length > 0) {
-                    html += '<h6>Emails:</h6><ul>';
-                    data.data.emails.forEach(email => html += `<li>${email}</li>`);
-                    html += '</ul>';
-                }
-                document.getElementById('cpfResultContent').innerHTML = html;
-            } else {
-                document.getElementById('cpfResultContent').innerHTML = `<div class="alert alert-danger">${data.error || 'Erro na busca'}</div>`;
             }
-        })
-        .catch(error => {
-            document.getElementById('cpfResultContent').innerHTML = '<div class="alert alert-danger">Erro ao buscar dados do CPF</div>';
-        });
+        }
+        return cookieValue;
+    }
+    
+    function getCsrfToken() {
+        const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (csrfInput && csrfInput.value) {
+            return csrfInput.value;
+        }
+        const csrfCookie = getCookie('csrftoken');
+        if (csrfCookie) {
+            return csrfCookie;
+        }
+        console.error('Token CSRF não encontrado!');
+        return null;
     }
 
-    document.querySelectorAll('.search-cpf-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            searchCpfInline(this.getAttribute('data-cpf'), this.getAttribute('data-name'));
+    // Função para mostrar alertas
+    function showAlert(message, type = 'info') {
+        alert(message); // Simplificado - pode usar modais se preferir
+    }
+    
+    function showSuccess(message) {
+        alert(message); // Simplificado - pode usar modais se preferir
+    }
+    
+    function showError(message) {
+        alert(message); // Simplificado - pode usar modais se preferir
+    }
+
+    // Função para expandir/contrair seleção de CPFs
+    function toggleCpfSelection(leadId) {
+        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+        
+        if (checkboxes.length === 0) {
+            showAlert('Nenhum sócio com CPF encontrado para este lead.', 'warning');
+            return;
+        }
+        
+        if (checkboxes[0].style.display === 'none' || !checkboxes[0].style.display) {
+            // Mostrar checkboxes
+            checkboxes.forEach(cb => {
+                cb.style.display = 'block';
+                cb.checked = true;
+            });
+            searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca';
+            if (cancelBtn) {
+                cancelBtn.style.display = 'inline-block';
+            }
+        } else {
+            // Buscar CPFs selecionados
+            searchCpfsBatch(leadId);
+        }
+    }
+    
+    // Função para cancelar seleção de CPFs
+    function cancelCpfSelection(leadId) {
+        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+        
+        // Ocultar checkboxes
+        checkboxes.forEach(cb => {
+            cb.style.display = 'none';
         });
-    });
+        
+        // Restaurar botão
+        if (searchBtn) {
+            searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
+        }
+        
+        // Ocultar botão cancelar
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+    }
+
+    // Buscar CPFs em lote (versão simplificada para busca rápida - não salva no banco)
+    function searchCpfsBatch(tempLeadId) {
+        const checkboxes = document.querySelectorAll(`#partners-list-${tempLeadId} .cpf-checkbox:checked`);
+        const cpfsToSearch = Array.from(checkboxes).map(cb => ({
+            cpf: cb.dataset.cpf,
+            socio_name: cb.dataset.socioName,
+            cnpj: cb.dataset.cnpj || ''
+        }));
+        
+        if (cpfsToSearch.length === 0) {
+            showAlert('Selecione pelo menos um sócio para buscar dados por CPF.', 'warning');
+            cancelCpfSelection(tempLeadId);
+            return;
+        }
+        
+        // Mostrar loading
+        const searchBtn = document.getElementById(`search-cpf-btn-${tempLeadId}`);
+        const originalText = searchBtn.innerHTML;
+        searchBtn.disabled = true;
+        searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+        
+        const csrfToken = getCsrfToken();
+        if (!csrfToken) {
+            showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
+            searchBtn.disabled = false;
+            searchBtn.innerHTML = originalText;
+            return;
+        }
+        
+        // Buscar cada CPF individualmente usando search_by_cpf
+        let completed = 0;
+        let creditsDebited = 0;
+        let errors = [];
+        
+        cpfsToSearch.forEach((item, index) => {
+            fetch('{% url "search_by_cpf" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: 'cpf=' + encodeURIComponent(item.cpf)
+            })
+            .then(response => response.json())
+            .then(data => {
+                completed++;
+                if (data.success) {
+                    creditsDebited++;
+                    // Atualizar interface com os dados retornados
+                    const socioItem = document.querySelector(`#partners-list-${tempLeadId} .socio-item[data-socio-cpf="${item.cpf}"]`);
+                    if (socioItem && data.data) {
+                        // Adicionar dados ao sócio
+                        let dataDiv = socioItem.querySelector('.cpf-data');
+                        if (!dataDiv) {
+                            dataDiv = document.createElement('div');
+                            dataDiv.className = 'mt-2 cpf-data';
+                            socioItem.appendChild(dataDiv);
+                        }
+                        
+                        dataDiv.innerHTML = '';
+                        
+                        // Adicionar telefones
+                        if (data.data.telefones && data.data.telefones.length > 0) {
+                            data.data.telefones.forEach(phone => {
+                                if (phone) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'badge bg-success me-1';
+                                    badge.innerHTML = `<i class="fas fa-phone me-1"></i>${phone}`;
+                                    dataDiv.appendChild(badge);
+                                }
+                            });
+                        }
+                        
+                        // Adicionar emails
+                        if (data.data.emails && data.data.emails.length > 0) {
+                            data.data.emails.forEach(email => {
+                                if (email) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'badge bg-info me-1';
+                                    badge.innerHTML = `<i class="fas fa-envelope me-1"></i>${email}`;
+                                    dataDiv.appendChild(badge);
+                                }
+                            });
+                        }
+                    }
+                } else {
+                    errors.push(`Erro ao buscar CPF ${item.cpf}: ${data.error || 'Erro desconhecido'}`);
+                }
+                
+                // Quando todas as buscas terminarem
+                if (completed === cpfsToSearch.length) {
+                    if (creditsDebited > 0) {
+                        showSuccess(`Busca concluída! ${creditsDebited} crédito(s) debitado(s).`);
+                    }
+                    if (errors.length > 0) {
+                        showError('Alguns CPFs não puderam ser buscados: ' + errors.join('; '));
+                    }
+                    
+                    // Ocultar checkboxes e restaurar botão
+                    cancelCpfSelection(tempLeadId);
+                    searchBtn.disabled = false;
+                    searchBtn.innerHTML = originalText;
+                }
+            })
+            .catch(error => {
+                completed++;
+                errors.push(`Erro ao buscar CPF ${item.cpf}`);
+                console.error('Erro:', error);
+                
+                if (completed === cpfsToSearch.length) {
+                    if (creditsDebited > 0) {
+                        showSuccess(`Busca concluída! ${creditsDebited} crédito(s) debitado(s).`);
+                    }
+                    if (errors.length > 0) {
+                        showError('Alguns CPFs não puderam ser buscados: ' + errors.join('; '));
+                    }
+                    
+                    cancelCpfSelection(tempLeadId);
+                    searchBtn.disabled = false;
+                    searchBtn.innerHTML = originalText;
+                }
+            });
+        });
+    }
 </script>
 {% endblock %}
 
