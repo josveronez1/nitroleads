@@ -407,139 +407,147 @@ def search_by_cpf(request):
     )
     
     if request.method == 'POST':
-        cpf = request.POST.get('cpf', '').strip()
-        
-        if not cpf:
-            if is_ajax:
-                return JsonResponse({'error': 'CPF não fornecido'}, status=400)
-            messages.error(request, 'CPF não fornecido')
-            return redirect('simple_search')
-        
-        # Verificar créditos
-        available_credits = check_credits(user_profile)
-        if available_credits < 1:
-            if is_ajax:
-                return JsonResponse({'error': 'Créditos insuficientes'}, status=402)
-            messages.error(request, 'Créditos insuficientes')
-            return redirect('simple_search')
-        
-        # Buscar dados do CPF
-        cpf_clean = ''.join(filter(str.isdigit, cpf))
-        data = search_cpf_viper(cpf_clean)
-        
-        if data:
-            # Normalizar estrutura de dados para garantir compatibilidade
-            # A API pode retornar em formatos diferentes, normalizar para o formato esperado
-            normalized_data = {}
+        try:
+            cpf = request.POST.get('cpf', '').strip()
             
-            # Copiar todos os dados originais primeiro
-            if isinstance(data, dict):
-                normalized_data = data.copy()
-            else:
+            if not cpf:
+                if is_ajax:
+                    return JsonResponse({'error': 'CPF não fornecido'}, status=400)
+                messages.error(request, 'CPF não fornecido')
+                return redirect('simple_search')
+            
+            # Verificar créditos
+            available_credits = check_credits(user_profile)
+            if available_credits < 1:
+                if is_ajax:
+                    return JsonResponse({'error': 'Créditos insuficientes'}, status=402)
+                messages.error(request, 'Créditos insuficientes')
+                return redirect('simple_search')
+            
+            # Buscar dados do CPF
+            cpf_clean = ''.join(filter(str.isdigit, cpf))
+            data = search_cpf_viper(cpf_clean)
+            
+            if data:
+                # Normalizar estrutura de dados para garantir compatibilidade
+                # A API pode retornar em formatos diferentes, normalizar para o formato esperado
                 normalized_data = {}
-            
-            # Garantir que campos esperados pelo template existam
-            # Telefones fixos
-            if 'telefones_fixos' not in normalized_data:
-                # Tentar encontrar em diferentes estruturas
-                if 'TELEFONES_FIXOS' in normalized_data:
-                    telefones_fixos = normalized_data.get('TELEFONES_FIXOS', {})
-                    if isinstance(telefones_fixos, dict) and 'TELEFONE' in telefones_fixos:
-                        normalized_data['telefones_fixos'] = [telefones_fixos['TELEFONE']] if telefones_fixos['TELEFONE'] else []
-                    elif isinstance(telefones_fixos, list):
-                        normalized_data['telefones_fixos'] = telefones_fixos
+                
+                # Copiar todos os dados originais primeiro
+                if isinstance(data, dict):
+                    normalized_data = data.copy()
+                else:
+                    normalized_data = {}
+                
+                # Garantir que campos esperados pelo template existam
+                # Telefones fixos
+                if 'telefones_fixos' not in normalized_data:
+                    # Tentar encontrar em diferentes estruturas
+                    if 'TELEFONES_FIXOS' in normalized_data:
+                        telefones_fixos = normalized_data.get('TELEFONES_FIXOS', {})
+                        if isinstance(telefones_fixos, dict) and 'TELEFONE' in telefones_fixos:
+                            normalized_data['telefones_fixos'] = [telefones_fixos['TELEFONE']] if telefones_fixos['TELEFONE'] else []
+                        elif isinstance(telefones_fixos, list):
+                            normalized_data['telefones_fixos'] = telefones_fixos
+                        else:
+                            normalized_data['telefones_fixos'] = []
                     else:
                         normalized_data['telefones_fixos'] = []
-                else:
-                    normalized_data['telefones_fixos'] = []
-            
-            # Telefones móveis
-            if 'telefones_moveis' not in normalized_data:
-                if 'TELEFONES_MOVEIS' in normalized_data:
-                    telefones_moveis = normalized_data.get('TELEFONES_MOVEIS', {})
-                    if isinstance(telefones_moveis, dict) and 'TELEFONE' in telefones_moveis:
-                        normalized_data['telefones_moveis'] = [telefones_moveis['TELEFONE']] if telefones_moveis['TELEFONE'] else []
-                    elif isinstance(telefones_moveis, list):
-                        normalized_data['telefones_moveis'] = telefones_moveis
+                
+                # Telefones móveis
+                if 'telefones_moveis' not in normalized_data:
+                    if 'TELEFONES_MOVEIS' in normalized_data:
+                        telefones_moveis = normalized_data.get('TELEFONES_MOVEIS', {})
+                        if isinstance(telefones_moveis, dict) and 'TELEFONE' in telefones_moveis:
+                            normalized_data['telefones_moveis'] = [telefones_moveis['TELEFONE']] if telefones_moveis['TELEFONE'] else []
+                        elif isinstance(telefones_moveis, list):
+                            normalized_data['telefones_moveis'] = telefones_moveis
+                        else:
+                            normalized_data['telefones_moveis'] = []
                     else:
                         normalized_data['telefones_moveis'] = []
-                else:
-                    normalized_data['telefones_moveis'] = []
-            
-            # WhatsApps
-            if 'whatsapps' not in normalized_data:
-                normalized_data['whatsapps'] = normalized_data.get('WHATSAPPS', [])
-            
-            # Emails
-            if 'emails' not in normalized_data:
-                if 'EMAILS' in normalized_data:
-                    emails = normalized_data.get('EMAILS', {})
-                    if isinstance(emails, dict) and 'EMAIL' in emails:
-                        normalized_data['emails'] = [emails['EMAIL']] if emails['EMAIL'] else []
-                    elif isinstance(emails, list):
-                        normalized_data['emails'] = emails
+                
+                # WhatsApps
+                if 'whatsapps' not in normalized_data:
+                    normalized_data['whatsapps'] = normalized_data.get('WHATSAPPS', [])
+                
+                # Emails
+                if 'emails' not in normalized_data:
+                    if 'EMAILS' in normalized_data:
+                        emails = normalized_data.get('EMAILS', {})
+                        if isinstance(emails, dict) and 'EMAIL' in emails:
+                            normalized_data['emails'] = [emails['EMAIL']] if emails['EMAIL'] else []
+                        elif isinstance(emails, list):
+                            normalized_data['emails'] = emails
+                        else:
+                            normalized_data['emails'] = []
                     else:
                         normalized_data['emails'] = []
-                else:
-                    normalized_data['emails'] = []
-            
-            # Dados gerais
-            if 'dados_gerais' not in normalized_data:
-                normalized_data['dados_gerais'] = normalized_data.get('DADOS_GERAIS', {})
-            
-            # Combinar todos os telefones em uma lista única para compatibilidade
-            all_phones = []
-            if normalized_data.get('telefones_fixos'):
-                all_phones.extend(normalized_data['telefones_fixos'])
-            if normalized_data.get('telefones_moveis'):
-                all_phones.extend(normalized_data['telefones_moveis'])
-            if normalized_data.get('whatsapps'):
-                all_phones.extend(normalized_data['whatsapps'])
-            normalized_data['telefones'] = list(set([p for p in all_phones if p]))
-            
-            # Debitar crédito
-            success, new_balance, error = debit_credits(
-                user_profile,
-                1,
-                description=f"Busca por CPF: {cpf_clean}"
-            )
-            
-            if success:
-                if is_ajax:
-                    return JsonResponse({
-                        'success': True,
-                        'data': normalized_data,
+                
+                # Dados gerais
+                if 'dados_gerais' not in normalized_data:
+                    normalized_data['dados_gerais'] = normalized_data.get('DADOS_GERAIS', {})
+                
+                # Combinar todos os telefones em uma lista única para compatibilidade
+                all_phones = []
+                if normalized_data.get('telefones_fixos'):
+                    all_phones.extend(normalized_data['telefones_fixos'])
+                if normalized_data.get('telefones_moveis'):
+                    all_phones.extend(normalized_data['telefones_moveis'])
+                if normalized_data.get('whatsapps'):
+                    all_phones.extend(normalized_data['whatsapps'])
+                normalized_data['telefones'] = list(set([p for p in all_phones if p]))
+                
+                # Debitar crédito
+                success, new_balance, error = debit_credits(
+                    user_profile,
+                    1,
+                    description=f"Busca por CPF: {cpf_clean}"
+                )
+                
+                if success:
+                    if is_ajax:
+                        return JsonResponse({
+                            'success': True,
+                            'data': normalized_data,
+                            'credits_remaining': new_balance
+                        })
+                    # Renderizar template com resultado (usar dados normalizados + dados originais para campos extras)
+                    # Combinar dados normalizados com dados originais para ter todos os campos
+                    template_data = normalized_data.copy()
+                    # Adicionar campos extras que podem estar nos dados originais
+                    if isinstance(data, dict):
+                        for key in ['enderecos', 'renda_estimada', 'ocupacao', 'participacoes', 'ENDERECOS', 'RENDA_ESTIMADA', 'OCUPACAO', 'PARTICIPACOES']:
+                            if key in data:
+                                # Normalizar chaves maiúsculas para minúsculas
+                                normalized_key = key.lower()
+                                template_data[normalized_key] = data[key]
+                    
+                    # Garantir que dados_gerais existe
+                    if 'dados_gerais' not in template_data or not template_data['dados_gerais']:
+                        template_data['dados_gerais'] = {}
+                    
+                    return render(request, 'lead_extractor/cpf_result.html', {
+                        'data': template_data,
+                        'cpf': cpf_clean,
                         'credits_remaining': new_balance
                     })
-                # Renderizar template com resultado (usar dados normalizados + dados originais para campos extras)
-                # Combinar dados normalizados com dados originais para ter todos os campos
-                template_data = normalized_data.copy()
-                # Adicionar campos extras que podem estar nos dados originais
-                if isinstance(data, dict):
-                    for key in ['enderecos', 'renda_estimada', 'ocupacao', 'participacoes', 'ENDERECOS', 'RENDA_ESTIMADA', 'OCUPACAO', 'PARTICIPACOES']:
-                        if key in data:
-                            # Normalizar chaves maiúsculas para minúsculas
-                            normalized_key = key.lower()
-                            template_data[normalized_key] = data[key]
-                
-                # Garantir que dados_gerais existe
-                if 'dados_gerais' not in template_data or not template_data['dados_gerais']:
-                    template_data['dados_gerais'] = {}
-                
-                return render(request, 'lead_extractor/cpf_result.html', {
-                    'data': template_data,
-                    'cpf': cpf_clean,
-                    'credits_remaining': new_balance
-                })
+                else:
+                    if is_ajax:
+                        return JsonResponse({'error': f'Erro ao debitar crédito: {error}'}, status=500)
+                    messages.error(request, f'Erro ao debitar crédito: {error}')
+                    return redirect('simple_search')
             else:
                 if is_ajax:
-                    return JsonResponse({'error': f'Erro ao debitar crédito: {error}'}, status=500)
-                messages.error(request, f'Erro ao debitar crédito: {error}')
+                    return JsonResponse({'error': 'CPF não encontrado ou erro na busca'}, status=404)
+                messages.error(request, 'CPF não encontrado ou erro na busca')
                 return redirect('simple_search')
-        else:
+            
+        except Exception as e:
+            logger.error(f"Erro ao buscar CPF: {e}", exc_info=True)
             if is_ajax:
-                return JsonResponse({'error': 'CPF não encontrado ou erro na busca'}, status=404)
-            messages.error(request, 'CPF não encontrado ou erro na busca')
+                return JsonResponse({'error': f'Erro ao processar busca: {str(e)}'}, status=500)
+            messages.error(request, f'Erro ao processar busca: {str(e)}')
             return redirect('simple_search')
     
     if is_ajax:
