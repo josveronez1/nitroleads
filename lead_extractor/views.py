@@ -496,7 +496,6 @@ def search_by_cpf(request):
 
 
 @require_user_profile
-@require_user_profile
 def search_by_cnpj(request):
     """
     Busca dados por CNPJ usando API Viper.
@@ -525,95 +524,111 @@ def search_by_cnpj(request):
             messages.error(request, 'Créditos insuficientes')
             return redirect('simple_search')
         
-        # Verificar se já existe Lead com este CNPJ (pode ser de qualquer usuário ou sem usuário)
-        existing_lead = Lead.objects.filter(cnpj=cnpj_clean).first()
-        
-        if existing_lead and existing_lead.viper_data:
-            # Já existe - usar dados existentes
-            logger.info(f"Reutilizando Lead existente {existing_lead.id} para CNPJ {cnpj_clean}")
-            lead = existing_lead
-            data = lead.viper_data.copy()
+        try:
+            # Verificar se já existe Lead com este CNPJ (pode ser de qualquer usuário ou sem usuário)
+            existing_lead = Lead.objects.filter(cnpj=cnpj_clean).first()
             
-            # Verificar se precisa buscar sócios
-            if not has_valid_partners_data(lead):
-                queue_result = get_partners_internal_queued(cnpj_clean, user_profile, lead=lead)
+            if existing_lead and existing_lead.viper_data:
+                # Já existe - usar dados existentes
+                logger.info(f"Reutilizando Lead existente {existing_lead.id} para CNPJ {cnpj_clean}")
+                lead = existing_lead
+                data = lead.viper_data.copy()
+                
+                # Verificar se precisa buscar sócios
+                if not has_valid_partners_data(lead):
+                    queue_result = get_partners_internal_queued(cnpj_clean, user_profile, lead=lead)
+                    queue_id = queue_result.get('queue_id')
+                    if queue_id:
+                        partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
+                        if partners_data:
+                            data['socios_qsa'] = partners_data
+                            lead.viper_data = data
+                            lead.save(update_fields=['viper_data'])
+            else:
+                # Buscar dados do CNPJ
+                data = search_cnpj_viper(cnpj_clean)
+                
+                if not data:
+                    messages.error(request, 'CNPJ não encontrado ou erro na busca')
+                    return redirect('simple_search')
+                
+                # Buscar sócios também usando FILA
+                queue_result = get_partners_internal_queued(cnpj_clean, user_profile)
                 queue_id = queue_result.get('queue_id')
+                is_new = queue_result.get('is_new', True)
+                
+                if not is_new:
+                    logger.info(f"Reutilizando requisição existente para CNPJ {cnpj_clean}, queue_id: {queue_id}")
+                
+                # Aguardar processamento (com timeout)
                 if queue_id:
                     partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
                     if partners_data:
                         data['socios_qsa'] = partners_data
-                        lead.viper_data = data
-                        lead.save(update_fields=['viper_data'])
-        else:
-            # Buscar dados do CNPJ
-            data = search_cnpj_viper(cnpj_clean)
+                
+                # Criar Lead com os dados encontrados (SEM criar Search - não aparece no histórico)
+                lead_name = data.get('razao_social') or data.get('nome_fantasia') or f'Empresa CNPJ {cnpj_clean}'
+                address_parts = []
+                if data.get('logradouro'):
+                    address_parts.append(data.get('logradouro'))
+                if data.get('numero'):
+                    address_parts.append(data.get('numero'))
+                if data.get('bairro'):
+                    address_parts.append(data.get('bairro'))
+                if data.get('cidade'):
+                    address_parts.append(data.get('cidade'))
+                if data.get('uf'):
+                    address_parts.append(data.get('uf'))
+                if data.get('cep'):
+                    address_parts.append(f"CEP: {data.get('cep')}")
+                
+                # Criar Lead SEM associar a usuário (user=None) para não aparecer no histórico
+                # Mas salvar no banco para reutilização futura
+                lead = Lead.objects.create(
+                    user=None,  # Não associar ao usuário - não aparece no histórico
+                    search=None,  # Sem Search - não aparece no histórico
+                    name=lead_name,
+                    cnpj=cnpj_clean,
+                    address=', '.join(address_parts) if address_parts else None,
+                    viper_data=data
+                )
+                
+                logger.info(f"Lead {lead.id} criado para busca rápida por CNPJ {cnpj_clean} (não associado a usuário)")
             
-            if not data:
-                messages.error(request, 'CNPJ não encontrado ou erro na busca')
+            # Garantir que lead e data estão definidos
+            if not lead or not data:
+                logger.error(f"Erro: lead ou data não definidos após processamento (CNPJ: {cnpj_clean})")
+                messages.error(request, 'Erro ao processar dados do CNPJ')
                 return redirect('simple_search')
             
-            # Buscar sócios também usando FILA
-            queue_result = get_partners_internal_queued(cnpj_clean, user_profile)
-            queue_id = queue_result.get('queue_id')
-            is_new = queue_result.get('is_new', True)
-            
-            if not is_new:
-                logger.info(f"Reutilizando requisição existente para CNPJ {cnpj_clean}, queue_id: {queue_id}")
-            
-            # Aguardar processamento (com timeout)
-            if queue_id:
-                partners_data = wait_for_partners_processing(queue_id, user_profile, timeout=60)
-                if partners_data:
-                    data['socios_qsa'] = partners_data
-            
-            # Criar Lead com os dados encontrados (SEM criar Search - não aparece no histórico)
-            lead_name = data.get('razao_social') or data.get('nome_fantasia') or f'Empresa CNPJ {cnpj_clean}'
-            address_parts = []
-            if data.get('logradouro'):
-                address_parts.append(data.get('logradouro'))
-            if data.get('numero'):
-                address_parts.append(data.get('numero'))
-            if data.get('bairro'):
-                address_parts.append(data.get('bairro'))
-            if data.get('cidade'):
-                address_parts.append(data.get('cidade'))
-            if data.get('uf'):
-                address_parts.append(data.get('uf'))
-            if data.get('cep'):
-                address_parts.append(f"CEP: {data.get('cep')}")
-            
-            # Criar Lead SEM associar a usuário (user=None) para não aparecer no histórico
-            # Mas salvar no banco para reutilização futura
-            lead = Lead.objects.create(
-                user=None,  # Não associar ao usuário - não aparece no histórico
-                search=None,  # Sem Search - não aparece no histórico
-                name=lead_name,
-                cnpj=cnpj_clean,
-                address=', '.join(address_parts) if address_parts else None,
-                viper_data=data
+            # Debitar crédito
+            success, new_balance, error = debit_credits(
+                user_profile,
+                1,
+                description=f"Busca rápida por CNPJ: {cnpj_clean}"
             )
             
-            logger.info(f"Lead {lead.id} criado para busca rápida por CNPJ {cnpj_clean} (não associado a usuário)")
-        
-        # Debitar crédito
-        success, new_balance, error = debit_credits(
-            user_profile,
-            1,
-            description=f"Busca rápida por CNPJ: {cnpj_clean}"
-        )
-        
-        if success:
-            messages.success(request, 'Busca realizada com sucesso!')
-            context = {
-                'lead': lead,  # Usar lead real para o template
-                'cnpj': cnpj_clean,
-                'data': lead.viper_data,
-                'user_profile': user_profile,
-                'available_credits': new_balance,
-            }
-            return render(request, 'lead_extractor/cnpj_result.html', context)
-        else:
-            messages.error(request, f'Erro ao debitar crédito: {error}')
+            if success:
+                messages.success(request, 'Busca realizada com sucesso!')
+                # Garantir que data está atualizado no lead
+                if lead.viper_data != data:
+                    lead.viper_data = data
+                    lead.save(update_fields=['viper_data'])
+                
+                context = {
+                    'lead': lead,  # Usar lead real para o template
+                    'cnpj': cnpj_clean,
+                    'data': data,  # Usar data diretamente (garantido estar definido)
+                    'user_profile': user_profile,
+                    'available_credits': new_balance,
+                }
+                return render(request, 'lead_extractor/cnpj_result.html', context)
+            else:
+                messages.error(request, f'Erro ao debitar crédito: {error}')
+        except Exception as e:
+            logger.error(f"Erro ao buscar CNPJ {cnpj_clean}: {e}", exc_info=True)
+            messages.error(request, f'Erro ao processar busca: {str(e)}')
+            return redirect('simple_search')
     
     return redirect('simple_search')
 
