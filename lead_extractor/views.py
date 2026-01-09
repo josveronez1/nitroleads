@@ -770,7 +770,8 @@ def search_history(request):
     user_profile = request.user_profile
     
     # Garantir que apenas pesquisas do usuário sejam listadas
-    searches = Search.objects.filter(user=user_profile).select_related('user', 'cached_search').prefetch_related('leads').order_by('-created_at')
+    # Prefetch LeadAccess para otimizar queries (leads agora são acessados via LeadAccess)
+    searches = Search.objects.filter(user=user_profile).select_related('user', 'cached_search').prefetch_related('lead_accesses__lead').order_by('-created_at')
     
     # Identificar última pesquisa (mais recente)
     last_search_id = None

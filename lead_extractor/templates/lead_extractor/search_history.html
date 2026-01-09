@@ -146,7 +146,8 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for lead in search.leads.all|slice:":20" %}
+                            {% for lead_access in search.lead_accesses.all|slice:":20" %}
+                            {% with lead=lead_access.lead %}
                             <tr id="lead-row-{{ lead.id }}">
                                 <td class="partners-checkbox-cell" id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
                                     <input type="checkbox" class="partner-lead-checkbox" 
@@ -246,11 +247,12 @@
                                     {% endif %}
                                 </td>
                             </tr>
+                            {% endwith %}
                             {% endfor %}
-                            {% if search.leads.count > 20 %}
+                            {% if search.lead_accesses.count > 20 %}
                             <tr>
                                 <td colspan="6" class="text-center text-muted">
-                                    ... e mais {{ search.leads.count|add:"-20" }} lead(s)
+                                    ... e mais {{ search.lead_accesses.count|add:"-20" }} lead(s)
                                 </td>
                             </tr>
                             {% endif %}
