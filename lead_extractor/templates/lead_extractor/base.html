@@ -589,6 +589,26 @@
     </script>
     {% block extra_js %}{% endblock %}
     {% endif %}
+    
+    {# Interceptar hash de password reset na raiz e redirecionar para página correta #}
+    <script>
+        (function() {
+            // Verificar se estamos na raiz e há um hash com access_token e type=recovery
+            if (window.location.pathname === '/' && window.location.hash) {
+                const hash = window.location.hash.substring(1);
+                const hashParams = new URLSearchParams(hash);
+                const accessToken = hashParams.get('access_token');
+                const type = hashParams.get('type');
+                
+                if (accessToken && type === 'recovery') {
+                    // Redirecionar para /password-reset/confirm/ mantendo o hash
+                    console.log('[BASE.HTML] Hash de recovery detectado na raiz, redirecionando para /password-reset/confirm/');
+                    window.location.replace('/password-reset/confirm/' + window.location.hash);
+                    return; // Parar execução
+                }
+            }
+        })();
+    </script>
 </body>
 
 </html>
