@@ -61,6 +61,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'lead_extractor.middleware.SupabaseAuthMiddleware',  # Middleware de autenticação Supabase
+    'lead_extractor.middleware.CSPMiddleware',  # Middleware CSP para permitir cdn.jsdelivr.net
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',

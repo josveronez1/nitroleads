@@ -9,21 +9,66 @@ logger = logging.getLogger(__name__)
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
 stripe.api_key = STRIPE_SECRET_KEY
 
-# Configurar se PIX está habilitado (padrão: False - apenas cartão)
-ENABLE_PIX = config('STRIPE_ENABLE_PIX', default=False, cast=bool)
+# Configurar se PIX está habilitado (padrão: True - PIX habilitado)
+ENABLE_PIX = config('STRIPE_ENABLE_PIX', default=True, cast=bool)
 
 # Constantes de precificação
-CREDIT_PRICE = 0.30  # R$0,30 por crédito
 MIN_CREDITS = 10
 MAX_CREDITS = 10000
+MIN_PRICE_PER_CREDIT = 0.26  # Preço mínimo por crédito (NUNCA menor que isso)
+MAX_PRICE_PER_CREDIT = 1.00  # Preço máximo por crédito
 
-# Configuração de pacotes de créditos (recalculados para R$0,30 por crédito)
-CREDIT_PACKAGES = [
-    {'id': 1, 'credits': 100, 'price_brl': 30.00, 'name': 'Pacote Básico'},  # 100 * 0.30
-    {'id': 2, 'credits': 500, 'price_brl': 150.00, 'name': 'Pacote Intermediário'},  # 500 * 0.30
-    {'id': 3, 'credits': 1000, 'price_brl': 300.00, 'name': 'Pacote Avançado'},  # 1000 * 0.30
-    {'id': 4, 'credits': 2500, 'price_brl': 750.00, 'name': 'Pacote Premium'},  # 2500 * 0.30
+# Pontos de referência para cálculo progressivo de preços
+# Formato: (quantidade, preço_por_crédito)
+PRICING_POINTS = [
+    (10, 1.00),    # 10 créditos = R$ 1,00 por crédito (máximo)
+    (100, 0.40),   # 100 créditos = R$ 0,40 por crédito
+    (500, 0.32),   # 500 créditos = R$ 0,32 por crédito
+    (1000, 0.28),  # 1000 créditos = R$ 0,28 por crédito
+    (2500, 0.26),  # 2500 créditos = R$ 0,26 por crédito (mínimo)
 ]
+
+# Configuração de pacotes de créditos com preços FIXOS
+CREDIT_PACKAGES = [
+    {'id': 1, 'credits': 100, 'price_brl': 40.00, 'price_per_credit': 0.40, 'name': 'Pacote Básico'},  # 100 * 0.40
+    {'id': 2, 'credits': 500, 'price_brl': 160.00, 'price_per_credit': 0.32, 'name': 'Pacote Intermediário'},  # 500 * 0.32
+    {'id': 3, 'credits': 1000, 'price_brl': 280.00, 'price_per_credit': 0.28, 'name': 'Pacote Avançado'},  # 1000 * 0.28
+    {'id': 4, 'credits': 2500, 'price_brl': 650.00, 'price_per_credit': 0.26, 'name': 'Pacote Premium'},  # 2500 * 0.26
+]
+
+
+def calculate_price_per_credit(credits):
+    """
+    Calcula o preço por crédito baseado na quantidade usando interpolação linear
+    entre os pontos de referência.
+    
+    Args:
+        credits: Quantidade de créditos a comprar
+        
+    Returns:
+        float: Preço por crédito (entre MIN_PRICE_PER_CREDIT e MAX_PRICE_PER_CREDIT)
+    """
+    # Garantir limites mínimos e máximos
+    if credits < MIN_CREDITS:
+        return MAX_PRICE_PER_CREDIT
+    
+    if credits >= PRICING_POINTS[-1][0]:  # 2500 ou mais
+        return MIN_PRICE_PER_CREDIT
+    
+    # Encontrar o intervalo onde credits está
+    for i in range(len(PRICING_POINTS) - 1):
+        qty1, price1 = PRICING_POINTS[i]
+        qty2, price2 = PRICING_POINTS[i + 1]
+        
+        if qty1 <= credits < qty2:
+            # Interpolação linear
+            price = price1 + (credits - qty1) * (price2 - price1) / (qty2 - qty1)
+            # Garantir limites
+            price = max(MIN_PRICE_PER_CREDIT, min(MAX_PRICE_PER_CREDIT, price))
+            return round(price, 2)
+    
+    # Fallback (não deveria chegar aqui, mas garantia)
+    return MIN_PRICE_PER_CREDIT
 
 
 def create_checkout_session(package_id, user_id, user_email):
@@ -134,8 +179,9 @@ def create_custom_checkout_session(credits, user_id, user_email):
             logger.error(f"Quantidade de créditos inválida: {credits} (deve estar entre {MIN_CREDITS} e {MAX_CREDITS})")
             return None
         
-        # Calcular preço
-        price_brl = credits * CREDIT_PRICE
+        # Calcular preço usando função progressiva
+        price_per_credit = calculate_price_per_credit(credits)
+        price_brl = credits * price_per_credit
         
         # Usar variável de ambiente ou default para URL base
         base_url = config('BASE_URL', default='http://localhost:8000')

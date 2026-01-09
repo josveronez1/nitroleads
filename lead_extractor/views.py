@@ -16,7 +16,7 @@ from .services import (
 import threading
 from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation
 from .credit_service import debit_credits, check_credits
-from .stripe_service import create_checkout_session, create_custom_checkout_session, handle_webhook_event, CREDIT_PACKAGES, CREDIT_PRICE, MIN_CREDITS, MAX_CREDITS
+from .stripe_service import create_checkout_session, create_custom_checkout_session, handle_webhook_event, CREDIT_PACKAGES, MIN_CREDITS, MAX_CREDITS
 from .decorators import require_user_profile, validate_user_ownership
 import csv
 import json
@@ -297,6 +297,9 @@ def export_leads_csv(request, search_id=None):
         last_search = Search.objects.filter(user=user_profile).order_by('-created_at').first()
         if last_search and last_search.id == search_id:
             is_last_search = True
+
+    # Contar leads para log de auditoria
+    leads_count = leads.count()
 
     for lead in leads:
         viper = lead.viper_data or {}
@@ -589,7 +592,6 @@ def purchase_credits(request):
         'user_profile': user_profile,
         'available_credits': check_credits(user_profile),
         'packages': CREDIT_PACKAGES,
-        'CREDIT_PRICE': CREDIT_PRICE,
         'MIN_CREDITS': MIN_CREDITS,
         'MAX_CREDITS': MAX_CREDITS,
     }
@@ -617,7 +619,7 @@ def create_checkout(request):
             
             if session:
                 logger.info(f"Checkout criado com sucesso: {session.id}")
-                return JsonResponse({'session_id': session.id, 'url': session.url})
+                return JsonResponse({'checkout_url': session.url, 'session_id': session.id})
             else:
                 logger.error(f"Erro ao criar checkout: função retornou None")
                 return JsonResponse({'error': 'Erro ao criar sessão de checkout'}, status=500)
@@ -654,7 +656,7 @@ def create_custom_checkout(request):
             
             if session:
                 logger.info(f"Checkout customizado criado com sucesso: {session.id}")
-                return JsonResponse({'session_id': session.id, 'url': session.url})
+                return JsonResponse({'checkout_url': session.url, 'session_id': session.id})
             else:
                 logger.error(f"Erro ao criar checkout customizado: função retornou None")
                 return JsonResponse({'error': 'Erro ao criar sessão de checkout'}, status=500)

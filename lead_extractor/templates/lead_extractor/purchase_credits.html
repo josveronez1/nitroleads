@@ -23,6 +23,9 @@
 <div class="text-center mb-5">
     <h2>Comprar Créditos</h2>
     <p class="text-muted">Escolha um pacote de créditos para continuar suas buscas</p>
+    <p class="text-success small mb-0">
+        <i class="fas fa-qrcode me-1"></i> Pagamento via PIX ou Cartão de Crédito disponível
+    </p>
 </div>
 
 <div class="row g-4">
@@ -42,7 +45,7 @@
                     {{ package.credits }} créditos
                 </h4>
                 <p class="text-muted small mb-4">
-                    R$ 0,30 por crédito
+                    R$ {{ package.price_per_credit|floatformat:2 }} por crédito
                 </p>
                 <button class="btn btn-primary w-100 mt-auto buy-package-btn" 
                         data-package-id="{{ package.id }}">
@@ -79,7 +82,7 @@
                             <div class="input-group input-group-lg">
                                 <span class="input-group-text">R$</span>
                                 <input type="text" class="form-control" id="customPrice" 
-                                       value="{{ CREDIT_PRICE|floatformat:2 }}" readonly>
+                                       value="R$ 0,00" readonly>
                             </div>
                         </div>
                         <div class="col-md-2">
@@ -97,17 +100,67 @@
 
 {% block extra_js %}
 <script>
-    const CREDIT_PRICE = {{ CREDIT_PRICE }};
     const MIN_CREDITS = {{ MIN_CREDITS }};
     const MAX_CREDITS = {{ MAX_CREDITS }};
+    const MIN_PRICE_PER_CREDIT = 0.26;
+    const MAX_PRICE_PER_CREDIT = 1.00;
+    
+    // Pontos de referência para cálculo progressivo
+    const PRICING_POINTS = [
+        [10, 1.00],    // 10 créditos = R$ 1,00 por crédito (máximo)
+        [100, 0.40],   // 100 créditos = R$ 0,40 por crédito
+        [500, 0.32],   // 500 créditos = R$ 0,32 por crédito
+        [1000, 0.28],  // 1000 créditos = R$ 0,28 por crédito
+        [2500, 0.26],  // 2500 créditos = R$ 0,26 por crédito (mínimo)
+    ];
+    
+    // Função para calcular preço por crédito baseado na quantidade
+    function calculatePricePerCredit(credits) {
+        // Garantir limites mínimos e máximos
+        if (credits < MIN_CREDITS) {
+            return MAX_PRICE_PER_CREDIT;
+        }
+        
+        if (credits >= PRICING_POINTS[PRICING_POINTS.length - 1][0]) { // 2500 ou mais
+            return MIN_PRICE_PER_CREDIT;
+        }
+        
+        // Encontrar o intervalo onde credits está
+        for (let i = 0; i < PRICING_POINTS.length - 1; i++) {
+            const [qty1, price1] = PRICING_POINTS[i];
+            const [qty2, price2] = PRICING_POINTS[i + 1];
+            
+            if (qty1 <= credits && credits < qty2) {
+                // Interpolação linear
+                let price = price1 + (credits - qty1) * (price2 - price1) / (qty2 - qty1);
+                // Garantir limites
+                price = Math.max(MIN_PRICE_PER_CREDIT, Math.min(MAX_PRICE_PER_CREDIT, price));
+                return Math.round(price * 100) / 100; // Arredondar para 2 casas decimais
+            }
+        }
+        
+        // Fallback (não deveria chegar aqui, mas garantia)
+        return MIN_PRICE_PER_CREDIT;
+    }
 
     // Calcular preço customizado
     document.getElementById('customCredits').addEventListener('input', function() {
         const credits = parseInt(this.value) || 0;
         if (credits >= MIN_CREDITS && credits <= MAX_CREDITS) {
-            const price = (credits * CREDIT_PRICE).toFixed(2);
-            document.getElementById('customPrice').value = price.replace('.', ',');
+            const pricePerCredit = calculatePricePerCredit(credits);
+            const totalPrice = (credits * pricePerCredit).toFixed(2);
+            document.getElementById('customPrice').value = 'R$ ' + totalPrice.replace('.', ',');
+        } else if (credits > 0) {
+            document.getElementById('customPrice').value = 'R$ 0,00';
         }
+    });
+    
+    // Calcular preço inicial quando a página carrega
+    document.addEventListener('DOMContentLoaded', function() {
+        const initialCredits = parseInt(document.getElementById('customCredits').value) || MIN_CREDITS;
+        const pricePerCredit = calculatePricePerCredit(initialCredits);
+        const totalPrice = (initialCredits * pricePerCredit).toFixed(2);
+        document.getElementById('customPrice').value = 'R$ ' + totalPrice.replace('.', ',');
     });
 
     // Comprar pacote
