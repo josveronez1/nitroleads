@@ -52,6 +52,19 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         request_path = request.path
         full_path = request.get_full_path()
         
+        # Permitir acesso à raiz SEM autenticação
+        # A view root_redirect_view vai detectar o hash e redirecionar corretamente
+        # Se não houver hash nem referer do Supabase, a view redireciona para login/dashboard
+        if request_path == '/':
+            referer = request.META.get('HTTP_REFERER', '')
+            logger.info(f"[MIDDLEWARE] ✓✓✓ ACESSO À RAIZ PERMITIDO - SEM AUTENTICAÇÃO")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Path: {request_path}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Referer: {referer}")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ A view root_redirect_view vai lidar com o redirecionamento")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Se houver hash de recovery, redirecionará para /password-reset/confirm/")
+            logger.info(f"[MIDDLEWARE] ✓✓✓ Se não houver, redirecionará para login ou dashboard")
+            return None
+        
         # Verificar se é URL de password-reset (check mais abrangente possível)
         is_password_reset = (
             request_path.startswith('/password-reset') or 

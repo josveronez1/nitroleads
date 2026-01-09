@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecionando - NitroLeads</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            text-align: center;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <h2>Redirecionando...</h2>
+        <p>Aguarde enquanto processamos sua requisição.</p>
+    </div>
+
+    <script>
+        console.log('[ROOT_REDIRECT] Página carregada');
+        console.log('[ROOT_REDIRECT] URL:', window.location.href);
+        console.log('[ROOT_REDIRECT] Pathname:', window.location.pathname);
+        console.log('[ROOT_REDIRECT] Hash:', window.location.hash);
+        console.log('[ROOT_REDIRECT] Search:', window.location.search);
+        console.log('[ROOT_REDIRECT] Referer:', document.referrer);
+        
+        // Detectar hash de recovery
+        if (window.location.hash) {
+            const hash = window.location.hash.substring(1);
+            const hashParams = new URLSearchParams(hash);
+            const accessToken = hashParams.get('access_token');
+            const type = hashParams.get('type');
+            const error = hashParams.get('error');
+            const errorCode = hashParams.get('error_code');
+            
+            console.log('[ROOT_REDIRECT] Hash params:', {
+                accessToken: accessToken ? 'PRESENTE' : 'AUSENTE',
+                type: type,
+                error: error,
+                errorCode: errorCode
+            });
+            
+            // Se há token de recovery, redirecionar para página de confirmação
+            if (accessToken && type === 'recovery') {
+                console.log('[ROOT_REDIRECT] ✓ Token de recovery detectado!');
+                console.log('[ROOT_REDIRECT] Redirecionando para /password-reset/confirm/ mantendo hash...');
+                window.location.replace('/password-reset/confirm/' + window.location.hash);
+                return; // Parar execução
+            }
+            
+            // Se há erro, redirecionar para página de reset com erro
+            if (error) {
+                console.log('[ROOT_REDIRECT] ✗ Erro detectado:', error, errorCode);
+                const errorParams = new URLSearchParams({
+                    error: error,
+                    error_code: errorCode || '',
+                    error_description: hashParams.get('error_description') || ''
+                });
+                window.location.replace('/password-reset/?' + errorParams.toString());
+                return;
+            }
+        }
+        
+        // Verificar referer do Supabase
+        const referer = document.referrer;
+        if (referer && referer.includes('supabase.co')) {
+            console.log('[ROOT_REDIRECT] Referer do Supabase detectado:', referer);
+            // Se veio do Supabase mas não há hash, pode ser um redirect sem hash
+            // Nesse caso, redirecionar para login
+            console.log('[ROOT_REDIRECT] Sem hash após redirect do Supabase, redirecionando para login');
+            window.location.replace('/login/');
+            return;
+        }
+        
+        // Se não há hash e não veio do Supabase, pode ser acesso direto à raiz
+        // Verificar se há sessão/cookie de autenticação
+        const hasAuthCookie = document.cookie.includes('sb-access-token') || 
+                              document.cookie.includes('supabase-auth-token');
+        
+        if (hasAuthCookie) {
+            console.log('[ROOT_REDIRECT] Cookie de autenticação encontrado, redirecionando para dashboard');
+            window.location.replace('/dashboard/');
+        } else {
+            console.log('[ROOT_REDIRECT] Nenhum cookie de autenticação, redirecionando para login');
+            window.location.replace('/login/');
+        }
+    </script>
+</body>
+</html>
+
