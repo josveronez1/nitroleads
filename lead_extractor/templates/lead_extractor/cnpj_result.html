@@ -159,9 +159,18 @@
         </div>
 
         {% else %}
-        <div class="alert alert-warning">
+        <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>
-            Nenhum dado encontrado para este CNPJ.
+            <strong>Erro:</strong> Não foi possível carregar os dados do CNPJ. 
+            {% if not data %}
+            Dados não encontrados.
+            {% elif not lead %}
+            Lead não encontrado.
+            {% else %}
+            Erro desconhecido.
+            {% endif %}
+            <br><br>
+            <a href="{% url 'simple_search' %}" class="btn btn-sm btn-primary">Tentar novamente</a>
         </div>
         {% endif %}
     </div>
