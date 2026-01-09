@@ -22,4 +22,3 @@ sudo supervisorctl restart nitroleads-queue
 # Log
 mkdir -p ~/logs/nitroleads
 echo "[$(date +'%Y-%m-%d %H:%M:%S')] Deploy via webhook concluído" >> ~/logs/nitroleads/deploy.log
-
