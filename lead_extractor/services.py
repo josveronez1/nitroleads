@@ -1034,6 +1034,9 @@ def process_search_async(search_id):
             filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
             existing_cnpjs = existing_cnpjs_set
             
+            # Set para rastrear CNPJs já processados nesta busca específica (evitar duplicatas)
+            processed_cnpjs_in_search = set()
+            
             # Calcular número de páginas buscadas (aproximado)
             results_per_page = 10
             pages_searched = (len(places) + results_per_page - 1) // results_per_page if places else 0
@@ -1049,7 +1052,6 @@ def process_search_async(search_id):
             search_obj.save(update_fields=['search_data'])
             
             # Processar até atingir a quantidade solicitada
-            # Não precisa mais de [:quantity] pois search_google_maps_paginated já limita
             for place in filtered_places:
                 if leads_processed >= quantity:
                     break
@@ -1063,51 +1065,195 @@ def process_search_async(search_id):
                 }
                 
                 cnpj = find_cnpj_by_name(company_data['name'])
-                if cnpj:
-                    company_data['cnpj'] = cnpj
-                    public_data = enrich_company_viper(cnpj)
-                    if public_data:
-                        company_data['viper_data'].update(public_data)
-                    
-                    # Buscar ou criar Lead
-                    existing_lead = Lead.objects.filter(
+                
+                # Se não tem CNPJ, pular e continuar
+                if not cnpj:
+                    logger.info(f"Lead '{company_data['name']}' não tem CNPJ, pulando e buscando mais leads...")
+                    continue
+                
+                # Se CNPJ já foi processado nesta busca, pular (evitar duplicatas)
+                if cnpj in processed_cnpjs_in_search:
+                    logger.info(f"CNPJ {cnpj} já foi processado nesta busca, pulando...")
+                    continue
+                
+                company_data['cnpj'] = cnpj
+                public_data = enrich_company_viper(cnpj)
+                if public_data:
+                    company_data['viper_data'].update(public_data)
+                
+                # Buscar ou criar Lead
+                existing_lead = Lead.objects.filter(
+                    user=user_profile,
+                    cnpj=cnpj
+                ).first()
+                
+                if existing_lead:
+                    lead_obj = existing_lead
+                    existing_lead.last_seen_by_user = timezone.now()
+                    existing_lead.save(update_fields=['last_seen_by_user'])
+                else:
+                    lead_obj = Lead.objects.create(
                         user=user_profile,
-                        cnpj=cnpj
-                    ).first()
+                        search=search_obj,
+                        name=company_data['name'],
+                        address=company_data['address'],
+                        phone_maps=company_data['phone_maps'],
+                        cnpj=cnpj,
+                        viper_data=company_data['viper_data']
+                    )
+                
+                # SEMPRE debitar crédito, mesmo se lead já existia
+                success, new_balance, error = debit_credits(
+                    user_profile,
+                    1,
+                    description=f"Lead: {company_data['name']}"
+                )
+                
+                # Se débito falhar, PARAR busca completamente
+                if not success:
+                    logger.error(f"Débito de crédito falhou: {error}. Parando busca.")
+                    break
+                
+                # Só incrementar contadores se débito foi bem-sucedido
+                credits_used += 1
+                leads_processed += 1
+                processed_cnpjs_in_search.add(cnpj)
+                
+                # Não buscar sócios automaticamente - será feito opcionalmente pelo usuário
+                if lead_obj.viper_data:
+                    company_data['viper_data'] = lead_obj.viper_data
+                
+                results.append(company_data)
+            
+            # Se faltam leads, fazer busca incremental (sem limite de páginas)
+            if leads_processed < quantity:
+                additional_needed = quantity - leads_processed
+                logger.info(f"Faltam {additional_needed} leads, iniciando busca incremental...")
+                
+                # Calcular offset inicial baseado nas páginas já buscadas
+                results_per_page = 10
+                start_offset = len(places)  # Começar após os leads já buscados
+                incremental_page = 0
+                max_incremental_iterations = 1000  # Praticamente sem limite
+                
+                while leads_processed < quantity and incremental_page < max_incremental_iterations:
+                    # Buscar mais leads usando offset crescente para evitar duplicatas
+                    current_offset = start_offset + (incremental_page * results_per_page * 20)  # 20 páginas por iteração
+                    logger.info(f"Buscando busca incremental (iteração {incremental_page + 1}, offset: {current_offset})...")
                     
-                    if existing_lead:
-                        lead_obj = existing_lead
-                        existing_lead.last_seen_by_user = timezone.now()
-                        existing_lead.save(update_fields=['last_seen_by_user'])
-                    else:
-                        lead_obj = Lead.objects.create(
-                            user=user_profile,
-                            search=search_obj,
-                            name=company_data['name'],
-                            address=company_data['address'],
-                            phone_maps=company_data['phone_maps'],
-                            cnpj=cnpj,
-                            viper_data=company_data['viper_data']
-                        )
+                    # Buscar uma página por vez para ter controle fino
+                    incremental_places_batch = []
+                    for page_in_batch in range(20):  # Buscar até 20 páginas por iteração
+                        if leads_processed >= quantity:
+                            break
                         
+                        page_offset = current_offset + (page_in_batch * results_per_page)
+                        places_page = search_google_maps(search_term, num=results_per_page, start=page_offset)
+                        
+                        if not places_page:
+                            logger.info(f"Não há mais resultados disponíveis na página {page_in_batch + 1} (offset: {page_offset}).")
+                            break
+                        
+                        incremental_places_batch.extend(places_page)
+                        
+                        # Se retornou menos que o esperado, provavelmente não há mais páginas
+                        if len(places_page) < results_per_page:
+                            break
+                    
+                    if not incremental_places_batch:
+                        logger.info("Não há mais resultados disponíveis. Busca incremental encerrada.")
+                        break
+                    
+                    # Filtrar leads já processados
+                    incremental_filtered, _ = filter_existing_leads(user_profile, incremental_places_batch, days_threshold=30)
+                    
+                    leads_found_in_batch = 0
+                    for place in incremental_filtered:
+                        if leads_processed >= quantity:
+                            break
+                        
+                        company_data = {
+                            'name': place.get('title'),
+                            'address': place.get('address'),
+                            'phone_maps': place.get('phoneNumber'),
+                            'cnpj': None,
+                            'viper_data': {}
+                        }
+                        
+                        cnpj = find_cnpj_by_name(company_data['name'])
+                        
+                        # Se não tem CNPJ, pular
+                        if not cnpj:
+                            logger.info(f"Lead '{company_data['name']}' não tem CNPJ, pulando...")
+                            continue
+                        
+                        # Se CNPJ já foi processado nesta busca, pular
+                        if cnpj in processed_cnpjs_in_search:
+                            continue
+                        
+                        company_data['cnpj'] = cnpj
+                        public_data = enrich_company_viper(cnpj)
+                        if public_data:
+                            company_data['viper_data'].update(public_data)
+                        
+                        # Buscar ou criar Lead
+                        existing_lead = Lead.objects.filter(
+                            user=user_profile,
+                            cnpj=cnpj
+                        ).first()
+                        
+                        if existing_lead:
+                            lead_obj = existing_lead
+                            existing_lead.last_seen_by_user = timezone.now()
+                            existing_lead.save(update_fields=['last_seen_by_user'])
+                        else:
+                            lead_obj = Lead.objects.create(
+                                user=user_profile,
+                                search=search_obj,
+                                name=company_data['name'],
+                                address=company_data['address'],
+                                phone_maps=company_data['phone_maps'],
+                                cnpj=cnpj,
+                                viper_data=company_data['viper_data']
+                            )
+                        
+                        # SEMPRE debitar crédito
                         success, new_balance, error = debit_credits(
                             user_profile,
                             1,
                             description=f"Lead: {company_data['name']}"
                         )
                         
+                        # Se débito falhar, PARAR busca completamente
                         if not success:
-                            logger.warning(f"Erro ao debitar crédito: {error}")
-                            continue
+                            logger.error(f"Débito de crédito falhou: {error}. Parando busca incremental.")
+                            break
                         
+                        # Só incrementar contadores se débito foi bem-sucedido
                         credits_used += 1
+                        leads_processed += 1
+                        processed_cnpjs_in_search.add(cnpj)
+                        leads_found_in_batch += 1
+                        
+                        if lead_obj.viper_data:
+                            company_data['viper_data'] = lead_obj.viper_data
+                        
+                        results.append(company_data)
                     
-                    # Não buscar sócios automaticamente - será feito opcionalmente pelo usuário
-                    if lead_obj.viper_data:
-                        company_data['viper_data'] = lead_obj.viper_data
-                    
-                    leads_processed += 1
-                    results.append(company_data)
+                    # Se não encontrou leads válidos nesta iteração, incrementar página
+                    if leads_found_in_batch == 0:
+                        incremental_page += 1
+                        additional_needed = quantity - leads_processed
+                        if additional_needed <= 0:
+                            break
+                    else:
+                        # Se encontrou leads, continuar na próxima iteração
+                        incremental_page += 1
+                        additional_needed = quantity - leads_processed
+                        logger.info(f"Busca incremental: encontrados {leads_found_in_batch} leads válidos. Total: {leads_processed}/{quantity}")
+                
+                if leads_processed < quantity:
+                    logger.info(f"Busca incremental concluída. Processados {leads_processed} de {quantity} leads solicitados.")
             
             # Criar ou atualizar cache com os novos leads
             if niche_normalized and location_normalized:
@@ -1140,7 +1286,7 @@ def process_search_async(search_id):
         search_obj.status = 'completed'
         search_obj.save(update_fields=['results_count', 'credits_used', 'results_data', 'status'])
         
-        logger.info(f"Busca {search_id} processada com sucesso: {leads_processed} leads, {credits_used} créditos")
+        logger.info(f"Busca {search_id} concluída: {leads_processed} leads processados, {credits_used} créditos debitados")
         
     except SearchModel.DoesNotExist:
         logger.error(f"Search {search_id} não encontrado")
