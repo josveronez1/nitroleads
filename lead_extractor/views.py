@@ -621,8 +621,10 @@ def create_checkout(request):
                 logger.info(f"Checkout criado com sucesso: {session.id}")
                 return JsonResponse({'checkout_url': session.url, 'session_id': session.id})
             else:
-                logger.error(f"Erro ao criar checkout: função retornou None")
-                return JsonResponse({'error': 'Erro ao criar sessão de checkout. Verifique os logs do servidor.'}, status=500)
+                logger.error(f"Erro ao criar checkout: função retornou None. Verifique STRIPE_SECRET_KEY e configuração do Stripe.")
+                return JsonResponse({
+                    'error': 'Erro ao criar sessão de checkout. Verifique se a chave do Stripe está configurada corretamente.'
+                }, status=500)
                 
         except ValueError as e:
             logger.error(f"Erro de valor ao criar checkout: {e}")

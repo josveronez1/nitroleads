@@ -134,6 +134,7 @@ def create_checkout_session(package_id, user_id, user_email):
         }
         
         # Adicionar PIX se estiver habilitado
+        pix_enabled = False
         if ENABLE_PIX:
             payment_method_types.append('pix')
             session_params['payment_method_options'] = {
@@ -141,8 +142,21 @@ def create_checkout_session(package_id, user_id, user_email):
                     'expires_after_seconds': 3600,  # 1 hora para PIX
                 }
             }
+            pix_enabled = True
         
-        session = stripe.checkout.Session.create(**session_params)
+        try:
+            session = stripe.checkout.Session.create(**session_params)
+        except stripe.error.InvalidRequestError as e:
+            # Se PIX não estiver disponível, tentar sem PIX
+            if pix_enabled and ('pix' in str(e).lower() or 'payment_method' in str(e).lower() or 'unsupported' in str(e).lower()):
+                logger.warning(f"PIX não disponível na conta Stripe, tentando apenas com cartão: {e}")
+                payment_method_types = ['card']
+                session_params['payment_method_types'] = payment_method_types
+                if 'payment_method_options' in session_params:
+                    del session_params['payment_method_options']
+                session = stripe.checkout.Session.create(**session_params)
+            else:
+                raise
         
         return session
         
@@ -217,6 +231,7 @@ def create_custom_checkout_session(credits, user_id, user_email):
         }
         
         # Adicionar PIX se estiver habilitado
+        pix_enabled = False
         if ENABLE_PIX:
             payment_method_types.append('pix')
             session_params['payment_method_options'] = {
@@ -224,8 +239,21 @@ def create_custom_checkout_session(credits, user_id, user_email):
                     'expires_after_seconds': 3600,  # 1 hora para PIX
                 }
             }
+            pix_enabled = True
         
-        session = stripe.checkout.Session.create(**session_params)
+        try:
+            session = stripe.checkout.Session.create(**session_params)
+        except stripe.error.InvalidRequestError as e:
+            # Se PIX não estiver disponível, tentar sem PIX
+            if pix_enabled and ('pix' in str(e).lower() or 'payment_method' in str(e).lower() or 'unsupported' in str(e).lower()):
+                logger.warning(f"PIX não disponível na conta Stripe, tentando apenas com cartão: {e}")
+                payment_method_types = ['card']
+                session_params['payment_method_types'] = payment_method_types
+                if 'payment_method_options' in session_params:
+                    del session_params['payment_method_options']
+                session = stripe.checkout.Session.create(**session_params)
+            else:
+                raise
         
         return session
         
