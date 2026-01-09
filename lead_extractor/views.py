@@ -527,11 +527,27 @@ def search_by_cpf(request):
                     if 'dados_gerais' not in template_data or not template_data['dados_gerais']:
                         template_data['dados_gerais'] = {}
                     
-                    return render(request, 'lead_extractor/cpf_result.html', {
-                        'data': template_data,
-                        'cpf': cpf_clean,
-                        'credits_remaining': new_balance
-                    })
+                    # Garantir que todos os campos esperados existam (mesmo que vazios)
+                    for field in ['telefones_fixos', 'telefones_moveis', 'whatsapps', 'emails', 'enderecos', 'renda_estimada', 'ocupacao', 'participacoes']:
+                        if field not in template_data:
+                            template_data[field] = [] if field in ['telefones_fixos', 'telefones_moveis', 'whatsapps', 'emails', 'enderecos', 'participacoes'] else {}
+                    
+                    # Log para debug (remover em produção se necessário)
+                    logger.info(f"Renderizando template cpf_result com dados: {list(template_data.keys())}")
+                    
+                    try:
+                        return render(request, 'lead_extractor/cpf_result.html', {
+                            'data': template_data,
+                            'cpf': cpf_clean,
+                            'credits_remaining': new_balance
+                        })
+                    except Exception as render_error:
+                        logger.error(f"Erro ao renderizar template cpf_result: {render_error}", exc_info=True)
+                        logger.error(f"Dados que causaram erro: {template_data}")
+                        if is_ajax:
+                            return JsonResponse({'error': f'Erro ao exibir resultados: {str(render_error)}'}, status=500)
+                        messages.error(request, f'Erro ao exibir resultados: {str(render_error)}')
+                        return redirect('simple_search')
                 else:
                     if is_ajax:
                         return JsonResponse({'error': f'Erro ao debitar crédito: {error}'}, status=500)

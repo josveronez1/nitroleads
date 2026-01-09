@@ -1,4 +1,5 @@
 {% extends "lead_extractor/base.html" %}
+{% load phone_filters %}
 
 {% block title %}Resultado da Busca por CPF - NitroLeads{% endblock %}
 
@@ -123,13 +124,14 @@
             </div>
             
             <!-- Endereços -->
-            {% if data.enderecos %}
+            {% if data.enderecos and data.enderecos|length > 0 %}
             <div class="card mb-4">
                 <div class="card-header bg-info text-white">
                     <h5 class="mb-0"><i class="fas fa-map-marker-alt me-2"></i>Endereços</h5>
                 </div>
                 <div class="card-body">
                     {% for endereco in data.enderecos %}
+                    {% if endereco %}
                     <div class="mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
                         <p class="mb-1">
                             <strong>{{ endereco.TIPO_LOGRADOURO|default:"" }} {{ endereco.LOGRADOURO|default:"-" }}, {{ endereco.NUMERO|default:"S/N" }}</strong>
@@ -139,6 +141,7 @@
                             {{ endereco.BAIRRO|default:"-" }} - {{ endereco.CIDADE|default:"-" }}/{{ endereco.UF|default:"-" }} - CEP: {{ endereco.CEP|default:"-" }}
                         </p>
                     </div>
+                    {% endif %}
                     {% endfor %}
                 </div>
             </div>
@@ -176,17 +179,19 @@
             {% endif %}
             
             <!-- Participações em Empresas -->
-            {% if data.participacoes %}
+            {% if data.participacoes and data.participacoes|length > 0 %}
             <div class="card mb-4">
                 <div class="card-header bg-dark text-white">
                     <h5 class="mb-0"><i class="fas fa-building me-2"></i>Participações em Empresas</h5>
                 </div>
                 <div class="card-body">
                     {% for empresa in data.participacoes %}
+                    {% if empresa %}
                     <div class="mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
                         <p class="mb-1"><strong>{{ empresa.RAZAO_SOCIAL|default:"-" }}</strong></p>
                         <p class="mb-0 text-muted">CNPJ: {{ empresa.CNPJ|default:"-" }} - {{ empresa.CARGO|default:"-" }}</p>
                     </div>
+                    {% endif %}
                     {% empty %}
                     <span class="text-muted">Nenhuma participação encontrada</span>
                     {% endfor %}
