@@ -99,6 +99,43 @@ def password_reset_view(request):
     return render(request, 'lead_extractor/password_reset.html', context)
 
 
+def root_redirect_view(request):
+    """
+    View especial para a raiz que detecta hash de recovery e redireciona.
+    Esta view é chamada antes do middleware verificar autenticação.
+    """
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"[ROOT_REDIRECT] View chamada para raiz")
+        logger.info(f"[ROOT_REDIRECT] Path: {request.path}")
+        logger.info(f"[ROOT_REDIRECT] Referer: {request.META.get('HTTP_REFERER', 'N/A')}")
+        
+        # Renderizar página HTML mínima que detecta hash e redireciona
+        return render(request, 'lead_extractor/root_redirect.html', {})
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[ROOT_REDIRECT] ERRO na view: {e}", exc_info=True)
+        # Retornar HTML mínimo de erro
+        from django.http import HttpResponse
+        return HttpResponse(f'''
+            <html>
+                <head><title>Erro</title></head>
+                <body>
+                    <h1>Erro ao carregar página</h1>
+                    <p>Erro: {str(e)}</p>
+                    <script>
+                        console.error("Erro na view root_redirect:", "{str(e)}");
+                        // Tentar redirecionar para login como fallback
+                        window.location.replace('/login/');
+                    </script>
+                </body>
+            </html>
+        ''', status=500)
+
+
 def password_reset_confirm_view(request):
     """
     Página para confirmar e redefinir a senha usando Supabase Auth.
