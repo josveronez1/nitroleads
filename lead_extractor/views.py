@@ -521,7 +521,15 @@ def search_by_cpf(request):
                             if key in data:
                                 # Normalizar chaves maiúsculas para minúsculas
                                 normalized_key = key.lower()
-                                template_data[normalized_key] = data[key]
+                                value = data[key]
+                                # Garantir que listas sejam realmente listas
+                                if normalized_key in ['enderecos', 'participacoes'] and not isinstance(value, list):
+                                    if value:
+                                        template_data[normalized_key] = [value] if isinstance(value, dict) else []
+                                    else:
+                                        template_data[normalized_key] = []
+                                else:
+                                    template_data[normalized_key] = value
                     
                     # Garantir que dados_gerais existe
                     if 'dados_gerais' not in template_data or not template_data['dados_gerais']:
