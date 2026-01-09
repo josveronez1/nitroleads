@@ -9,8 +9,9 @@ logger = logging.getLogger(__name__)
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
 stripe.api_key = STRIPE_SECRET_KEY
 
-# Configurar se PIX está habilitado (padrão: True - PIX habilitado)
-ENABLE_PIX = config('STRIPE_ENABLE_PIX', default=True, cast=bool)
+# Configurar métodos de pagamento
+ENABLE_PIX = config('STRIPE_ENABLE_PIX', default=False, cast=bool)  # PIX desabilitado por padrão (bloqueado na conta)
+ENABLE_BOLETO = config('STRIPE_ENABLE_BOLETO', default=True, cast=bool)  # Boleto habilitado por padrão
 
 # Constantes de precificação
 MIN_CREDITS = 10
@@ -107,8 +108,24 @@ def create_checkout_session(package_id, user_id, user_email):
         success_url = f"{base_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{base_url}/payment/cancel"
         
-        # Definir métodos de pagamento (PIX só se estiver habilitado)
+        # Definir métodos de pagamento (cartão sempre, boleto e PIX opcionais)
         payment_method_types = ['card']
+        payment_method_options = {}
+        
+        # Adicionar boleto se estiver habilitado
+        if ENABLE_BOLETO:
+            payment_method_types.append('boleto')
+            payment_method_options['boleto'] = {
+                'expires_after_days': 3,  # Boleto vence em 3 dias
+            }
+        
+        # Adicionar PIX se estiver habilitado
+        if ENABLE_PIX:
+            payment_method_types.append('pix')
+            payment_method_options['pix'] = {
+                'expires_after_seconds': 3600,  # 1 hora para PIX
+            }
+        
         session_params = {
             'payment_method_types': payment_method_types,
             'line_items': [{
@@ -133,25 +150,18 @@ def create_checkout_session(package_id, user_id, user_email):
             },
         }
         
-        # Adicionar PIX se estiver habilitado
-        pix_enabled = False
-        if ENABLE_PIX:
-            payment_method_types.append('pix')
-            session_params['payment_method_options'] = {
-                'pix': {
-                    'expires_after_seconds': 3600,  # 1 hora para PIX
-                }
-            }
-            pix_enabled = True
+        # Adicionar payment_method_options apenas se houver opções configuradas
+        if payment_method_options:
+            session_params['payment_method_options'] = payment_method_options
         
         try:
             session = stripe.checkout.Session.create(**session_params)
         except stripe.error.InvalidRequestError as e:
-            # Se PIX não estiver disponível, tentar sem PIX
-            if pix_enabled and ('pix' in str(e).lower() or 'payment_method' in str(e).lower() or 'unsupported' in str(e).lower()):
-                logger.warning(f"PIX não disponível na conta Stripe, tentando apenas com cartão: {e}")
-                payment_method_types = ['card']
-                session_params['payment_method_types'] = payment_method_types
+            # Se algum método de pagamento não estiver disponível, tentar apenas com cartão
+            error_msg = str(e).lower()
+            if any(method in error_msg for method in ['pix', 'boleto', 'payment_method', 'unsupported']):
+                logger.warning(f"Método de pagamento não disponível na conta Stripe, tentando apenas com cartão: {e}")
+                session_params['payment_method_types'] = ['card']
                 if 'payment_method_options' in session_params:
                     del session_params['payment_method_options']
                 session = stripe.checkout.Session.create(**session_params)
@@ -204,8 +214,24 @@ def create_custom_checkout_session(credits, user_id, user_email):
         success_url = f"{base_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{base_url}/payment/cancel"
         
-        # Definir métodos de pagamento (PIX só se estiver habilitado)
+        # Definir métodos de pagamento (cartão sempre, boleto e PIX opcionais)
         payment_method_types = ['card']
+        payment_method_options = {}
+        
+        # Adicionar boleto se estiver habilitado
+        if ENABLE_BOLETO:
+            payment_method_types.append('boleto')
+            payment_method_options['boleto'] = {
+                'expires_after_days': 3,  # Boleto vence em 3 dias
+            }
+        
+        # Adicionar PIX se estiver habilitado
+        if ENABLE_PIX:
+            payment_method_types.append('pix')
+            payment_method_options['pix'] = {
+                'expires_after_seconds': 3600,  # 1 hora para PIX
+            }
+        
         session_params = {
             'payment_method_types': payment_method_types,
             'line_items': [{
@@ -230,25 +256,18 @@ def create_custom_checkout_session(credits, user_id, user_email):
             },
         }
         
-        # Adicionar PIX se estiver habilitado
-        pix_enabled = False
-        if ENABLE_PIX:
-            payment_method_types.append('pix')
-            session_params['payment_method_options'] = {
-                'pix': {
-                    'expires_after_seconds': 3600,  # 1 hora para PIX
-                }
-            }
-            pix_enabled = True
+        # Adicionar payment_method_options apenas se houver opções configuradas
+        if payment_method_options:
+            session_params['payment_method_options'] = payment_method_options
         
         try:
             session = stripe.checkout.Session.create(**session_params)
         except stripe.error.InvalidRequestError as e:
-            # Se PIX não estiver disponível, tentar sem PIX
-            if pix_enabled and ('pix' in str(e).lower() or 'payment_method' in str(e).lower() or 'unsupported' in str(e).lower()):
-                logger.warning(f"PIX não disponível na conta Stripe, tentando apenas com cartão: {e}")
-                payment_method_types = ['card']
-                session_params['payment_method_types'] = payment_method_types
+            # Se algum método de pagamento não estiver disponível, tentar apenas com cartão
+            error_msg = str(e).lower()
+            if any(method in error_msg for method in ['pix', 'boleto', 'payment_method', 'unsupported']):
+                logger.warning(f"Método de pagamento não disponível na conta Stripe, tentando apenas com cartão: {e}")
+                session_params['payment_method_types'] = ['card']
                 if 'payment_method_options' in session_params:
                     del session_params['payment_method_options']
                 session = stripe.checkout.Session.create(**session_params)

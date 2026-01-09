@@ -1,6 +1,48 @@
-# Configuração do PIX no Stripe
+# Configuração de Métodos de Pagamento no Stripe (PIX e Boleto)
 
-## Requisitos para PIX funcionar
+## Métodos Disponíveis
+
+- **Cartão de Crédito**: Sempre habilitado
+- **Boleto**: Habilitado por padrão (requer conta Stripe no Brasil)
+- **PIX**: Desabilitado por padrão (pode estar bloqueado na conta)
+
+## Configuração do Boleto
+
+### Requisitos para Boleto funcionar
+
+1. **Conta Stripe no Brasil**
+   - O boleto está disponível apenas para contas Stripe no Brasil
+   - Verifique se sua conta está configurada para o Brasil no dashboard do Stripe
+
+2. **Chaves de API de Produção**
+   - Boleto funciona com chaves de **PRODUÇÃO** (começa com `sk_live_`)
+   - Também funciona em modo teste (começa com `sk_test_`) para testes
+
+3. **Habilitar Boleto na Conta Stripe**
+
+   - Acesse https://dashboard.stripe.com
+   - Vá em **Settings** > **Payment methods**
+   - Procure por **Boleto** na lista de métodos de pagamento
+   - Se não estiver habilitado, clique em **Enable** ou **Ativar**
+   - Boleto geralmente está disponível automaticamente para contas brasileiras
+
+4. **Configuração no .env**
+
+   ```bash
+   # Stripe - Boleto habilitado por padrão
+   STRIPE_ENABLE_BOLETO=True
+   STRIPE_SECRET_KEY=sk_live_xxxxxxxxxxxxx  # ou sk_test_ para testes
+   ```
+
+### Características do Boleto
+
+- **Vencimento**: 3 dias após a emissão (configurável)
+- **Processamento**: Pode levar até 2 dias úteis após o pagamento
+- **Disponível**: Contas Stripe no Brasil
+
+## Configuração do PIX
+
+### Requisitos para PIX funcionar
 
 ### 1. Conta Stripe no Brasil
 - O PIX está disponível apenas para contas Stripe no Brasil
