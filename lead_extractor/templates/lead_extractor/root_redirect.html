@@ -70,11 +70,8 @@
                 console.log('[ROOT_REDIRECT] Token de recovery detectado!');
                 console.log('[ROOT_REDIRECT] Redirecionando para /password-reset/confirm/ mantendo hash...');
                 window.location.replace('/password-reset/confirm/' + window.location.hash);
-                return;
-            }
-            
-            // Se há erro, redirecionar para página de reset com erro
-            if (error) {
+            } else if (error) {
+                // Se há erro, redirecionar para página de reset com erro
                 console.log('[ROOT_REDIRECT] Erro detectado:', error, errorCode);
                 var errorParams = new URLSearchParams();
                 errorParams.set('error', error);
@@ -82,30 +79,28 @@
                 var errorDesc = hashParams.get('error_description');
                 if (errorDesc) errorParams.set('error_description', errorDesc);
                 window.location.replace('/password-reset/?' + errorParams.toString());
-                return;
             }
-        }
-        
-        // Verificar referer do Supabase
-        var referer = document.referrer;
-        if (referer && referer.indexOf('supabase.co') !== -1) {
-            console.log('[ROOT_REDIRECT] Referer do Supabase detectado:', referer);
-            console.log('[ROOT_REDIRECT] Sem hash após redirect do Supabase, redirecionando para login');
-            window.location.replace('/login/');
-            return;
-        }
-        
-        // Se não há hash e não veio do Supabase, pode ser acesso direto à raiz
-        // Verificar se há sessão/cookie de autenticação
-        var hasAuthCookie = document.cookie.indexOf('sb-access-token') !== -1 || 
-                              document.cookie.indexOf('supabase-auth-token') !== -1;
-        
-        if (hasAuthCookie) {
-            console.log('[ROOT_REDIRECT] Cookie de autenticação encontrado, redirecionando para dashboard');
-            window.location.replace('/dashboard/');
         } else {
-            console.log('[ROOT_REDIRECT] Nenhum cookie de autenticação, redirecionando para login');
-            window.location.replace('/login/');
+            // Se não há hash, verificar referer do Supabase
+            var referer = document.referrer;
+            if (referer && referer.indexOf('supabase.co') !== -1) {
+                console.log('[ROOT_REDIRECT] Referer do Supabase detectado mas sem hash:', referer);
+                console.log('[ROOT_REDIRECT] Redirecionando para login');
+                window.location.replace('/login/');
+            } else {
+                // Se não há hash e não veio do Supabase, pode ser acesso direto à raiz
+                // Verificar se há sessão/cookie de autenticação
+                var hasAuthCookie = document.cookie.indexOf('sb-access-token') !== -1 || 
+                                      document.cookie.indexOf('supabase-auth-token') !== -1;
+                
+                if (hasAuthCookie) {
+                    console.log('[ROOT_REDIRECT] Cookie de autenticação encontrado, redirecionando para dashboard');
+                    window.location.replace('/dashboard/');
+                } else {
+                    console.log('[ROOT_REDIRECT] Nenhum cookie de autenticação, redirecionando para login');
+                    window.location.replace('/login/');
+                }
+            }
         }
     </script>
 </body>
