@@ -738,6 +738,16 @@ def payment_success(request):
 
 
 @require_user_profile
+def payment_cancel(request):
+    """
+    Página de cancelamento de pagamento.
+    Redireciona para a página de compra de créditos.
+    """
+    messages.info(request, 'Pagamento cancelado. Você pode tentar novamente quando quiser.')
+    return redirect('purchase_credits')
+
+
+@require_user_profile
 def viper_queue_status(request, queue_id):
     """
     Retorna status de uma requisição na fila do Viper.

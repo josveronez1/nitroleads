@@ -19,7 +19,7 @@ from django.urls import path
 from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
     search_by_cpf, search_by_cnpj, search_history, delete_search,
-    purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success,
+    purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success, payment_cancel,
     viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
     api_search_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
     password_reset_view, password_reset_confirm_view, root_redirect_view
@@ -45,6 +45,7 @@ urlpatterns = [
     path('checkout/create-custom/', create_custom_checkout, name='create_custom_checkout'),
     path('webhook/stripe/', stripe_webhook, name='stripe_webhook'),
     path('payment/success/', payment_success, name='payment_success'),
+    path('payment/cancel/', payment_cancel, name='payment_cancel'),
     path('api/viper-queue/<int:queue_id>/status/', viper_queue_status, name='viper_queue_status'),
     path('api/viper-queue/<int:queue_id>/result/', get_viper_result, name='get_viper_result'),
     path('api/autocomplete/niches/', api_autocomplete_niches, name='api_autocomplete_niches'),
