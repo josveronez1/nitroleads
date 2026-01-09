@@ -543,19 +543,34 @@ def search_by_cpf(request):
                     # Log para debug (remover em produção se necessário)
                     logger.info(f"Renderizando template cpf_result com dados: {list(template_data.keys())}")
                     
+                    # Garantir que CPF está no dados_gerais se não estiver
+                    if 'dados_gerais' in template_data and isinstance(template_data['dados_gerais'], dict):
+                        if 'CPF' not in template_data['dados_gerais'] and cpf_clean:
+                            template_data['dados_gerais']['CPF'] = cpf_clean
+                    
                     try:
-                        return render(request, 'lead_extractor/cpf_result.html', {
+                        response = render(request, 'lead_extractor/cpf_result.html', {
                             'data': template_data,
                             'cpf': cpf_clean,
                             'credits_remaining': new_balance
                         })
+                        logger.info(f"Template renderizado com sucesso para CPF {cpf_clean}")
+                        return response
                     except Exception as render_error:
                         logger.error(f"Erro ao renderizar template cpf_result: {render_error}", exc_info=True)
-                        logger.error(f"Dados que causaram erro: {template_data}")
-                        if is_ajax:
-                            return JsonResponse({'error': f'Erro ao exibir resultados: {str(render_error)}'}, status=500)
-                        messages.error(request, f'Erro ao exibir resultados: {str(render_error)}')
-                        return redirect('simple_search')
+                        logger.error(f"Dados que causaram erro: {str(template_data)[:500]}")
+                        # Tentar renderizar uma versão simplificada
+                        try:
+                            return render(request, 'lead_extractor/cpf_result.html', {
+                                'error': f'Erro ao processar dados: {str(render_error)}',
+                                'cpf': cpf_clean,
+                                'credits_remaining': new_balance
+                            })
+                        except:
+                            if is_ajax:
+                                return JsonResponse({'error': f'Erro ao exibir resultados: {str(render_error)}'}, status=500)
+                            messages.error(request, f'Erro ao exibir resultados: {str(render_error)}')
+                            return redirect('simple_search')
                 else:
                     if is_ajax:
                         return JsonResponse({'error': f'Erro ao debitar crédito: {error}'}, status=500)
