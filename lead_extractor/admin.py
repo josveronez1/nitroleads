@@ -4,7 +4,7 @@ from django.utils.html import format_html
 from django.shortcuts import redirect
 from django.urls import path
 from django.http import HttpResponseRedirect
-from .models import UserProfile, Lead, Search, CreditTransaction, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation
+from .models import UserProfile, Lead, Search, CreditTransaction, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess
 from .credit_service import add_credits
 
 
@@ -88,10 +88,18 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
-    list_display = ('name', 'cnpj', 'user', 'search', 'created_at')
-    list_filter = ('created_at', 'user')
+    list_display = ('name', 'cnpj', 'created_at')
+    list_filter = ('created_at',)
     search_fields = ('name', 'cnpj', 'cpf_owner')
-    readonly_fields = ('created_at', 'first_extracted_at', 'last_seen_by_user')
+    readonly_fields = ('created_at', 'first_extracted_at')
+
+
+@admin.register(LeadAccess)
+class LeadAccessAdmin(admin.ModelAdmin):
+    list_display = ('user', 'lead', 'search', 'credits_paid', 'accessed_at', 'enriched_at')
+    list_filter = ('accessed_at', 'enriched_at', 'credits_paid')
+    search_fields = ('user__email', 'lead__name', 'lead__cnpj')
+    readonly_fields = ('accessed_at',)
 
 
 @admin.register(Search)

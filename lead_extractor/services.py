@@ -475,61 +475,59 @@ def get_partners_internal(cnpj, retry=True):
     return []
 
 
-def filter_existing_leads(user_profile, new_places, days_threshold=30):
+def filter_existing_leads(user_profile, new_places):
     """
-    Filtra leads que já foram vistos pelo usuário nos últimos X dias.
-    Implementa lógica híbrida: prioriza leads novos, mas permite reutilizar após X dias.
+    Filtra leads que já foram acessados pelo usuário via LeadAccess.
+    Retorna apenas lugares que o usuário nunca acessou.
     
     Args:
         user_profile: Objeto UserProfile
         new_places: Lista de lugares retornados pelo Google Maps
-        days_threshold: Número de dias para considerar um lead como "reutilizável" (padrão 30)
     
     Returns:
         tuple: (filtered_places: list, existing_cnpjs: set)
-            - filtered_places: Lugares que podem ser processados (novos ou antigos que podem ser reutilizados)
-            - existing_cnpjs: Set de CNPJs que já existem (para evitar processamento duplicado)
+            - filtered_places: Lugares que podem ser processados (nunca acessados pelo usuário)
+            - existing_cnpjs: Set de CNPJs que já existem globalmente (para evitar processamento duplicado)
     """
+    from .models import LeadAccess
+    
     if not user_profile or not new_places:
         return [], set()
     
-    # Calcular data limite para reutilização
-    threshold_date = timezone.now() - timedelta(days=days_threshold)
+    # Buscar CNPJs de leads já acessados pelo usuário
+    accessed_cnpjs = set(
+        LeadAccess.objects.filter(user=user_profile)
+        .select_related('lead')
+        .exclude(lead__cnpj__isnull=True)
+        .exclude(lead__cnpj='')
+        .values_list('lead__cnpj', flat=True)
+    )
     
-    # Buscar leads existentes do usuário
-    existing_leads = Lead.objects.filter(
-        user=user_profile
-    ).select_related('user')
+    # Buscar CNPJs de leads globais existentes (para evitar duplicatas na mesma busca)
+    global_cnpjs = set(
+        Lead.objects.exclude(cnpj__isnull=True)
+        .exclude(cnpj='')
+        .values_list('cnpj', flat=True)
+    )
     
-    # Criar sets de identificadores existentes
-    existing_cnpjs = set(existing_leads.exclude(cnpj__isnull=True).exclude(cnpj='').values_list('cnpj', flat=True))
-    existing_names = set(existing_leads.values_list('name', flat=True))
-    
-    # Filtrar lugares: manter apenas os que não existem ou que foram vistos há mais de X dias
+    # Filtrar lugares: manter apenas os que o usuário nunca acessou
     filtered_places = []
     
     for place in new_places:
         place_name = place.get('title', '')
         
-        # Verificar se existe lead com mesmo nome
-        if place_name in existing_names:
-            # Verificar se foi visto recentemente (dentro do threshold)
-            recent_lead = existing_leads.filter(
-                name=place_name,
-                last_seen_by_user__gte=threshold_date
-            ).first()
-            
-            if recent_lead:
-                # Lead foi visto recentemente, não incluir (prioriza novos)
-                continue
-            else:
-                # Lead existe mas foi visto há mais de X dias, pode reutilizar
-                filtered_places.append(place)
-        else:
-            # Lead novo, incluir
-            filtered_places.append(place)
+        # Tentar extrair CNPJ do nome (se possível)
+        # Se não conseguir, verificar por nome
+        cnpj = find_cnpj_by_name(place_name) if place_name else None
+        
+        if cnpj and cnpj in accessed_cnpjs:
+            # Usuário já acessou este lead, não incluir
+            continue
+        
+        # Lead nunca acessado pelo usuário, incluir
+        filtered_places.append(place)
     
-    return filtered_places, existing_cnpjs
+    return filtered_places, global_cnpjs
 
 
 def search_cpf_viper(cpf):
@@ -786,25 +784,23 @@ def get_or_create_normalized_niche(niche):
 
 def get_cached_search(niche_normalized, location_normalized):
     """
-    Busca um CachedSearch válido (não expirado).
+    Busca um CachedSearch existente.
+    Dados nunca expiram - base histórica permanente.
     
     Args:
         niche_normalized: Nicho normalizado
         location_normalized: Localização normalizada (formato: "Cidade - UF")
     
     Returns:
-        CachedSearch ou None: Cache válido ou None se não existe ou está expirado
+        CachedSearch ou None: Cache existente ou None se não existe
     """
     if not niche_normalized or not location_normalized:
         return None
     
-    now = timezone.now()
-    
     try:
         cached = CachedSearch.objects.filter(
             niche_normalized=niche_normalized,
-            location_normalized=location_normalized,
-            expires_at__gt=now  # Ainda não expirado
+            location_normalized=location_normalized
         ).first()
         
         return cached
@@ -816,6 +812,7 @@ def get_cached_search(niche_normalized, location_normalized):
 def create_cached_search(niche_normalized, location_normalized, total_leads):
     """
     Cria um novo CachedSearch.
+    Dados nunca expiram - base histórica permanente.
     
     Args:
         niche_normalized: Nicho normalizado
@@ -826,14 +823,12 @@ def create_cached_search(niche_normalized, location_normalized, total_leads):
         CachedSearch: Objeto criado
     """
     now = timezone.now()
-    expires_at = now + timedelta(days=90)
     
     cached, created = CachedSearch.objects.get_or_create(
         niche_normalized=niche_normalized,
         location_normalized=location_normalized,
         defaults={
             'total_leads_cached': total_leads,
-            'expires_at': expires_at,
             'last_updated': now
         }
     )
@@ -842,40 +837,44 @@ def create_cached_search(niche_normalized, location_normalized, total_leads):
         # Atualizar cache existente
         cached.total_leads_cached = total_leads
         cached.last_updated = now
-        cached.expires_at = expires_at
         cached.save()
     
     return cached
 
 
-def get_leads_from_cache(cached_search, user_profile, quantity):
+def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None):
     """
-    Busca leads de um CachedSearch e cria cópias para o usuário se necessário.
+    Busca leads globais de um CachedSearch e cria LeadAccess para rastrear acesso.
+    Retorna leads com dados sanitizados (sem QSA/telefones até enriquecer).
     
     Args:
         cached_search: Objeto CachedSearch
         user_profile: UserProfile do usuário
         quantity: Quantidade desejada
+        search_obj: Objeto Search (opcional, para vincular LeadAccess)
     
     Returns:
         list: Lista de leads do cache (formato dict como no dashboard)
     """
+    from .models import LeadAccess, Lead
+    from .credit_service import debit_credits
+    
     if not cached_search:
         return []
     
     try:
-        # Buscar leads do cache (pode ser de qualquer usuário, pois é cache global)
-        # Pegar leads únicos por CNPJ usando distinct
-        cached_leads_raw = Lead.objects.filter(
-            cached_search=cached_search,
-            cnpj__isnull=False
-        ).exclude(cnpj='').values_list('cnpj', flat=True).distinct()[:quantity]
-        
-        # Buscar os objetos Lead completos para os CNPJs únicos
+        # Buscar leads globais do cache (sem filtro de usuário)
+        # Pegar leads únicos por CNPJ
         cached_leads = Lead.objects.filter(
             cached_search=cached_search,
-            cnpj__in=list(cached_leads_raw)
-        ).order_by('cnpj', '-created_at')  # Pegar o mais recente de cada CNPJ
+            cnpj__isnull=False
+        ).exclude(cnpj='').order_by('-created_at').distinct('cnpj')[:quantity]
+        
+        # Buscar CNPJs já acessados pelo usuário
+        accessed_cnpjs = set(
+            LeadAccess.objects.filter(user=user_profile)
+            .values_list('lead__cnpj', flat=True)
+        )
         
         # Converter para formato esperado pelo dashboard
         results = []
@@ -884,41 +883,46 @@ def get_leads_from_cache(cached_search, user_profile, quantity):
         for lead in cached_leads:
             cnpj = lead.cnpj
             
-            # Evitar duplicatas (manualmente, já que pode haver múltiplos leads com mesmo CNPJ)
+            # Evitar duplicatas na mesma busca
             if cnpj in cnpjs_processed:
                 continue
             cnpjs_processed.add(cnpj)
             
-            # Verificar se já existe lead para este usuário
-            existing_lead = Lead.objects.filter(
+            # Verificar se usuário já tem acesso a este lead
+            lead_access, created = LeadAccess.objects.get_or_create(
                 user=user_profile,
-                cnpj=cnpj
-            ).first()
+                lead=lead,
+                defaults={
+                    'search': search_obj,
+                    'credits_paid': 1,
+                }
+            )
             
-            if not existing_lead:
-                # Criar novo lead para este usuário a partir do cache
-                Lead.objects.create(
-                    user=user_profile,
-                    cached_search=cached_search,
-                    name=lead.name,
-                    address=lead.address,
-                    phone_maps=lead.phone_maps,
-                    cnpj=cnpj,
-                    viper_data=lead.viper_data or {},
-                    first_extracted_at=lead.first_extracted_at or timezone.now()
+            # Se é novo acesso, debitar crédito
+            if created:
+                success, new_balance, error = debit_credits(
+                    user_profile,
+                    1,
+                    description=f"Lead (cache): {lead.name}"
                 )
-            else:
-                # Atualizar last_seen_by_user do lead existente
-                existing_lead.last_seen_by_user = timezone.now()
-                existing_lead.save(update_fields=['last_seen_by_user'])
+                
+                if not success:
+                    logger.warning(f"Erro ao debitar crédito para lead {lead.id}: {error}")
+                    # Continuar mesmo se débito falhar (já criou LeadAccess)
             
-            # Formatar para retorno (viper_data já inclui QSA se disponível no cache)
+            # Sanitizar dados (esconder QSA/telefones até enriquecer)
+            sanitized_viper_data = sanitize_lead_data(
+                {'viper_data': lead.viper_data or {}},
+                show_partners=(lead_access.enriched_at is not None)
+            ).get('viper_data', {})
+            
+            # Formatar para retorno
             company_data = {
                 'name': lead.name,
                 'address': lead.address,
                 'phone_maps': lead.phone_maps,
                 'cnpj': cnpj,
-                'viper_data': lead.viper_data or {}
+                'viper_data': sanitized_viper_data
             }
             
             results.append(company_data)
@@ -952,8 +956,9 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     max_results = min(quantity * 3, 50)  # Buscar até 3x a quantidade ou máximo 50
     places = search_google_maps_paginated(search_term, max_results, max_pages=5)
     
-    # Aplicar filtro de deduplicação
-    filtered_places, _ = filter_existing_leads(user_profile, places, days_threshold=30)
+    # Aplicar filtro de deduplicação (sem days_threshold - verifica LeadAccess)
+    filtered_places, global_cnpjs = filter_existing_leads(user_profile, places)
+    existing_cnpjs.update(global_cnpjs)
     
     # Remover CNPJs que já estão no existing_cnpjs
     new_places = []
@@ -969,13 +974,14 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     return new_places, existing_cnpjs
 
 
-def sanitize_lead_data(lead_data, show_partners=False):
+def sanitize_lead_data(lead_data, show_partners=False, has_enriched_access=False):
     """
-    Remove dados sensíveis de leads. REGRA CRÍTICA: Sócios só aparecem após busca paga.
+    Remove dados sensíveis de leads. REGRA CRÍTICA: Sócios/telefones/emails só aparecem após enriquecimento pago.
     
     Args:
         lead_data: Dict com dados do lead (formato do dashboard)
-        show_partners: Se True, mostra sócios (apenas quando usuário pagou créditos)
+        show_partners: DEPRECATED - usar has_enriched_access. Se True, mostra sócios (apenas quando usuário pagou créditos)
+        has_enriched_access: Se True, mostra dados enriquecidos (QSA, telefones, emails) - verifica LeadAccess.enriched_at
     
     Returns:
         dict: Dados sanitizados
@@ -983,19 +989,24 @@ def sanitize_lead_data(lead_data, show_partners=False):
     # Criar cópia para não modificar o original
     sanitized = copy.deepcopy(lead_data)
     
+    # Se show_partners foi passado (compatibilidade), usar como has_enriched_access
+    if show_partners and not has_enriched_access:
+        has_enriched_access = True
+    
     # Esconder dados sensíveis
     if 'viper_data' in sanitized and sanitized['viper_data']:
         viper_data = sanitized['viper_data'].copy()
         
-        # Remover telefones e emails do Viper (sempre escondidos)
-        viper_data.pop('telefones', None)
-        viper_data.pop('emails', None)
+        # REGRA CRÍTICA: Telefones e emails só aparecem se has_enriched_access=True
+        if not has_enriched_access:
+            viper_data.pop('telefones', None)
+            viper_data.pop('emails', None)
         
-        # REGRA CRÍTICA: Sócios só aparecem se show_partners=True (após busca paga)
-        if not show_partners:
+        # REGRA CRÍTICA: Sócios só aparecem se has_enriched_access=True
+        if not has_enriched_access:
             viper_data.pop('socios_qsa', None)
         
-        # Remover endereço fiscal detalhado
+        # Remover endereço fiscal detalhado (sempre escondido)
         viper_data.pop('enderecos', None)
         
         sanitized['viper_data'] = viper_data
@@ -1054,18 +1065,10 @@ def process_search_async(search_id):
         results = []
         
         if use_cache:
-            # Buscar leads do cache
-            cached_results = get_leads_from_cache(cached_search, user_profile, quantity)
+            # Buscar leads globais do cache e criar LeadAccess
+            cached_results = get_leads_from_cache(cached_search, user_profile, quantity, search_obj)
             
             for company_data in cached_results:
-                # Debitar crédito para cada lead do cache
-                success, new_balance, error = debit_credits(
-                    user_profile,
-                    1,
-                    description=f"Lead (cache): {company_data['name']}"
-                )
-                
-                if success:
                     credits_used += 1
                     leads_processed += 1
                     results.append(company_data)
@@ -1099,16 +1102,22 @@ def process_search_async(search_id):
                         if public_data:
                             company_data['viper_data'].update(public_data)
                         
-                        # Buscar ou criar Lead
-                        existing_lead = Lead.objects.filter(
-                            user=user_profile,
-                            cnpj=cnpj
-                        ).first()
+                        # Buscar lead global existente (sem filtro user)
+                        from .models import LeadAccess
+                        existing_lead = Lead.objects.filter(cnpj=cnpj).first()
                         
-                        if not existing_lead:
+                        if existing_lead:
+                            lead_obj = existing_lead
+                            # Atualizar dados se necessário
+                            if public_data:
+                                if not lead_obj.viper_data:
+                                    lead_obj.viper_data = {}
+                                lead_obj.viper_data.update(public_data)
+                                lead_obj.save(update_fields=['viper_data'])
+                        else:
+                            # Criar lead global (sem user)
                             lead_obj = Lead.objects.create(
-                                user=user_profile,
-                                search=search_obj,
+                                cached_search=cached_search,
                                 name=company_data['name'],
                                 address=company_data['address'],
                                 phone_maps=company_data['phone_maps'],
@@ -1116,30 +1125,43 @@ def process_search_async(search_id):
                                 viper_data=company_data['viper_data']
                             )
                             
+                        # Criar ou obter LeadAccess e debitar crédito
+                        lead_access, created = LeadAccess.objects.get_or_create(
+                            user=user_profile,
+                            lead=lead_obj,
+                            defaults={
+                                'search': search_obj,
+                                'credits_paid': 1,
+                            }
+                        )
+                        
+                        if created:
                             success, new_balance, error = debit_credits(
                                 user_profile,
                                 1,
                                 description=f"Lead: {company_data['name']}"
                             )
                             
-                            if success:
+                            if not success:
+                                logger.warning(f"Erro ao debitar crédito para lead {lead_obj.id}: {error}")
+                                continue
+                            
                                 credits_used += 1
-                        else:
-                            lead_obj = existing_lead
-                            existing_lead.last_seen_by_user = timezone.now()
-                            existing_lead.save(update_fields=['last_seen_by_user'])
                         
-                        # Não buscar sócios automaticamente - será feito opcionalmente pelo usuário
-                        if lead_obj.viper_data:
-                            company_data['viper_data'] = lead_obj.viper_data
+                        # Sanitizar dados (esconder QSA/telefones até enriquecer)
+                        sanitized_viper_data = sanitize_lead_data(
+                            {'viper_data': lead_obj.viper_data or {}},
+                            show_partners=(lead_access.enriched_at is not None)
+                        ).get('viper_data', {})
                         
+                        company_data['viper_data'] = sanitized_viper_data
                         leads_processed += 1
                         results.append(company_data)
         else:
             # Busca completa (sem cache ou cache insuficiente)
             # Usar busca paginada para obter múltiplas páginas até atingir quantity
             places = search_google_maps_paginated(search_term, quantity)
-            filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places, days_threshold=30)
+            filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places)
             existing_cnpjs = existing_cnpjs_set
             
             # Set para rastrear CNPJs já processados nesta busca específica (evitar duplicatas)
@@ -1189,48 +1211,62 @@ def process_search_async(search_id):
                 if public_data:
                     company_data['viper_data'].update(public_data)
                 
-                # Buscar ou criar Lead
-                existing_lead = Lead.objects.filter(
-                    user=user_profile,
-                    cnpj=cnpj
-                ).first()
+                # Buscar lead global existente (sem filtro user)
+                from .models import LeadAccess
+                existing_lead = Lead.objects.filter(cnpj=cnpj).first()
                 
                 if existing_lead:
                     lead_obj = existing_lead
-                    existing_lead.last_seen_by_user = timezone.now()
-                    existing_lead.save(update_fields=['last_seen_by_user'])
+                    # Atualizar dados se necessário
+                    if public_data:
+                        if not lead_obj.viper_data:
+                            lead_obj.viper_data = {}
+                        lead_obj.viper_data.update(public_data)
+                        lead_obj.save(update_fields=['viper_data'])
                 else:
+                    # Criar lead global (sem user)
                     lead_obj = Lead.objects.create(
-                        user=user_profile,
-                        search=search_obj,
+                        cached_search=cached_search,
                         name=company_data['name'],
                         address=company_data['address'],
                         phone_maps=company_data['phone_maps'],
                         cnpj=cnpj,
                         viper_data=company_data['viper_data']
                     )
-                
-                # SEMPRE debitar crédito, mesmo se lead já existia
-                success, new_balance, error = debit_credits(
-                    user_profile,
-                    1,
-                    description=f"Lead: {company_data['name']}"
+                        
+                # Criar ou obter LeadAccess e debitar crédito
+                lead_access, created = LeadAccess.objects.get_or_create(
+                    user=user_profile,
+                    lead=lead_obj,
+                    defaults={
+                        'search': search_obj,
+                        'credits_paid': 1,
+                    }
                 )
                 
-                # Se débito falhar, PARAR busca completamente
-                if not success:
-                    logger.error(f"Débito de crédito falhou: {error}. Parando busca.")
-                    break
+                if created:
+                    success, new_balance, error = debit_credits(
+                        user_profile,
+                        1,
+                        description=f"Lead: {company_data['name']}"
+                    )
+                    
+                    # Se débito falhar, PARAR busca completamente
+                    if not success:
+                        logger.error(f"Débito de crédito falhou: {error}. Parando busca.")
+                        break
+                    
+                    credits_used += 1
                 
-                # Só incrementar contadores se débito foi bem-sucedido
-                credits_used += 1
+                # Sanitizar dados (esconder QSA/telefones até enriquecer)
+                sanitized_viper_data = sanitize_lead_data(
+                    {'viper_data': lead_obj.viper_data or {}},
+                    show_partners=(lead_access.enriched_at is not None)
+                ).get('viper_data', {})
+                
+                company_data['viper_data'] = sanitized_viper_data
                 leads_processed += 1
                 processed_cnpjs_in_search.add(cnpj)
-                
-                # Não buscar sócios automaticamente - será feito opcionalmente pelo usuário
-                if lead_obj.viper_data:
-                    company_data['viper_data'] = lead_obj.viper_data
-                
                 results.append(company_data)
             
             # Se faltam leads, fazer busca incremental com limites de segurança
@@ -1295,7 +1331,7 @@ def process_search_async(search_id):
                         continue
                     
                     # Filtrar leads já processados
-                    incremental_filtered, _ = filter_existing_leads(user_profile, incremental_places_batch, days_threshold=30)
+                    incremental_filtered, _ = filter_existing_leads(user_profile, incremental_places_batch)
                     
                     leads_found_in_batch = 0
                     leads_without_cnpj = 0
@@ -1330,20 +1366,21 @@ def process_search_async(search_id):
                         if public_data:
                             company_data['viper_data'].update(public_data)
                         
-                        # Buscar ou criar Lead
-                        existing_lead = Lead.objects.filter(
-                            user=user_profile,
-                            cnpj=cnpj
-                        ).first()
+                        # Buscar lead global existente (sem filtro user)
+                        from .models import LeadAccess
+                        existing_lead = Lead.objects.filter(cnpj=cnpj).first()
                         
                         if existing_lead:
                             lead_obj = existing_lead
-                            existing_lead.last_seen_by_user = timezone.now()
-                            existing_lead.save(update_fields=['last_seen_by_user'])
+                            # Atualizar dados se necessário
+                            if public_data:
+                                if not lead_obj.viper_data:
+                                    lead_obj.viper_data = {}
+                                lead_obj.viper_data.update(public_data)
+                                lead_obj.save(update_fields=['viper_data'])
                         else:
+                            # Criar lead global (sem user)
                             lead_obj = Lead.objects.create(
-                                user=user_profile,
-                                search=search_obj,
                                 name=company_data['name'],
                                 address=company_data['address'],
                                 phone_maps=company_data['phone_maps'],
@@ -1351,27 +1388,40 @@ def process_search_async(search_id):
                                 viper_data=company_data['viper_data']
                             )
                         
-                        # SEMPRE debitar crédito
-                        success, new_balance, error = debit_credits(
-                            user_profile,
-                            1,
-                            description=f"Lead: {company_data['name']}"
+                        # Criar ou obter LeadAccess e debitar crédito
+                        lead_access, created = LeadAccess.objects.get_or_create(
+                            user=user_profile,
+                            lead=lead_obj,
+                            defaults={
+                                'search': search_obj,
+                                'credits_paid': 1,
+                            }
                         )
                         
-                        # Se débito falhar, PARAR busca completamente
-                        if not success:
-                            logger.error(f"Débito de crédito falhou: {error}. Parando busca incremental.")
-                            break
+                        if created:
+                            success, new_balance, error = debit_credits(
+                                user_profile,
+                                1,
+                                description=f"Lead: {company_data['name']}"
+                            )
+                            
+                            # Se débito falhar, PARAR busca completamente
+                            if not success:
+                                logger.error(f"Débito de crédito falhou: {error}. Parando busca incremental.")
+                                break
+                            
+                            credits_used += 1
+                    
+                        # Sanitizar dados (esconder QSA/telefones até enriquecer)
+                        sanitized_viper_data = sanitize_lead_data(
+                            {'viper_data': lead_obj.viper_data or {}},
+                            show_partners=(lead_access.enriched_at is not None)
+                        ).get('viper_data', {})
                         
-                        # Só incrementar contadores se débito foi bem-sucedido
-                        credits_used += 1
+                        company_data['viper_data'] = sanitized_viper_data
                         leads_processed += 1
                         processed_cnpjs_in_search.add(cnpj)
                         leads_found_in_batch += 1
-                        
-                        if lead_obj.viper_data:
-                            company_data['viper_data'] = lead_obj.viper_data
-                        
                         results.append(company_data)
                     
                     # Log resumido da iteração
@@ -1400,12 +1450,15 @@ def process_search_async(search_id):
                 if not cached_search_new:
                     cached_search_new = create_cached_search(niche_normalized, location_normalized, leads_processed)
                 
-                # Associar leads ao cache
+                # Associar leads ao cache (via LeadAccess)
                 if cached_search_new:
-                    Lead.objects.filter(
-                        search=search_obj,
+                    # Buscar leads acessados nesta busca e atualizar cached_search
+                    from .models import LeadAccess
+                    accessed_leads = Lead.objects.filter(
+                        accesses__search=search_obj,
                         cnpj__isnull=False
-                    ).exclude(cnpj='').update(cached_search=cached_search_new)
+                    ).exclude(cnpj='').distinct()
+                    accessed_leads.update(cached_search=cached_search_new)
                     
                     search_obj.cached_search = cached_search_new
                     search_obj.save(update_fields=['cached_search'])

@@ -14,7 +14,7 @@ from .services import (
     wait_for_partners_processing, process_search_async, sanitize_lead_data
 )
 import threading
-from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation
+from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess
 from .credit_service import debit_credits, check_credits
 from .stripe_service import create_checkout_session, create_custom_checkout_session, handle_webhook_event, CREDIT_PACKAGES, MIN_CREDITS, MAX_CREDITS
 from .decorators import require_user_profile, validate_user_ownership
@@ -229,9 +229,9 @@ def dashboard(request):
     
     # Calcular métricas para o dashboard
     today = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    leads_today = Lead.objects.filter(
+    leads_today = LeadAccess.objects.filter(
         user=user_profile,
-        created_at__gte=today
+        accessed_at__gte=today
     ).count() if user_profile else 0
     
     searches_today = Search.objects.filter(
@@ -283,15 +283,14 @@ def export_leads_csv(request, search_id=None):
     # Cabeçalho organizado
     writer.writerow(['Empresa', 'CNPJ', 'Telefone (Maps)', 'Telefones (Viper)', 'Emails', 'Sócios / Decisores', 'Endereço (Maps)', 'Endereço (Fiscal)'])
 
-    # Filtrar leads do usuário (garantindo ownership)
-    # Usar select_related para evitar N+1 queries em search e cached_search
-    # Nota: viper_data é necessário para exportação, então não usamos defer aqui
-    leads = Lead.objects.filter(user=user_profile).select_related('search', 'cached_search').order_by('-created_at')
+    # Buscar leads via LeadAccess (garantindo ownership)
+    # Usar select_related para evitar N+1 queries
+    lead_accesses = LeadAccess.objects.filter(user=user_profile).select_related('lead', 'search', 'lead__cached_search').order_by('-accessed_at')
     
     # Se search_id fornecido, filtrar por pesquisa (já validado acima)
     is_last_search = False
     if search_id:
-        leads = leads.filter(search=search_obj)
+        lead_accesses = lead_accesses.filter(search=search_obj)
         
         # Verificar se é a última pesquisa (mais recente)
         last_search = Search.objects.filter(user=user_profile).order_by('-created_at').first()
@@ -299,9 +298,10 @@ def export_leads_csv(request, search_id=None):
             is_last_search = True
 
     # Contar leads para log de auditoria
-    leads_count = leads.count()
+    leads_count = lead_accesses.count()
 
-    for lead in leads:
+    for lead_access in lead_accesses:
+        lead = lead_access.lead
         viper = lead.viper_data or {}
         
         # Exportar dados enriquecidos apenas se estiverem disponíveis (usuário pagou para ver)
@@ -1133,48 +1133,67 @@ def enrich_leads(request, search_id):
                 'error': f'Créditos insuficientes. Necessário: {len(lead_ids)}, Disponível: {available_credits}'
             }, status=402)
         
-        # Buscar leads (apenas do usuário e da pesquisa)
-        leads_to_enrich = Lead.objects.filter(
-            id__in=lead_ids,
+        # Buscar LeadAccess (apenas do usuário e da pesquisa)
+        lead_accesses_to_enrich = LeadAccess.objects.filter(
+            lead_id__in=lead_ids,
             user=user_profile,
             search=search_obj
-        )
+        ).select_related('lead')
         
-        if leads_to_enrich.count() != len(lead_ids):
+        if lead_accesses_to_enrich.count() != len(lead_ids):
             return JsonResponse({'error': 'Alguns leads não foram encontrados ou não pertencem a esta pesquisa'}, status=400)
         
         credits_used = 0
         enriched_count = 0
         
         # Processar cada lead
-        for lead in leads_to_enrich:
+        for lead_access in lead_accesses_to_enrich:
+            lead = lead_access.lead
+            
             if not lead.cnpj:
                 continue
             
-            # Buscar dados faltantes
-            public_data = enrich_company_viper(lead.cnpj)
-            if public_data:
-                # Atualizar viper_data com novos dados
-                if not lead.viper_data:
-                    lead.viper_data = {}
-                
-                # Adicionar telefones e emails se não existirem
-                if 'telefones' in public_data and public_data['telefones']:
-                    if 'telefones' not in lead.viper_data or not lead.viper_data['telefones']:
-                        lead.viper_data['telefones'] = public_data['telefones']
-                
-                if 'emails' in public_data and public_data['emails']:
-                    if 'emails' not in lead.viper_data or not lead.viper_data['emails']:
-                        lead.viper_data['emails'] = public_data['emails']
-                
-                # Buscar sócios se não existirem
-                if 'socios_qsa' not in lead.viper_data or not lead.viper_data.get('socios_qsa'):
-                    # Enfileirar busca de sócios (sem aguardar)
-                    queue_result = get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
-                    if not queue_result.get('is_new', True):
-                        logger.info(f"Reutilizando requisição existente para Lead {lead.id} (CNPJ: {lead.cnpj})")
+            # Verificar se já foi enriquecido
+            if lead_access.enriched_at is not None:
+                # Já foi enriquecido, apenas contar
+                enriched_count += 1
+                continue
             
-            # Debitar crédito
+            # Verificar se dados enriquecidos já existem no lead global
+            has_enriched_data = False
+            if lead.viper_data:
+                has_phones = bool(lead.viper_data.get('telefones'))
+                has_emails = bool(lead.viper_data.get('emails'))
+                has_partners = has_valid_partners_data(lead)
+                has_enriched_data = has_phones or has_emails or has_partners
+            
+            if not has_enriched_data:
+                # Buscar dados faltantes da API
+                public_data = enrich_company_viper(lead.cnpj)
+                if public_data:
+                    # Atualizar viper_data com novos dados
+                    if not lead.viper_data:
+                        lead.viper_data = {}
+                    
+                    # Adicionar telefones e emails se não existirem
+                    if 'telefones' in public_data and public_data['telefones']:
+                        if 'telefones' not in lead.viper_data or not lead.viper_data['telefones']:
+                            lead.viper_data['telefones'] = public_data['telefones']
+                    
+                    if 'emails' in public_data and public_data['emails']:
+                        if 'emails' not in lead.viper_data or not lead.viper_data['emails']:
+                            lead.viper_data['emails'] = public_data['emails']
+                    
+                    # Buscar sócios se não existirem
+                    if not has_valid_partners_data(lead):
+                        # Enfileirar busca de sócios (sem aguardar)
+                        queue_result = get_partners_internal_queued(lead.cnpj, user_profile, lead=lead)
+                        if not queue_result.get('is_new', True):
+                            logger.info(f"Reutilizando requisição existente para Lead {lead.id} (CNPJ: {lead.cnpj})")
+                    
+                    lead.save(update_fields=['viper_data'])
+            
+            # Debitar crédito e atualizar enriched_at
             success, new_balance, error = debit_credits(
                 user_profile,
                 1,
@@ -1182,7 +1201,8 @@ def enrich_leads(request, search_id):
             )
             
             if success:
-                lead.save(update_fields=['viper_data'])
+                lead_access.enriched_at = timezone.now()
+                lead_access.save(update_fields=['enriched_at'])
                 credits_used += 1
                 enriched_count += 1
             else:
@@ -1235,14 +1255,14 @@ def search_partners(request, search_id):
                 'error': f'Créditos insuficientes. Necessário: {len(lead_ids)}, Disponível: {available_credits}'
             }, status=402)
         
-        # Buscar leads (apenas do usuário e da pesquisa)
-        leads_to_process = Lead.objects.filter(
-            id__in=lead_ids,
+        # Buscar LeadAccess (apenas do usuário e da pesquisa)
+        lead_accesses_to_process = LeadAccess.objects.filter(
+            lead_id__in=lead_ids,
             user=user_profile,
             search=search_obj
-        )
+        ).select_related('lead')
         
-        if leads_to_process.count() != len(lead_ids):
+        if lead_accesses_to_process.count() != len(lead_ids):
             return JsonResponse({
                 'error': 'Alguns leads não foram encontrados ou não pertencem a esta pesquisa'
             }, status=400)
@@ -1251,7 +1271,8 @@ def search_partners(request, search_id):
         credits_debited = 0
         errors = []
         
-        for lead in leads_to_process:
+        for lead_access in lead_accesses_to_process:
+            lead = lead_access.lead
             try:
                 # IMPORTANTE: Debitar crédito ANTES de buscar/exibir sócios
                 success, new_balance, error = debit_credits(
@@ -1293,6 +1314,11 @@ def search_partners(request, search_id):
                         logger.info(f"Busca de sócios enfileirada para Lead {lead.id} (CNPJ: {lead.cnpj}), queue_id: {queue_id}")
                     else:
                         logger.info(f"Reutilizando requisição existente para Lead {lead.id} (CNPJ: {lead.cnpj}), queue_id: {queue_id}")
+                
+                # Atualizar enriched_at se ainda não foi atualizado
+                if lead_access.enriched_at is None:
+                    lead_access.enriched_at = timezone.now()
+                    lead_access.save(update_fields=['enriched_at'])
                 
                 # Recarregar Lead para pegar dados atualizados (se já existirem)
                 lead.refresh_from_db()

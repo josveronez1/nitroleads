@@ -63,12 +63,13 @@ class NormalizedLocation(models.Model):
 class CachedSearch(models.Model):
     """
     Cache global de pesquisas normalizadas para reutilização.
+    Dados nunca expiram - base histórica permanente.
     """
     niche_normalized = models.CharField(max_length=255)
     location_normalized = models.CharField(max_length=255)  # Formato: "Cidade - UF"
     total_leads_cached = models.IntegerField(default=0)
     last_updated = models.DateTimeField(auto_now=True)
-    expires_at = models.DateTimeField()  # Calculado: last_updated + 90 dias
+    expires_at = models.DateTimeField(null=True, blank=True)  # DEPRECATED: Mantido para migração, não usado mais
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -76,7 +77,6 @@ class CachedSearch(models.Model):
         ordering = ['-last_updated']
         indexes = [
             models.Index(fields=['niche_normalized', 'location_normalized']),
-            models.Index(fields=['expires_at']),
         ]
 
     def __str__(self):
@@ -134,8 +134,12 @@ class CreditTransaction(models.Model):
 
 
 class Lead(models.Model):
-    user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='leads', null=True, blank=True)
-    search = models.ForeignKey(Search, null=True, blank=True, on_delete=models.SET_NULL, related_name='leads')
+    """
+    Lead global e permanente. Não está vinculado a um usuário específico.
+    Acesso de usuários é rastreado via LeadAccess.
+    """
+    user = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, related_name='legacy_leads', null=True, blank=True, help_text='DEPRECATED: Usar LeadAccess. Mantido para migração.')
+    search = models.ForeignKey(Search, null=True, blank=True, on_delete=models.SET_NULL, related_name='legacy_leads', help_text='DEPRECATED: Usar LeadAccess.search. Mantido para migração.')
     cached_search = models.ForeignKey(CachedSearch, null=True, blank=True, on_delete=models.SET_NULL, related_name='cached_leads')
     name = models.CharField(max_length=255)
     address = models.TextField(null=True, blank=True)
@@ -147,22 +151,42 @@ class Lead(models.Model):
     # Assim não precisamos criar 50 colunas agora. O Postgres/Supabase é ÓTIMO com JSON.
     viper_data = models.JSONField(null=True, blank=True)
     
-    last_seen_by_user = models.DateTimeField(auto_now=True, db_index=True)  # Para lógica de reutilização
     first_extracted_at = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['user', 'cnpj']),
-            models.Index(fields=['user', 'created_at']),
             models.Index(fields=['cnpj']),
             models.Index(fields=['cached_search', 'cnpj']),  # Para get_leads_from_cache otimizado
-            # ForeignKey já cria índice automaticamente, mas índices compostos ajudam em queries específicas
         ]
 
     def __str__(self):
         return self.name
+
+
+class LeadAccess(models.Model):
+    """
+    Rastreia quais usuários pagaram créditos para acessar quais leads.
+    Permite compartilhamento de leads entre usuários mantendo histórico de acesso.
+    """
+    user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='lead_accesses')
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='accesses')
+    search = models.ForeignKey(Search, null=True, blank=True, on_delete=models.SET_NULL, related_name='lead_accesses')
+    credits_paid = models.IntegerField(default=1)  # Créditos pagos para acessar este lead
+    accessed_at = models.DateTimeField(auto_now_add=True)
+    enriched_at = models.DateTimeField(null=True, blank=True)  # Quando usuário pagou para enriquecer
+    
+    class Meta:
+        unique_together = [['user', 'lead']]  # Um usuário só pode ter um acesso por lead
+        indexes = [
+            models.Index(fields=['user', 'accessed_at']),
+            models.Index(fields=['lead', 'user']),
+            models.Index(fields=['search', 'user']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.email} -> {self.lead.name} ({self.accessed_at})"
 
 
 class ViperRequestQueue(models.Model):
