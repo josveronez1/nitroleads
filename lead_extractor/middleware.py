@@ -47,25 +47,15 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     ]
     
     def process_request(self, request):
-        # VERIFICAÇÃO ULTRA PRIORITÁRIA - ANTES DE QUALQUER OUTRA COISA
-        # Isso deve ser a PRIMEIRA coisa que fazemos, antes até dos logs
         request_path = request.path
         full_path = request.get_full_path()
         
         # Permitir acesso à raiz SEM autenticação
         # A view root_redirect_view vai detectar o hash e redirecionar corretamente
-        # Se não houver hash nem referer do Supabase, a view redireciona para login/dashboard
         if request_path == '/':
-            referer = request.META.get('HTTP_REFERER', '')
-            logger.info(f"[MIDDLEWARE] ✓✓✓ ACESSO À RAIZ PERMITIDO - SEM AUTENTICAÇÃO")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Path: {request_path}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Referer: {referer}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ A view root_redirect_view vai lidar com o redirecionamento")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Se houver hash de recovery, redirecionará para /password-reset/confirm/")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Se não houver, redirecionará para login ou dashboard")
             return None
         
-        # Verificar se é URL de password-reset (check mais abrangente possível)
+        # Verificar se é URL de password-reset
         is_password_reset = (
             request_path.startswith('/password-reset') or 
             full_path.startswith('/password-reset') or
@@ -74,46 +64,20 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         )
         
         if is_password_reset:
-            # Log apenas para debug
-            logger.info(f"[MIDDLEWARE] ✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ URL DE PASSWORD-RESET DETECTADA - RETORNANDO None IMEDIATAMENTE")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Path: {request_path}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Full path: {full_path}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Method: {request.method}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ Referer: {request.META.get('HTTP_REFERER', 'N/A')}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓ User-Agent: {request.META.get('HTTP_USER_AGENT', 'N/A')[:100]}")
-            logger.info(f"[MIDDLEWARE] ✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓")
-            # RETORNAR None IMEDIATAMENTE - NÃO FAZER MAIS NADA
             return None
-        
-        # Log ANTES de qualquer verificação para capturar TODAS as URLs
-        logger.info(f"[MIDDLEWARE] 📍 REQUISIÇÃO RECEBIDA - Path: {request_path} | Full: {full_path} | Method: {request.method}")
-        
-        # Se não for password-reset, continuar com logs normais
-        logger.info(f"[MIDDLEWARE] ========================================")
-        logger.info(f"[MIDDLEWARE] Processando requisição: {request_path}")
-        logger.info(f"[MIDDLEWARE] Full path: {full_path}")
-        logger.info(f"[MIDDLEWARE] Method: {request.method}")
-        logger.info(f"[MIDDLEWARE] Query string: {request.GET.urlencode()}")
-        logger.info(f"[MIDDLEWARE] ========================================")
         
         # Skip authentication for admin (usa auth do Django)
         if request_path.startswith('/admin'):
-            logger.info(f"[MIDDLEWARE] ✓ URL admin detectada e isenta: {request_path}")
             return None
         
         # Skip authentication for login
         if request_path.startswith('/login'):
-            logger.info(f"[MIDDLEWARE] ✓ URL login detectada e isenta: {request_path}")
             return None
         
         # Skip authentication for other exempt URLs
         for exempt_url in self.EXEMPT_URLS:
             if request_path.startswith(exempt_url):
-                logger.info(f"[MIDDLEWARE] ✓ URL isenta detectada: {request_path} (isento: {exempt_url})")
                 return None
-        
-        logger.info(f"[MIDDLEWARE] ✗ URL NÃO está na lista de isentas: {request_path}")
         
         # Tentar pegar o token do header Authorization
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
@@ -135,7 +99,6 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
                 return HttpResponseRedirect(f'{login_url}?next={request.path}')
             else:
                 # Se for password-reset, permitir passar (não deveria chegar aqui, mas garantia)
-                logger.warning(f"[MIDDLEWARE] ⚠️ Password-reset detectado sem token, mas permitindo passar: {request_path}")
                 return None
         
         # Se não tem JWT_SECRET configurado, redirecionar para login
@@ -185,7 +148,6 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
                 return HttpResponseRedirect(f'{login_url}?next={request.path}')
             else:
                 # Se for password-reset, permitir passar mesmo com token inválido
-                logger.info(f"[MIDDLEWARE] ⚠️ Password-reset com token inválido, mas permitindo passar: {request_path}")
                 return None
         except Exception as e:
             logger.error(f"Error in SupabaseAuthMiddleware: {e}")
@@ -197,7 +159,6 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
                 return HttpResponseRedirect(f'{login_url}?next={request.path}')
             else:
                 # Se for password-reset, permitir passar mesmo com erro
-                logger.info(f"[MIDDLEWARE] ⚠️ Password-reset com erro no token, mas permitindo passar: {request_path}")
                 return None
         
         return None

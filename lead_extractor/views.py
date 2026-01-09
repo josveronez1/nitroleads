@@ -106,26 +106,11 @@ def root_redirect_view(request):
     O JavaScript na página decide o que fazer baseado no hash.
     """
     try:
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        logger.info(f"[ROOT_REDIRECT] View chamada para raiz")
-        logger.info(f"[ROOT_REDIRECT] Path: {request.path}")
-        logger.info(f"[ROOT_REDIRECT] Referer: {request.META.get('HTTP_REFERER', 'N/A')}")
-        logger.info(f"[ROOT_REDIRECT] Query string: {request.GET.urlencode()}")
-        
-        # SEMPRE renderizar a página HTML
-        # O JavaScript vai detectar o hash (que só está disponível no client-side)
-        # e redirecionar apropriadamente
-        logger.info(f"[ROOT_REDIRECT] Renderizando página de redirecionamento")
-        logger.info(f"[ROOT_REDIRECT] JavaScript vai detectar hash e redirecionar")
         return render(request, 'lead_extractor/root_redirect.html', {})
-            
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"[ROOT_REDIRECT] ERRO na view: {e}", exc_info=True)
-        # Em caso de erro, redirecionar para login
+        logger.error(f"Erro em root_redirect_view: {e}", exc_info=True)
         return redirect('login')
 
 
@@ -134,47 +119,16 @@ def password_reset_confirm_view(request):
     Página para confirmar e redefinir a senha usando Supabase Auth.
     O Supabase gerencia o token via URL hash, então apenas renderizamos o template.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    logger.info(f"[VIEW] ========================================")
-    logger.info(f"[VIEW] password_reset_confirm_view CHAMADA!")
-    logger.info(f"[VIEW] ========================================")
-    logger.info(f"[VIEW] Path: {request.path}")
-    logger.info(f"[VIEW] Full path: {request.get_full_path()}")
-    logger.info(f"[VIEW] Method: {request.method}")
-    logger.info(f"[VIEW] Query string: {request.GET.urlencode()}")
-    logger.info(f"[VIEW] User: {request.user}")
-    logger.info(f"[VIEW] User authenticated: {request.user.is_authenticated}")
-    
-    # IMPORTANTE: NÃO verificar user_profile aqui, pois o middleware já deve ter permitido
-    # Se chegou aqui, significa que o middleware permitiu o acesso
+    # Se já estiver autenticado, redirecionar para dashboard
     user_profile = getattr(request, 'user_profile', None)
-    logger.info(f"[VIEW] User profile: {user_profile}")
-    
     if user_profile:
-        logger.info(f"[VIEW] User profile encontrado, redirecionando para dashboard")
         return redirect('dashboard')
-    
-    logger.info(f"[VIEW] Nenhum user_profile encontrado, renderizando template")
     
     context = {
         'supabase_url': config('SUPABASE_URL', default=''),
         'supabase_key': config('SUPABASE_KEY', default=''),
     }
-    logger.info(f"[VIEW] Context configurado")
-    logger.info(f"[VIEW] Supabase URL configurado: {bool(context['supabase_url'])}")
-    logger.info(f"[VIEW] Supabase Key configurado: {bool(context['supabase_key'])}")
-    logger.info(f"[VIEW] Renderizando template agora...")
-    
-    try:
-        response = render(request, 'lead_extractor/password_reset_confirm.html', context)
-        logger.info(f"[VIEW] ✓ Template renderizado com sucesso!")
-        logger.info(f"[VIEW] Response status: {response.status_code}")
-        return response
-    except Exception as e:
-        logger.error(f"[VIEW] ❌ ERRO ao renderizar template: {e}", exc_info=True)
-        raise
+    return render(request, 'lead_extractor/password_reset_confirm.html', context)
 
 
 def logout_view(request):
