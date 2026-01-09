@@ -159,9 +159,63 @@ def run_auth_bot() -> bool:
         logger.error(f"Erro ao executar auth_bot: {e}", exc_info=True)
         return False
 
+def normalize_places_response(response_data, source='search'):
+    """
+    Normaliza resposta de /search ou /places para formato unificado.
+    
+    Args:
+        response_data: Dict com resposta da API Serper
+        source: 'search' ou 'places' - origem dos dados
+    
+    Returns:
+        list: Lista normalizada de places no formato [{'title': ..., 'address': ..., 'phoneNumber': ...}]
+    """
+    places = []
+    
+    if source == 'search':
+        # Verificar se tem 'places' na resposta
+        if 'places' in response_data and isinstance(response_data['places'], list):
+            places = response_data['places']
+        # Verificar se tem 'localPack' na resposta
+        elif 'localPack' in response_data:
+            local_pack = response_data['localPack']
+            # localPack pode ter estrutura diferente, tentar extrair places
+            if isinstance(local_pack, dict):
+                # Pode ter 'places' dentro do localPack
+                if 'places' in local_pack and isinstance(local_pack['places'], list):
+                    places = local_pack['places']
+                # Ou pode ter lista direta de resultados
+                elif 'results' in local_pack and isinstance(local_pack['results'], list):
+                    places = local_pack['results']
+    elif source == 'places':
+        # Resposta direta de /places já vem como lista ou dict com 'places'
+        if isinstance(response_data, list):
+            places = response_data
+        elif isinstance(response_data, dict) and 'places' in response_data:
+            places = response_data['places']
+    
+    # Normalizar estrutura: garantir que cada place tem title, address, phoneNumber
+    normalized = []
+    for place in places:
+        if isinstance(place, dict):
+            normalized_place = {
+                'title': place.get('title') or place.get('name') or '',
+                'address': place.get('address') or place.get('formattedAddress') or '',
+                'phoneNumber': place.get('phoneNumber') or place.get('phone') or '',
+            }
+            # Manter outros campos úteis se existirem
+            for key in ['rating', 'reviews', 'website', 'category', 'latitude', 'longitude']:
+                if key in place:
+                    normalized_place[key] = place[key]
+            normalized.append(normalized_place)
+    
+    return normalized
+
+
 def search_google_maps(query, num=10, start=0):
     """
     Busca empresas no Google Maps via Serper com suporte a paginação.
+    Usa endpoint /places.
     
     Args:
         query: Termo de busca (ex: "Advogado em São Paulo - SP")
@@ -184,7 +238,8 @@ def search_google_maps(query, num=10, start=0):
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         response.raise_for_status()  # Levanta exceção para status HTTP de erro
-        return response.json().get('places', [])
+        response_data = response.json()
+        return normalize_places_response(response_data, source='places')
     except requests.RequestException as e:
         logger.error(f"Erro ao buscar no Google Maps via Serper (query: {query}, num: {num}, start: {start}): {e}", exc_info=True)
         return []
@@ -193,9 +248,61 @@ def search_google_maps(query, num=10, start=0):
         return []
 
 
+def search_google_hybrid(query, num=10, start=0):
+    """
+    Busca híbrida: tenta /search primeiro (melhor paginação), usa /places como fallback.
+    
+    Args:
+        query: Termo de busca (ex: "Advogado em São Paulo - SP")
+        num: Número de resultados por página (padrão: 10)
+        start: Offset/página inicial (padrão: 0)
+    
+    Returns:
+        list: Lista normalizada de lugares encontrados
+    """
+    # Tentar /search primeiro
+    url_search = "https://google.serper.dev/search"
+    payload = {
+        "q": query,
+        "num": num,
+        "start": start
+    }
+    headers = {
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        # Tentar /search primeiro
+        response = requests.post(url_search, headers=headers, data=json.dumps(payload))
+        response.raise_for_status()
+        search_data = response.json()
+        
+        # Verificar se tem places ou localPack na resposta
+        places_from_search = normalize_places_response(search_data, source='search')
+        
+        if places_from_search:
+            logger.info(f"Usando resultados de /search (places encontrados: {len(places_from_search)})")
+            return places_from_search
+        else:
+            # Se /search não retornou places, usar /places como fallback
+            logger.info("Usando /places como fallback (search não retornou places)")
+            return search_google_maps(query, num=num, start=start)
+            
+    except requests.RequestException as e:
+        logger.warning(f"Erro ao buscar via /search, usando /places como fallback: {e}")
+        # Em caso de erro, usar /places como fallback
+        return search_google_maps(query, num=num, start=start)
+    except Exception as e:
+        logger.error(f"Erro inesperado na busca híbrida: {e}", exc_info=True)
+        # Em caso de erro, usar /places como fallback
+        return search_google_maps(query, num=num, start=start)
+
+
 def search_google_maps_paginated(query, max_results, max_pages=20):
     """
     Busca empresas no Google Maps via Serper com paginação automática.
+    Usa busca híbrida (/search + /places) para maximizar resultados.
     Faz múltiplas requisições até atingir a quantidade desejada ou esgotar os resultados.
     
     Args:
@@ -211,14 +318,15 @@ def search_google_maps_paginated(query, max_results, max_pages=20):
     results_per_page = 10  # API Serper retorna ~10 resultados por página
     max_results_safe = min(max_results, 200)  # Limite de segurança: máximo 200 resultados
     
-    logger.info(f"Iniciando busca paginada para '{query}': solicitando até {max_results_safe} resultados (máx. {max_pages} páginas)")
+    logger.info(f"Iniciando busca paginada híbrida para '{query}': solicitando até {max_results_safe} resultados (máx. {max_pages} páginas)")
     
     while len(all_places) < max_results_safe and page < max_pages:
         start = page * results_per_page
         logger.info(f"Buscando página {page + 1} para '{query}' (start: {start}, num: {results_per_page})...")
         
         try:
-            places = search_google_maps(query, num=results_per_page, start=start)
+            # Usar busca híbrida (tenta /search primeiro, fallback para /places)
+            places = search_google_hybrid(query, num=results_per_page, start=start)
             
             if not places:
                 logger.info(f"Página {page + 1} retornou 0 resultados. Sem mais resultados disponíveis.")
@@ -244,7 +352,7 @@ def search_google_maps_paginated(query, max_results, max_pages=20):
             # Continuar com os resultados já encontrados ao invés de abortar
             break
     
-    logger.info(f"Busca paginada concluída para '{query}': {len(all_places)} resultados encontrados em {page + 1} página(s)")
+    logger.info(f"Busca paginada híbrida concluída para '{query}': {len(all_places)} resultados encontrados em {page + 1} página(s)")
     return all_places[:max_results_safe]  # Garantir que não exceda o limite
 
 
@@ -1162,7 +1270,7 @@ def process_search_async(search_id):
                             break
                         
                         page_offset = current_offset + (page_in_batch * results_per_page)
-                        places_page = search_google_maps(search_term, num=results_per_page, start=page_offset)
+                        places_page = search_google_hybrid(search_term, num=results_per_page, start=page_offset)
                         api_requests_made += 1
                         
                         if not places_page:
