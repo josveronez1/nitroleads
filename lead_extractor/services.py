@@ -941,6 +941,7 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     """
     Busca incremental apenas os leads que ainda não foram encontrados.
     Usa paginação se necessário, mas com limite menor (busca incremental precisa de menos resultados).
+    Inclui cache de CNPJs para evitar buscas repetidas no Serper.
     
     Args:
         search_term: Termo de busca para Google Maps
@@ -951,6 +952,15 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     Returns:
         tuple: (lista de novos places, set atualizado de existing_cnpjs)
     """
+    # Cache de CNPJs em memória para evitar buscas repetidas no Serper
+    cnpj_cache = {}
+    
+    # Limites rigorosos para evitar loops infinitos e consumo excessivo
+    MAX_SERPER_CALLS = 50  # Máximo de chamadas ao Serper por busca incremental
+    MAX_ITERATIONS_WITHOUT_NEW = 10  # Máximo de iterações sem encontrar novos leads válidos
+    serper_calls = 0
+    iterations_without_new = 0
+    
     # Buscar lugares no Google Maps com paginação (limite menor para busca incremental)
     # Buscar mais do que necessário para garantir quantidade suficiente após filtros
     max_results = min(quantity * 3, 50)  # Buscar até 3x a quantidade ou máximo 50
@@ -963,14 +973,37 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     # Remover CNPJs que já estão no existing_cnpjs
     new_places = []
     for place in filtered_places:
-        # Tentar encontrar CNPJ
-        cnpj = find_cnpj_by_name(place.get('title', ''))
+        # Verificar limite de chamadas ao Serper
+        if serper_calls >= MAX_SERPER_CALLS:
+            logger.warning(f"Limite de chamadas ao Serper atingido ({MAX_SERPER_CALLS}) na busca incremental. Parando busca.")
+            break
+        
+        # Verificar limite de iterações sem novos leads
+        if iterations_without_new >= MAX_ITERATIONS_WITHOUT_NEW:
+            logger.info(f"Limite de iterações sem novos leads atingido ({MAX_ITERATIONS_WITHOUT_NEW}) na busca incremental. Parando busca.")
+            break
+        
+        company_name = place.get('title', '')
+        
+        # Verificar cache antes de chamar find_cnpj_by_name
+        if company_name in cnpj_cache:
+            cnpj = cnpj_cache[company_name]
+        else:
+            # Buscar CNPJ e armazenar no cache
+            cnpj = find_cnpj_by_name(company_name)
+            serper_calls += 1
+            cnpj_cache[company_name] = cnpj
+        
         if cnpj and cnpj not in existing_cnpjs:
             new_places.append(place)
             existing_cnpjs.add(cnpj)
+            iterations_without_new = 0  # Reset contador de iterações sem novos leads
             if len(new_places) >= quantity:
                 break
+        else:
+            iterations_without_new += 1
     
+    logger.info(f"Busca incremental concluída: {len(new_places)} novos leads encontrados, {serper_calls} chamadas ao Serper")
     return new_places, existing_cnpjs
 
 

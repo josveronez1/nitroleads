@@ -146,7 +146,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for lead_access in search.lead_accesses.all|slice:":20" %}
+                            {% for lead_access in search.lead_accesses.all %}
                             {% with lead=lead_access.lead %}
                             <tr id="lead-row-{{ lead.id }}">
                                 <td class="partners-checkbox-cell" id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
@@ -173,7 +173,7 @@
                                     {% endif %}
                                 </td>
                                 <td id="partners-cell-{{ lead.id }}">
-                                    {% if lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                                    {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
                                         <div class="partners-list" id="partners-list-{{ lead.id }}">
                                             {% for socio in lead.viper_data.socios_qsa.socios %}
                                             <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
@@ -249,13 +249,6 @@
                             </tr>
                             {% endwith %}
                             {% endfor %}
-                            {% if search.lead_accesses.count > 20 %}
-                            <tr>
-                                <td colspan="6" class="text-center text-muted">
-                                    ... e mais {{ search.lead_accesses.count|add:"-20" }} lead(s)
-                                </td>
-                            </tr>
-                            {% endif %}
                         </tbody>
                     </table>
                 </div>
