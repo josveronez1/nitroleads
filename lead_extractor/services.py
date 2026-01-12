@@ -951,7 +951,7 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
         # Buscar mais do que necessário (2x) para garantir que temos leads suficientes
         available_leads = leads_query.exclude(
             cnpj__in=accessed_cnpjs
-        ).order_by('-created_at').distinct('cnpj')[:quantity * 2]
+        ).order_by('-created_at')[:quantity * 3]
         
         # Converter para formato esperado pelo dashboard
         results = []
@@ -1011,10 +1011,11 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
         # Se encontrou leads, garantir que CachedSearch existe e está atualizado
         if results and cached_search:
             # Atualizar total_leads_cached se necessário
+            # Contar leads únicos por CNPJ usando values('cnpj').distinct()
             total_leads = Lead.objects.filter(
                 cached_search=cached_search,
                 cnpj__isnull=False
-            ).exclude(cnpj='').distinct('cnpj').count()
+            ).exclude(cnpj='').values('cnpj').distinct().count()
             
             if cached_search.total_leads_cached != total_leads:
                 cached_search.total_leads_cached = total_leads
@@ -1057,10 +1058,11 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
         
         # Buscar leads do cache que o usuário NÃO acessou primeiro
         # Buscar mais do que necessário (2x) para garantir que temos leads suficientes
+        # Não usar distinct('cnpj') com order_by diferente - fazer deduplicação em Python
         cached_leads_new = Lead.objects.filter(
             cached_search=cached_search,
             cnpj__isnull=False
-        ).exclude(cnpj='').exclude(cnpj__in=accessed_cnpjs).order_by('-created_at').distinct('cnpj')[:quantity * 2]
+        ).exclude(cnpj='').exclude(cnpj__in=accessed_cnpjs).order_by('-created_at')[:quantity * 3]
         
         # Converter para formato esperado pelo dashboard
         results = []
@@ -1125,7 +1127,7 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
                 cached_search=cached_search,
                 cnpj__isnull=False,
                 cnpj__in=accessed_cnpjs
-            ).exclude(cnpj='').exclude(cnpj__in=cnpjs_processed).order_by('-created_at').distinct('cnpj')[:additional_needed]
+            ).exclude(cnpj='').exclude(cnpj__in=cnpjs_processed).order_by('-created_at')[:additional_needed * 2]
             
             for lead in cached_leads_accessed:
                 if len(results) >= quantity:
@@ -1544,10 +1546,11 @@ def process_search_async(search_id):
         
         # Atualizar CachedSearch com total de leads após processamento
         if cached_search and niche_normalized and location_normalized:
+            # Contar leads únicos por CNPJ usando values('cnpj').distinct()
             total_leads = Lead.objects.filter(
                 cached_search=cached_search,
                 cnpj__isnull=False
-            ).exclude(cnpj='').distinct('cnpj').count()
+            ).exclude(cnpj='').values('cnpj').distinct().count()
             
             if cached_search.total_leads_cached != total_leads:
                 cached_search.total_leads_cached = total_leads
