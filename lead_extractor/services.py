@@ -248,18 +248,23 @@ def search_google_maps(query, num=10, start=0):
         return []
 
 
-def search_google_hybrid(query, num=10, start=0):
+def search_google_hybrid(query, num=10, start=0, min_results=None):
     """
-    Busca híbrida: tenta /search primeiro (melhor paginação), usa /places como fallback.
+    Busca híbrida otimizada: tenta /search primeiro, usa /places apenas quando necessário.
+    Evita fazer 2 requisições quando 1 é suficiente.
     
     Args:
         query: Termo de busca (ex: "Advogado em São Paulo - SP")
         num: Número de resultados por página (padrão: 10)
         start: Offset/página inicial (padrão: 0)
+        min_results: Número mínimo de resultados esperados (opcional). Se None, usa num.
     
     Returns:
         list: Lista normalizada de lugares encontrados
     """
+    if min_results is None:
+        min_results = num
+    
     # Tentar /search primeiro
     url_search = "https://google.serper.dev/search"
     payload = {
@@ -281,9 +286,25 @@ def search_google_hybrid(query, num=10, start=0):
         # Verificar se tem places ou localPack na resposta
         places_from_search = normalize_places_response(search_data, source='search')
         
-        if places_from_search:
-            logger.info(f"Usando resultados de /search (places encontrados: {len(places_from_search)})")
+        if places_from_search and len(places_from_search) >= min_results:
+            # Se /search retornou resultados suficientes, usar apenas esses
+            logger.info(f"Usando resultados de /search (places encontrados: {len(places_from_search)}, suficiente)")
             return places_from_search
+        elif places_from_search:
+            # Se /search retornou resultados mas insuficientes, usar /places como complemento
+            logger.info(f"Usando /places como complemento (search retornou {len(places_from_search)} places, esperado: {min_results})")
+            places_from_places = search_google_maps(query, num=num, start=start)
+            
+            # Combinar resultados, evitando duplicatas
+            combined = places_from_search.copy()
+            existing_titles = {p.get('title') for p in places_from_search}
+            for place in places_from_places:
+                if place.get('title') not in existing_titles:
+                    combined.append(place)
+                    if len(combined) >= min_results:
+                        break
+            
+            return combined[:min_results]
         else:
             # Se /search não retornou places, usar /places como fallback
             logger.info("Usando /places como fallback (search não retornou places)")
@@ -325,8 +346,12 @@ def search_google_maps_paginated(query, max_results, max_pages=20):
         logger.info(f"Buscando página {page + 1} para '{query}' (start: {start}, num: {results_per_page})...")
         
         try:
-            # Usar busca híbrida (tenta /search primeiro, fallback para /places)
-            places = search_google_hybrid(query, num=results_per_page, start=start)
+            # Calcular quantos resultados ainda precisamos
+            remaining_needed = max_results_safe - len(all_places)
+            
+            # Usar busca híbrida otimizada (tenta /search primeiro, fallback para /places)
+            # Passar min_results para evitar buscas desnecessárias
+            places = search_google_hybrid(query, num=results_per_page, start=start, min_results=min(remaining_needed, results_per_page))
             
             if not places:
                 logger.info(f"Página {page + 1} retornou 0 resultados. Sem mais resultados disponíveis.")
@@ -335,17 +360,17 @@ def search_google_maps_paginated(query, max_results, max_pages=20):
             all_places.extend(places)
             logger.info(f"Página {page + 1} retornou {len(places)} resultados. Total acumulado: {len(all_places)}")
             
+            # Verificar se já atingimos a quantidade desejada ANTES de continuar
+            if len(all_places) >= max_results_safe:
+                logger.info(f"Quantidade solicitada atingida: {len(all_places)} resultados encontrados (solicitado: {max_results_safe}). Parando busca.")
+                break
+            
             # Se retornou menos que o esperado, provavelmente não há mais páginas
             if len(places) < results_per_page:
                 logger.info(f"Página {page + 1} retornou menos que {results_per_page} resultados. Assumindo fim dos resultados.")
                 break
             
             page += 1
-            
-            # Verificar se já atingimos a quantidade desejada
-            if len(all_places) >= max_results_safe:
-                logger.info(f"Quantidade solicitada atingida: {len(all_places)} resultados encontrados (solicitado: {max_results_safe})")
-                break
                 
         except Exception as e:
             logger.error(f"Erro ao buscar página {page + 1} para '{query}': {e}. Continuando com resultados já encontrados...", exc_info=True)
@@ -821,6 +846,187 @@ def create_cached_search(niche_normalized, location_normalized, total_leads):
     return cached
 
 
+def cleanup_old_search_accesses(user_profile):
+    """
+    Remove LeadAccess de pesquisas antigas (que não estão nas 3 últimas pesquisas).
+    Isso torna os leads disponíveis novamente para o usuário em novas buscas.
+    
+    Args:
+        user_profile: UserProfile do usuário
+    
+    Returns:
+        int: Número de LeadAccess deletados
+    """
+    from .models import Search, LeadAccess
+    
+    try:
+        # Buscar as 3 últimas pesquisas do usuário (por created_at)
+        last_3_searches = Search.objects.filter(
+            user=user_profile
+        ).order_by('-created_at')[:3]
+        
+        if not last_3_searches.exists():
+            # Se não há pesquisas, não há nada para limpar
+            return 0
+        
+        # IDs das 3 últimas pesquisas
+        last_3_search_ids = set(last_3_searches.values_list('id', flat=True))
+        
+        # Deletar todos os LeadAccess que pertencem a pesquisas que NÃO estão nas 3 últimas
+        deleted_count = LeadAccess.objects.filter(
+            user=user_profile,
+            search__isnull=False
+        ).exclude(search_id__in=last_3_search_ids).delete()[0]
+        
+        logger.info(f"cleanup_old_search_accesses: deletados {deleted_count} LeadAccess de pesquisas antigas para usuário {user_profile.id}")
+        return deleted_count
+    except Exception as e:
+        logger.error(f"Erro ao limpar LeadAccess de pesquisas antigas: {e}", exc_info=True)
+        return 0
+
+
+def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, user_profile, search_obj=None):
+    """
+    Busca leads existentes na base de dados global que correspondem à busca.
+    Não depende de CachedSearch - busca diretamente na base por nicho e localização normalizados.
+    Filtra leads que o usuário já tem acesso nas 3 últimas pesquisas.
+    
+    Args:
+        niche_normalized: Nicho normalizado (ex: "advogado")
+        location_normalized: Localização normalizada (ex: "sao paulo - sp")
+        quantity: Quantidade desejada
+        user_profile: UserProfile do usuário
+        search_obj: Objeto Search (opcional, para vincular LeadAccess)
+    
+    Returns:
+        tuple: (lista de leads encontrados, cached_search criado/atualizado)
+            - Lista de leads no formato dict como no dashboard
+            - CachedSearch criado ou atualizado (ou None se não encontrou leads)
+    """
+    from .models import Lead, LeadAccess, CachedSearch, Search
+    from .credit_service import debit_credits
+    
+    if not niche_normalized or not location_normalized:
+        return [], None
+    
+    try:
+        # Primeiro, limpar LeadAccess de pesquisas antigas
+        cleanup_old_search_accesses(user_profile)
+        
+        # Buscar leads na base global que correspondem à busca
+        # Buscar por leads que têm cached_search com mesmo nicho e localização
+        # OU buscar diretamente por leads que podem corresponder à busca
+        # Como não temos um campo direto de nicho/localização no Lead, vamos buscar via CachedSearch
+        
+        # Tentar encontrar CachedSearch existente
+        cached_search = get_cached_search(niche_normalized, location_normalized)
+        
+        if cached_search:
+            # Se há CachedSearch, buscar leads dele
+            leads_query = Lead.objects.filter(
+                cached_search=cached_search,
+                cnpj__isnull=False
+            ).exclude(cnpj='')
+        else:
+            # Se não há CachedSearch, não há leads para esta busca específica
+            # Retornar vazio
+            return [], None
+        
+        # Buscar CNPJs que o usuário já tem acesso nas 3 últimas pesquisas
+        last_3_searches = Search.objects.filter(
+            user=user_profile
+        ).order_by('-created_at')[:3]
+        
+        accessed_cnpjs = set()
+        if last_3_searches.exists():
+            last_3_search_ids = set(last_3_searches.values_list('id', flat=True))
+            accessed_cnpjs = set(
+                LeadAccess.objects.filter(
+                    user=user_profile,
+                    search_id__in=last_3_search_ids
+                ).values_list('lead__cnpj', flat=True)
+            )
+        
+        # Buscar leads que o usuário NÃO acessou nas 3 últimas pesquisas
+        # Buscar mais do que necessário (2x) para garantir que temos leads suficientes
+        available_leads = leads_query.exclude(
+            cnpj__in=accessed_cnpjs
+        ).order_by('-created_at').distinct('cnpj')[:quantity * 2]
+        
+        # Converter para formato esperado pelo dashboard
+        results = []
+        cnpjs_processed = set()
+        
+        # Processar leads que o usuário ainda não acessou
+        for lead in available_leads:
+            if len(results) >= quantity:
+                break
+                
+            cnpj = lead.cnpj
+            
+            # Evitar duplicatas na mesma busca
+            if cnpj in cnpjs_processed:
+                continue
+            cnpjs_processed.add(cnpj)
+            
+            # Criar LeadAccess e debitar crédito (é novo acesso)
+            lead_access, created = LeadAccess.objects.get_or_create(
+                user=user_profile,
+                lead=lead,
+                defaults={
+                    'search': search_obj,
+                    'credits_paid': 1,
+                }
+            )
+            
+            # Se é novo acesso, debitar crédito
+            if created:
+                success, new_balance, error = debit_credits(
+                    user_profile,
+                    1,
+                    description=f"Lead (base existente): {lead.name}"
+                )
+                
+                if not success:
+                    logger.warning(f"Erro ao debitar crédito para lead {lead.id}: {error}")
+                    # Continuar mesmo se débito falhar (já criou LeadAccess)
+            
+            # Sanitizar dados (esconder QSA/telefones até enriquecer)
+            sanitized_viper_data = sanitize_lead_data(
+                {'viper_data': lead.viper_data or {}},
+                show_partners=(lead_access.enriched_at is not None)
+            ).get('viper_data', {})
+            
+            # Formatar para retorno
+            company_data = {
+                'name': lead.name,
+                'address': lead.address,
+                'phone_maps': lead.phone_maps,
+                'cnpj': cnpj,
+                'viper_data': sanitized_viper_data
+            }
+            
+            results.append(company_data)
+        
+        # Se encontrou leads, garantir que CachedSearch existe e está atualizado
+        if results and cached_search:
+            # Atualizar total_leads_cached se necessário
+            total_leads = Lead.objects.filter(
+                cached_search=cached_search,
+                cnpj__isnull=False
+            ).exclude(cnpj='').distinct('cnpj').count()
+            
+            if cached_search.total_leads_cached != total_leads:
+                cached_search.total_leads_cached = total_leads
+                cached_search.save(update_fields=['total_leads_cached', 'last_updated'])
+        
+        logger.info(f"get_existing_leads_from_db: retornando {len(results)} leads da base (solicitado: {quantity})")
+        return results, cached_search
+    except Exception as e:
+        logger.error(f"Erro ao buscar leads existentes na base: {e}", exc_info=True)
+        return [], None
+
+
 def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None):
     """
     Busca leads globais de um CachedSearch e cria LeadAccess para rastrear acesso.
@@ -1112,89 +1318,122 @@ def process_search_async(search_id):
         niche_normalized = normalize_niche(niche)
         location_normalized = normalize_location(location)
         
-        cached_search = None
-        use_cache = False
-        
-        # Tentar buscar do cache
-        # Verificar se há cache suficiente para atender a quantidade solicitada
-        # get_leads_from_cache garante que retorna quantity leads se houver no cache,
-        # mesmo que o usuário já tenha acessado alguns (inclui leads já acessados se necessário)
-        if niche_normalized and location_normalized:
-            cached_search = get_cached_search(niche_normalized, location_normalized)
-            if cached_search and cached_search.total_leads_cached >= quantity:
-                use_cache = True
-                logger.info(f"Cache encontrado: {cached_search.total_leads_cached} leads disponíveis (solicitado: {quantity}). Usando cache.")
-            elif cached_search:
-                logger.info(f"Cache encontrado mas insuficiente: {cached_search.total_leads_cached} leads disponíveis (solicitado: {quantity}). Fazendo nova busca.")
-            else:
-                logger.info(f"Nenhum cache encontrado para '{niche_normalized}' em '{location_normalized}'. Fazendo nova busca.")
-        
-        # Atualizar cached_search no search_obj
-        if use_cache:
-            search_obj.cached_search = cached_search
-            search_obj.save(update_fields=['cached_search'])
-        
         credits_used = 0
         leads_processed = 0
         existing_cnpjs = set()
         results = []
+        cached_search = None
         
-        if use_cache:
-            # Buscar leads globais do cache e criar LeadAccess
-            # get_leads_from_cache garante que retorna quantity leads se houver no cache
-            cached_results = get_leads_from_cache(cached_search, user_profile, quantity, search_obj)
+        # PRIMEIRO: Verificar se há leads existentes na base de dados global
+        # Isso é feito ANTES de qualquer busca no Serper
+        if niche_normalized and location_normalized:
+            existing_leads, cached_search = get_existing_leads_from_db(
+                niche_normalized, location_normalized, quantity, user_profile, search_obj
+            )
             
-            # Contar créditos usados verificando LeadAccess criados nesta busca
-            from .models import LeadAccess
-            for company_data in cached_results:
-                cnpj = company_data.get('cnpj')
-                if cnpj:
-                    # Verificar se LeadAccess foi criado nesta busca (novo acesso = crédito debitado)
-                    lead_access = LeadAccess.objects.filter(
-                        user=user_profile,
-                        lead__cnpj=cnpj,
-                        search=search_obj
-                    ).first()
+            if existing_leads:
+                # Contar créditos usados e processar leads existentes
+                for company_data in existing_leads:
+                    cnpj = company_data.get('cnpj')
+                    if cnpj:
+                        # Verificar se LeadAccess foi criado nesta busca (novo acesso = crédito debitado)
+                        from .models import LeadAccess
+                        lead_access = LeadAccess.objects.filter(
+                            user=user_profile,
+                            lead__cnpj=cnpj,
+                            search=search_obj
+                        ).first()
+                        
+                        # Se LeadAccess existe e foi criado nesta busca com crédito pago, contar
+                        if lead_access and lead_access.credits_paid > 0:
+                            credits_used += 1
+                        
+                        existing_cnpjs.add(cnpj)
                     
-                    # Se LeadAccess existe e foi criado nesta busca com crédito pago, contar
-                    if lead_access and lead_access.credits_paid > 0:
-                        credits_used += 1
-                    
-                    existing_cnpjs.add(cnpj)
+                    leads_processed += 1
+                    results.append(company_data)
                 
-                leads_processed += 1
-                results.append(company_data)
-            
-            # NÃO fazer busca incremental quando há cache suficiente
-            # get_leads_from_cache já garante que retorna quantity leads se houver no cache
-            # Se não retornou suficientes, é porque não há leads suficientes no cache
-            logger.info(f"Cache usado: {leads_processed} leads retornados do cache, {credits_used} créditos debitados (solicitado: {quantity})")
+                logger.info(f"Leads existentes encontrados: {leads_processed} leads retornados da base (solicitado: {quantity})")
+        
+        # Atualizar cached_search no search_obj se encontramos leads
+        if cached_search:
+            search_obj.cached_search = cached_search
+            search_obj.save(update_fields=['cached_search'])
+        
+        # Se já temos leads suficientes, não fazer busca no Serper
+        if leads_processed >= quantity:
+            logger.info(f"Leads suficientes encontrados na base ({leads_processed}). Não fazendo busca no Serper.")
         else:
-            # Busca completa (sem cache ou cache insuficiente)
-            # Usar busca paginada para obter múltiplas páginas até atingir quantity
-            places = search_google_maps_paginated(search_term, quantity)
-            filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places)
-            existing_cnpjs = existing_cnpjs_set
+            # Se não temos leads suficientes, fazer busca no Serper
+            additional_needed = quantity - leads_processed
+            logger.info(f"Leads insuficientes na base ({leads_processed}/{quantity}). Buscando {additional_needed} leads adicionais no Serper.")
             
-            # Set para rastrear CNPJs já processados nesta busca específica (evitar duplicatas)
-            processed_cnpjs_in_search = set()
+            # Verificar se há CachedSearch para usar cache
+            use_cache = False
+            if cached_search and cached_search.total_leads_cached >= additional_needed:
+                use_cache = True
+                logger.info(f"Usando cache do CachedSearch para buscar leads adicionais.")
             
-            # Calcular número de páginas buscadas (aproximado)
-            results_per_page = 10
-            pages_searched = (len(places) + results_per_page - 1) // results_per_page if places else 0
-            api_calls_made = pages_searched
+            if use_cache:
+                # Buscar leads globais do cache e criar LeadAccess
+                # get_leads_from_cache garante que retorna quantity leads se houver no cache
+                cached_results = get_leads_from_cache(cached_search, user_profile, additional_needed, search_obj)
+                
+                # Contar créditos usados verificando LeadAccess criados nesta busca
+                from .models import LeadAccess
+                for company_data in cached_results:
+                    cnpj = company_data.get('cnpj')
+                    if cnpj:
+                        # Verificar se LeadAccess foi criado nesta busca (novo acesso = crédito debitado)
+                        lead_access = LeadAccess.objects.filter(
+                            user=user_profile,
+                            lead__cnpj=cnpj,
+                            search=search_obj
+                        ).first()
+                        
+                        # Se LeadAccess existe e foi criado nesta busca com crédito pago, contar
+                        if lead_access and lead_access.credits_paid > 0:
+                            credits_used += 1
+                        
+                        existing_cnpjs.add(cnpj)
+                    
+                    leads_processed += 1
+                    results.append(company_data)
+                    
+                    # Parar se já temos quantidade suficiente
+                    if leads_processed >= quantity:
+                        break
+                
+                logger.info(f"Cache usado: {leads_processed - len(existing_leads) if existing_leads else leads_processed} leads adicionais do cache (total: {leads_processed}/{quantity})")
             
-            # Atualizar search_data com informações de paginação
-            search_obj.search_data.update({
-                'total_places_found': len(places),
-                'filtered_places': len(filtered_places),
-                'pages_searched': pages_searched,
-                'api_calls_made': api_calls_made,
-            })
-            search_obj.save(update_fields=['search_data'])
-            
-            # Processar até atingir a quantidade solicitada
-            for place in filtered_places:
+            # Se ainda não temos leads suficientes após usar cache, fazer busca no Serper
+            if leads_processed < quantity:
+                # Busca completa (sem cache ou cache insuficiente)
+                # Usar busca paginada para obter múltiplas páginas até atingir quantity
+                additional_needed = quantity - leads_processed
+                places = search_google_maps_paginated(search_term, additional_needed)
+                filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places)
+                existing_cnpjs.update(existing_cnpjs_set)
+                
+                # Set para rastrear CNPJs já processados nesta busca específica (evitar duplicatas)
+                processed_cnpjs_in_search = set()
+                
+                # Calcular número de páginas buscadas (aproximado)
+                results_per_page = 10
+                pages_searched = (len(places) + results_per_page - 1) // results_per_page if places else 0
+                api_calls_made = pages_searched
+                
+                # Atualizar search_data com informações de paginação
+                search_obj.search_data.update({
+                    'total_places_found': len(places),
+                    'filtered_places': len(filtered_places),
+                    'pages_searched': pages_searched,
+                    'api_calls_made': api_calls_made,
+                })
+                search_obj.save(update_fields=['search_data'])
+                
+                # Processar até atingir a quantidade solicitada
+                for place in filtered_places:
                 if leads_processed >= quantity:
                     break
                 
@@ -1280,23 +1519,56 @@ def process_search_async(search_id):
                 leads_processed += 1
                 processed_cnpjs_in_search.add(cnpj)
                 results.append(company_data)
+                
+                # Atualizar CachedSearch se necessário
+                if not cached_search:
+                    cached_search = create_cached_search(niche_normalized, location_normalized, 0)
+                    search_obj.cached_search = cached_search
+                    search_obj.save(update_fields=['cached_search'])
+                
+                # Atualizar cached_search no lead se necessário
+                if lead_obj.cached_search != cached_search:
+                    lead_obj.cached_search = cached_search
+                    lead_obj.save(update_fields=['cached_search'])
             
-            # Se faltam leads, fazer busca incremental com limites de segurança
-            if leads_processed < quantity:
-                additional_needed = quantity - leads_processed
-                logger.info(f"Faltam {additional_needed} leads, iniciando busca incremental...")
+            # Atualizar total_leads_cached no CachedSearch após processar novos leads
+            if cached_search:
+                total_leads = Lead.objects.filter(
+                    cached_search=cached_search,
+                    cnpj__isnull=False
+                ).exclude(cnpj='').distinct('cnpj').count()
                 
-                # Calcular offset inicial baseado nas páginas já buscadas
-                results_per_page = 10
-                start_offset = len(places)  # Começar após os leads já buscados
-                incremental_page = 0
-                max_incremental_iterations = 20  # Limite de 20 iterações (200 requisições máx)
-                max_api_requests = 50  # Limite máximo de requisições à API Serper
-                consecutive_empty_iterations = 0  # Contador de iterações sem leads válidos
-                max_consecutive_empty = 3  # Parar após 3 iterações consecutivas sem leads válidos
-                api_requests_made = 0
-                
-                while leads_processed < quantity and incremental_page < max_incremental_iterations:
+                if cached_search.total_leads_cached != total_leads:
+                    cached_search.total_leads_cached = total_leads
+                    cached_search.save(update_fields=['total_leads_cached', 'last_updated'])
+        
+        # Atualizar CachedSearch com total de leads após processamento
+        if cached_search and niche_normalized and location_normalized:
+            total_leads = Lead.objects.filter(
+                cached_search=cached_search,
+                cnpj__isnull=False
+            ).exclude(cnpj='').distinct('cnpj').count()
+            
+            if cached_search.total_leads_cached != total_leads:
+                cached_search.total_leads_cached = total_leads
+                cached_search.save(update_fields=['total_leads_cached', 'last_updated'])
+        
+        # Se ainda faltam leads após todas as tentativas, fazer busca incremental com limites de segurança
+        if leads_processed < quantity:
+            additional_needed = quantity - leads_processed
+            logger.info(f"Faltam {additional_needed} leads, iniciando busca incremental...")
+            
+            # Calcular offset inicial baseado nas páginas já buscadas
+            results_per_page = 10
+            start_offset = len(places) if 'places' in locals() else 0
+            incremental_page = 0
+            max_incremental_iterations = 20  # Limite de 20 iterações (200 requisições máx)
+            max_api_requests = 50  # Limite máximo de requisições à API Serper
+            consecutive_empty_iterations = 0  # Contador de iterações sem leads válidos
+            max_consecutive_empty = 3  # Parar após 3 iterações consecutivas sem leads válidos
+            api_requests_made = 0
+            
+            while leads_processed < quantity and incremental_page < max_incremental_iterations:
                     # Verificar limite de requisições à API
                     if api_requests_made >= max_api_requests:
                         logger.warning(f"Limite de requisições à API atingido ({max_api_requests}). Parando busca incremental.")

@@ -770,21 +770,21 @@ def search_history(request):
     user_profile = request.user_profile
     
     # Garantir que apenas pesquisas do usuário sejam listadas
+    # Mostrar apenas as 3 últimas pesquisas (por created_at)
     # Prefetch LeadAccess para otimizar queries (leads agora são acessados via LeadAccess)
-    searches = Search.objects.filter(user=user_profile).select_related('user', 'cached_search').prefetch_related('lead_accesses__lead').order_by('-created_at')
+    searches = Search.objects.filter(user=user_profile).select_related('user', 'cached_search').prefetch_related('lead_accesses__lead').order_by('-created_at')[:3]
     
     # Identificar última pesquisa (mais recente)
     last_search_id = None
-    if searches.exists():
-        last_search_id = searches.first().id
+    if searches:
+        last_search_id = searches[0].id if isinstance(searches, list) else searches.first().id
     
-    # Paginação
-    paginator = Paginator(searches, 20)  # 20 por página
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    # Não usar paginação - apenas mostrar as 3 últimas
+    # Converter para lista para compatibilidade com template
+    searches_list = list(searches)
     
     context = {
-        'searches': page_obj,
+        'searches': searches_list,
         'last_search_id': last_search_id,
         'user_profile': user_profile,
         'available_credits': check_credits(user_profile),
