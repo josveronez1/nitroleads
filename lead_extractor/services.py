@@ -1130,8 +1130,8 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
             ).exclude(cnpj='').exclude(cnpj__in=cnpjs_processed).order_by('-created_at')[:additional_needed * 2]
             
             for lead in cached_leads_accessed:
-            if len(results) >= quantity:
-                break
+                if len(results) >= quantity:
+                    break
         
                 cnpj = lead.cnpj
                 
@@ -1274,8 +1274,8 @@ def sanitize_lead_data(lead_data, show_partners=False, has_enriched_access=False
         
         # REGRA CRÍTICA: Telefones e emails só aparecem se has_enriched_access=True
         if not has_enriched_access:
-        viper_data.pop('telefones', None)
-        viper_data.pop('emails', None)
+            viper_data.pop('telefones', None)
+            viper_data.pop('emails', None)
         
         # REGRA CRÍTICA: Sócios só aparecem se has_enriched_access=True
         if not has_enriched_access:
@@ -1375,15 +1375,15 @@ def process_search_async(search_id):
             if cached_search and cached_search.total_leads_cached >= additional_needed:
                 use_cache = True
                 logger.info(f"Usando cache do CachedSearch para buscar leads adicionais.")
-        
-        if use_cache:
+            
+            if use_cache:
                 # Buscar leads globais do cache e criar LeadAccess
                 # get_leads_from_cache garante que retorna quantity leads se houver no cache
                 cached_results = get_leads_from_cache(cached_search, user_profile, additional_needed, search_obj)
-            
+                
                 # Contar créditos usados verificando LeadAccess criados nesta busca
                 from .models import LeadAccess
-            for company_data in cached_results:
+                for company_data in cached_results:
                     cnpj = company_data.get('cnpj')
                     if cnpj:
                         # Verificar se LeadAccess foi criado nesta busca (novo acesso = crédito debitado)
@@ -1395,7 +1395,7 @@ def process_search_async(search_id):
                         
                         # Se LeadAccess existe e foi criado nesta busca com crédito pago, contar
                         if lead_access and lead_access.credits_paid > 0:
-                    credits_used += 1
+                            credits_used += 1
                         
                         existing_cnpjs.add(cnpj)
                     
@@ -1406,7 +1406,7 @@ def process_search_async(search_id):
                     if leads_processed >= quantity:
                         break
                 
-                logger.info(f"Cache usado: {leads_processed - len(existing_leads) if existing_leads else leads_processed} leads adicionais do cache (total: {leads_processed}/{quantity})")
+                logger.info(f"Cache usado: {leads_processed - (len(existing_leads) if 'existing_leads' in locals() and existing_leads else 0)} leads adicionais do cache (total: {leads_processed}/{quantity})")
             
             # Se ainda não temos leads suficientes após usar cache, fazer busca no Serper
             if leads_processed < quantity:
@@ -1448,90 +1448,90 @@ def process_search_async(search_id):
                     }
                     
                     cnpj = find_cnpj_by_name(company_data['name'])
-                
-                # Se não tem CNPJ, pular e continuar
-                if not cnpj:
-                    logger.info(f"Lead '{company_data['name']}' não tem CNPJ, pulando e buscando mais leads...")
-                    continue
-                
-                # Se CNPJ já foi processado nesta busca, pular (evitar duplicatas)
-                if cnpj in processed_cnpjs_in_search:
-                    logger.info(f"CNPJ {cnpj} já foi processado nesta busca, pulando...")
-                    continue
-                
-                        company_data['cnpj'] = cnpj
-                        public_data = enrich_company_viper(cnpj)
-                        if public_data:
-                            company_data['viper_data'].update(public_data)
-                        
-                # Buscar lead global existente (sem filtro user)
-                from .models import LeadAccess
-                existing_lead = Lead.objects.filter(cnpj=cnpj).first()
-                
-                if existing_lead:
-                    lead_obj = existing_lead
-                    # Atualizar dados se necessário
-                    if public_data:
-                        if not lead_obj.viper_data:
-                            lead_obj.viper_data = {}
-                        lead_obj.viper_data.update(public_data)
-                        lead_obj.save(update_fields=['viper_data'])
-                else:
-                    # Criar lead global (sem user)
-                            lead_obj = Lead.objects.create(
-                        cached_search=cached_search,
-                                name=company_data['name'],
-                                address=company_data['address'],
-                                phone_maps=company_data['phone_maps'],
-                                cnpj=cnpj,
-                                viper_data=company_data['viper_data']
-                            )
-                            
-                # Criar ou obter LeadAccess e debitar crédito
-                lead_access, created = LeadAccess.objects.get_or_create(
-                    user=user_profile,
-                    lead=lead_obj,
-                    defaults={
-                        'search': search_obj,
-                        'credits_paid': 1,
-                    }
-                )
-                
-                if created:
-                            success, new_balance, error = debit_credits(
-                                user_profile,
-                                1,
-                                description=f"Lead: {company_data['name']}"
-                            )
-                            
-                    # Se débito falhar, PARAR busca completamente
-                    if not success:
-                        logger.error(f"Débito de crédito falhou: {error}. Parando busca.")
-                        break
                     
-                                credits_used += 1
-                
-                # Sanitizar dados (esconder QSA/telefones até enriquecer)
-                sanitized_viper_data = sanitize_lead_data(
-                    {'viper_data': lead_obj.viper_data or {}},
-                    show_partners=(lead_access.enriched_at is not None)
-                ).get('viper_data', {})
-                
-                company_data['viper_data'] = sanitized_viper_data
-                        leads_processed += 1
-                processed_cnpjs_in_search.add(cnpj)
-                        results.append(company_data)
-                
-                # Atualizar CachedSearch se necessário
-                if not cached_search:
-                    cached_search = create_cached_search(niche_normalized, location_normalized, 0)
-                    search_obj.cached_search = cached_search
-                    search_obj.save(update_fields=['cached_search'])
-                
-                # Atualizar cached_search no lead se necessário
-                if lead_obj.cached_search != cached_search:
-                    lead_obj.cached_search = cached_search
-                    lead_obj.save(update_fields=['cached_search'])
+                    # Se não tem CNPJ, pular e continuar
+                    if not cnpj:
+                        logger.info(f"Lead '{company_data['name']}' não tem CNPJ, pulando e buscando mais leads...")
+                        continue
+                    
+                    # Se CNPJ já foi processado nesta busca, pular (evitar duplicatas)
+                    if cnpj in processed_cnpjs_in_search:
+                        logger.info(f"CNPJ {cnpj} já foi processado nesta busca, pulando...")
+                        continue
+                    
+                    company_data['cnpj'] = cnpj
+                    public_data = enrich_company_viper(cnpj)
+                    if public_data:
+                        company_data['viper_data'].update(public_data)
+                    
+                    # Buscar lead global existente (sem filtro user)
+                    from .models import LeadAccess
+                    existing_lead = Lead.objects.filter(cnpj=cnpj).first()
+                    
+                    if existing_lead:
+                        lead_obj = existing_lead
+                        # Atualizar dados se necessário
+                        if public_data:
+                            if not lead_obj.viper_data:
+                                lead_obj.viper_data = {}
+                            lead_obj.viper_data.update(public_data)
+                            lead_obj.save(update_fields=['viper_data'])
+                    else:
+                        # Criar lead global (sem user)
+                        lead_obj = Lead.objects.create(
+                            cached_search=cached_search,
+                            name=company_data['name'],
+                            address=company_data['address'],
+                            phone_maps=company_data['phone_maps'],
+                            cnpj=cnpj,
+                            viper_data=company_data['viper_data']
+                        )
+                    
+                    # Criar ou obter LeadAccess e debitar crédito
+                    lead_access, created = LeadAccess.objects.get_or_create(
+                        user=user_profile,
+                        lead=lead_obj,
+                        defaults={
+                            'search': search_obj,
+                            'credits_paid': 1,
+                        }
+                    )
+                    
+                    if created:
+                        success, new_balance, error = debit_credits(
+                            user_profile,
+                            1,
+                            description=f"Lead: {company_data['name']}"
+                        )
+                        
+                        # Se débito falhar, PARAR busca completamente
+                        if not success:
+                            logger.error(f"Débito de crédito falhou: {error}. Parando busca.")
+                            break
+                        
+                        credits_used += 1
+                    
+                    # Sanitizar dados (esconder QSA/telefones até enriquecer)
+                    sanitized_viper_data = sanitize_lead_data(
+                        {'viper_data': lead_obj.viper_data or {}},
+                        show_partners=(lead_access.enriched_at is not None)
+                    ).get('viper_data', {})
+                    
+                    company_data['viper_data'] = sanitized_viper_data
+                    leads_processed += 1
+                    processed_cnpjs_in_search.add(cnpj)
+                    results.append(company_data)
+                    
+                    # Atualizar CachedSearch se necessário
+                    if not cached_search:
+                        cached_search = create_cached_search(niche_normalized, location_normalized, 0)
+                        search_obj.cached_search = cached_search
+                        search_obj.save(update_fields=['cached_search'])
+                    
+                    # Atualizar cached_search no lead se necessário
+                    if lead_obj.cached_search != cached_search:
+                        lead_obj.cached_search = cached_search
+                        lead_obj.save(update_fields=['cached_search'])
             
             # Atualizar total_leads_cached no CachedSearch após processar novos leads
             if cached_search:
@@ -1573,101 +1573,101 @@ def process_search_async(search_id):
             api_requests_made = 0
             
             while leads_processed < quantity and incremental_page < max_incremental_iterations:
-                    # Verificar limite de requisições à API
-                    if api_requests_made >= max_api_requests:
-                        logger.warning(f"Limite de requisições à API atingido ({max_api_requests}). Parando busca incremental.")
-                        break
-                    
-                    # Buscar mais leads usando offset crescente para evitar duplicatas
-                    # Reduzir para 5 páginas por iteração (50 leads) ao invés de 20 (200 leads)
-                    pages_per_iteration = 5
-                    current_offset = start_offset + (incremental_page * results_per_page * pages_per_iteration)
-                    logger.info(f"Busca incremental (iteração {incremental_page + 1}, offset: {current_offset}, páginas: {pages_per_iteration})...")
-                    
-                    # Buscar páginas em lotes menores
-                    incremental_places_batch = []
-                    for page_in_batch in range(pages_per_iteration):
-                        if leads_processed >= quantity:
-                            break
-                        
-                        if api_requests_made >= max_api_requests:
-                            break
-                        
-                        page_offset = current_offset + (page_in_batch * results_per_page)
-                        places_page = search_google_hybrid(search_term, num=results_per_page, start=page_offset)
-                        api_requests_made += 1
-                        
-                        if not places_page:
-                            logger.info(f"Não há mais resultados disponíveis na página {page_in_batch + 1} (offset: {page_offset}).")
-                            break
-                        
-                        incremental_places_batch.extend(places_page)
-                        
-                        # Se retornou menos que o esperado, provavelmente não há mais páginas
-                        if len(places_page) < results_per_page:
-                            break
-                    
-                    if not incremental_places_batch:
-                        consecutive_empty_iterations += 1
-                        logger.info(f"Nenhum resultado encontrado nesta iteração. Iterações consecutivas vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
-                        
-                        if consecutive_empty_iterations >= max_consecutive_empty:
-                            logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar resultados.")
-                            break
-                        
-                        incremental_page += 1
-                        continue
-                    
-                    # Filtrar leads já processados
-                    incremental_filtered, _ = filter_existing_leads(user_profile, incremental_places_batch)
-                    
-                    leads_found_in_batch = 0
-                    leads_without_cnpj = 0
-                    leads_duplicated = 0
-                    
-                    for place in incremental_filtered:
-                if leads_processed >= quantity:
+                # Verificar limite de requisições à API
+                if api_requests_made >= max_api_requests:
+                    logger.warning(f"Limite de requisições à API atingido ({max_api_requests}). Parando busca incremental.")
                     break
                 
-                company_data = {
-                    'name': place.get('title'),
-                    'address': place.get('address'),
-                    'phone_maps': place.get('phoneNumber'),
-                    'cnpj': None,
-                    'viper_data': {}
-                }
+                # Buscar mais leads usando offset crescente para evitar duplicatas
+                # Reduzir para 5 páginas por iteração (50 leads) ao invés de 20 (200 leads)
+                pages_per_iteration = 5
+                current_offset = start_offset + (incremental_page * results_per_page * pages_per_iteration)
+                logger.info(f"Busca incremental (iteração {incremental_page + 1}, offset: {current_offset}, páginas: {pages_per_iteration})...")
                 
-                cnpj = find_cnpj_by_name(company_data['name'])
-                        
-                        # Se não tem CNPJ, pular (sem log individual para reduzir spam)
-                        if not cnpj:
-                            leads_without_cnpj += 1
-                            continue
-                        
-                        # Se CNPJ já foi processado nesta busca, pular
-                        if cnpj in processed_cnpjs_in_search:
-                            leads_duplicated += 1
-                            continue
-                        
+                # Buscar páginas em lotes menores
+                incremental_places_batch = []
+                for page_in_batch in range(pages_per_iteration):
+                    if leads_processed >= quantity:
+                        break
+                    
+                    if api_requests_made >= max_api_requests:
+                        break
+                    
+                    page_offset = current_offset + (page_in_batch * results_per_page)
+                    places_page = search_google_hybrid(search_term, num=results_per_page, start=page_offset)
+                    api_requests_made += 1
+                    
+                    if not places_page:
+                        logger.info(f"Não há mais resultados disponíveis na página {page_in_batch + 1} (offset: {page_offset}).")
+                        break
+                    
+                    incremental_places_batch.extend(places_page)
+                    
+                    # Se retornou menos que o esperado, provavelmente não há mais páginas
+                    if len(places_page) < results_per_page:
+                        break
+                
+                if not incremental_places_batch:
+                    consecutive_empty_iterations += 1
+                    logger.info(f"Nenhum resultado encontrado nesta iteração. Iterações consecutivas vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
+                    
+                    if consecutive_empty_iterations >= max_consecutive_empty:
+                        logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar resultados.")
+                        break
+                    
+                    incremental_page += 1
+                    continue
+                
+                # Filtrar leads já processados
+                incremental_filtered, _ = filter_existing_leads(user_profile, incremental_places_batch)
+                
+                leads_found_in_batch = 0
+                leads_without_cnpj = 0
+                leads_duplicated = 0
+                
+                for place in incremental_filtered:
+                    if leads_processed >= quantity:
+                        break
+                    
+                    company_data = {
+                        'name': place.get('title'),
+                        'address': place.get('address'),
+                        'phone_maps': place.get('phoneNumber'),
+                        'cnpj': None,
+                        'viper_data': {}
+                    }
+                    
+                    cnpj = find_cnpj_by_name(company_data['name'])
+                    
+                    # Se não tem CNPJ, pular (sem log individual para reduzir spam)
+                    if not cnpj:
+                        leads_without_cnpj += 1
+                        continue
+                    
+                    # Se CNPJ já foi processado nesta busca, pular
+                    if cnpj in processed_cnpjs_in_search:
+                        leads_duplicated += 1
+                        continue
+                    
                     company_data['cnpj'] = cnpj
                     public_data = enrich_company_viper(cnpj)
                     if public_data:
                         company_data['viper_data'].update(public_data)
                     
-                        # Buscar lead global existente (sem filtro user)
-                        from .models import LeadAccess
-                        existing_lead = Lead.objects.filter(cnpj=cnpj).first()
+                    # Buscar lead global existente (sem filtro user)
+                    from .models import LeadAccess
+                    existing_lead = Lead.objects.filter(cnpj=cnpj).first()
                     
                     if existing_lead:
                         lead_obj = existing_lead
-                            # Atualizar dados se necessário
-                            if public_data:
-                                if not lead_obj.viper_data:
-                                    lead_obj.viper_data = {}
-                                lead_obj.viper_data.update(public_data)
-                                lead_obj.save(update_fields=['viper_data'])
+                        # Atualizar dados se necessário
+                        if public_data:
+                            if not lead_obj.viper_data:
+                                lead_obj.viper_data = {}
+                            lead_obj.viper_data.update(public_data)
+                            lead_obj.save(update_fields=['viper_data'])
                     else:
-                            # Criar lead global (sem user)
+                        # Criar lead global (sem user)
                         lead_obj = Lead.objects.create(
                             name=company_data['name'],
                             address=company_data['address'],
@@ -1675,81 +1675,62 @@ def process_search_async(search_id):
                             cnpj=cnpj,
                             viper_data=company_data['viper_data']
                         )
-                        
-                        # Criar ou obter LeadAccess e debitar crédito
-                        lead_access, created = LeadAccess.objects.get_or_create(
-                            user=user_profile,
-                            lead=lead_obj,
-                            defaults={
-                                'search': search_obj,
-                                'credits_paid': 1,
-                            }
-                        )
-                        
-                        if created:
+                    
+                    # Criar ou obter LeadAccess e debitar crédito
+                    lead_access, created = LeadAccess.objects.get_or_create(
+                        user=user_profile,
+                        lead=lead_obj,
+                        defaults={
+                            'search': search_obj,
+                            'credits_paid': 1,
+                        }
+                    )
+                    
+                    if created:
                         success, new_balance, error = debit_credits(
                             user_profile,
                             1,
                             description=f"Lead: {company_data['name']}"
                         )
                         
-                            # Se débito falhar, PARAR busca completamente
+                        # Se débito falhar, PARAR busca completamente
                         if not success:
-                                logger.error(f"Débito de crédito falhou: {error}. Parando busca incremental.")
-                                break
+                            logger.error(f"Débito de crédito falhou: {error}. Parando busca incremental.")
+                            break
                         
                         credits_used += 1
                     
-                        # Sanitizar dados (esconder QSA/telefones até enriquecer)
-                        sanitized_viper_data = sanitize_lead_data(
-                            {'viper_data': lead_obj.viper_data or {}},
-                            show_partners=(lead_access.enriched_at is not None)
-                        ).get('viper_data', {})
-                        
-                        company_data['viper_data'] = sanitized_viper_data
+                    # Sanitizar dados (esconder QSA/telefones até enriquecer)
+                    sanitized_viper_data = sanitize_lead_data(
+                        {'viper_data': lead_obj.viper_data or {}},
+                        show_partners=(lead_access.enriched_at is not None)
+                    ).get('viper_data', {})
+                    
+                    company_data['viper_data'] = sanitized_viper_data
                     leads_processed += 1
-                        processed_cnpjs_in_search.add(cnpj)
-                        leads_found_in_batch += 1
+                    processed_cnpjs_in_search.add(cnpj)
+                    leads_found_in_batch += 1
                     results.append(company_data)
+            
+                # Log resumido da iteração
+                if leads_found_in_batch > 0:
+                    consecutive_empty_iterations = 0  # Resetar contador se encontrou leads
+                    logger.info(f"Busca incremental: {leads_found_in_batch} leads válidos, {leads_without_cnpj} sem CNPJ, {leads_duplicated} duplicados. Total: {leads_processed}/{quantity} (requisições: {api_requests_made}/{max_api_requests})")
+                else:
+                    consecutive_empty_iterations += 1
+                    logger.info(f"Busca incremental: nenhum lead válido encontrado ({leads_without_cnpj} sem CNPJ, {leads_duplicated} duplicados). Iterações vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
                     
-                    # Log resumido da iteração
-                    if leads_found_in_batch > 0:
-                        consecutive_empty_iterations = 0  # Resetar contador se encontrou leads
-                        logger.info(f"Busca incremental: {leads_found_in_batch} leads válidos, {leads_without_cnpj} sem CNPJ, {leads_duplicated} duplicados. Total: {leads_processed}/{quantity} (requisições: {api_requests_made}/{max_api_requests})")
-                    else:
-                        consecutive_empty_iterations += 1
-                        logger.info(f"Busca incremental: nenhum lead válido encontrado ({leads_without_cnpj} sem CNPJ, {leads_duplicated} duplicados). Iterações vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
-                        
-                        if consecutive_empty_iterations >= max_consecutive_empty:
-                            logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar leads válidos.")
-                            break
-                    
-                    incremental_page += 1
-                    additional_needed = quantity - leads_processed
-                    if additional_needed <= 0:
+                    if consecutive_empty_iterations >= max_consecutive_empty:
+                        logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar leads válidos.")
                         break
                 
-                if leads_processed < quantity:
-                    logger.info(f"Busca incremental concluída. Processados {leads_processed} de {quantity} leads solicitados. Requisições à API: {api_requests_made}")
+                incremental_page += 1
+                additional_needed = quantity - leads_processed
+                if additional_needed <= 0:
+                    break
             
-            # Criar ou atualizar cache com os novos leads
-            if niche_normalized and location_normalized:
-                cached_search_new = get_cached_search(niche_normalized, location_normalized)
-                if not cached_search_new:
-                    cached_search_new = create_cached_search(niche_normalized, location_normalized, leads_processed)
-                
-                # Associar leads ao cache (via LeadAccess)
-                if cached_search_new:
-                    # Buscar leads acessados nesta busca e atualizar cached_search
-                    from .models import LeadAccess
-                    accessed_leads = Lead.objects.filter(
-                        accesses__search=search_obj,
-                        cnpj__isnull=False
-                    ).exclude(cnpj='').distinct()
-                    accessed_leads.update(cached_search=cached_search_new)
-                    
-                    search_obj.cached_search = cached_search_new
-                    search_obj.save(update_fields=['cached_search'])
+            if leads_processed < quantity:
+                logger.info(f"Busca incremental concluída. Processados {leads_processed} de {quantity} leads solicitados. Requisições à API: {api_requests_made}")
         
         # Atualizar search_obj com resultados
         search_obj.results_count = leads_processed
