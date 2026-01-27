@@ -489,36 +489,27 @@
         const modalBody = document.getElementById('searchFullscreenBody');
         
         if (modalBody) {
+            // Se collapse existe mas não está visível, expandir temporariamente
+            if (collapseElement && !collapseElement.classList.contains('show')) {
+                const bsCollapse = new bootstrap.Collapse(collapseElement, { toggle: false });
+                bsCollapse.show();
+            }
+            
             if (collapseElement) {
-                const tableContainer = collapseElement.querySelector('.table-responsive');
-                const table = collapseElement.querySelector('table');
-                if (tableContainer) {
-                    modalBody.innerHTML = tableContainer.outerHTML;
-                } else if (table) {
-                    modalBody.innerHTML = '<div class="table-responsive">' + table.outerHTML + '</div>';
-                } else {
-                    modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
-                }
+                // Aguardar um pouco para garantir que o collapse foi expandido
+                setTimeout(() => {
+                    const tableContainer = collapseElement.querySelector('.table-responsive');
+                    const table = collapseElement.querySelector('table');
+                    if (tableContainer) {
+                        modalBody.innerHTML = tableContainer.outerHTML;
+                    } else if (table) {
+                        modalBody.innerHTML = '<div class="table-responsive">' + table.outerHTML + '</div>';
+                    } else {
+                        modalBody.innerHTML = '<div class="alert alert-info">Nenhum lead encontrado para esta pesquisa.</div>';
+                    }
+                }, 100);
             } else {
-                // Se collapse não existe, tentar expandir temporariamente
-                const toggleBtn = document.getElementById(`toggle-leads-btn-${searchId}`);
-                if (toggleBtn) {
-                    toggleBtn.click(); // Expandir collapse
-                    setTimeout(() => {
-                        const collapseElement2 = document.getElementById(`search-${searchId}`);
-                        if (collapseElement2) {
-                            const tableContainer = collapseElement2.querySelector('.table-responsive');
-                            const table = collapseElement2.querySelector('table');
-                            if (tableContainer) {
-                                modalBody.innerHTML = tableContainer.outerHTML;
-                            } else if (table) {
-                                modalBody.innerHTML = '<div class="table-responsive">' + table.outerHTML + '</div>';
-                            }
-                        }
-                    }, 300);
-                } else {
-                    modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
-                }
+                modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
             }
         }
         
