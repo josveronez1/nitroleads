@@ -35,15 +35,19 @@
     }
     /* Estilo para nomes de sócios borrados (teaser) */
     .blurred-partners {
-        filter: blur(4px);
+        filter: blur(5px);
         user-select: none;
         cursor: default;
-        opacity: 0.7;
+        opacity: 0.6;
+        pointer-events: none;
     }
     .blurred-partners .blurred-name {
         display: inline-block;
-        margin-right: 8px;
+        margin-right: 12px;
+        margin-bottom: 4px;
         font-weight: 500;
+        font-size: 0.875rem;
+        color: #6c757d;
     }
     /* Modais de alerta devem aparecer sobre o modal fullscreen */
     #alertModal,
