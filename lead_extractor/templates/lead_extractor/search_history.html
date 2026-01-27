@@ -1050,7 +1050,8 @@
                 emails.forEach(email => {
                     html += `<span class="badge bg-info me-1"><i class="fas fa-envelope me-1"></i>${email}</span>`;
                 });
-                if (allPhones.length === 0 && emails.length === 0) {
+                const uniquePhones = Object.values(phonesDict);
+                if (uniquePhones.length === 0 && emails.length === 0) {
                     html += '<span class="text-muted small">Nenhum contato encontrado</span>';
                 }
                 html += '</div>';
