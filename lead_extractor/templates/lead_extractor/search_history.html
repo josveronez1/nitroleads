@@ -932,11 +932,15 @@
     function startSearchPolling(searchId) {
         // Limpar intervalo anterior se existir
         if (searchPollingIntervals[searchId]) {
+            console.log(`Limpando polling anterior para busca ${searchId}`);
             clearInterval(searchPollingIntervals[searchId]);
         }
         
         const csrfToken = getCsrfToken();
-        if (!csrfToken) return;
+        if (!csrfToken) {
+            console.error(`Token CSRF não encontrado para busca ${searchId}`);
+            return;
+        }
         
         console.log(`Iniciando polling para busca ${searchId}`);
         searchPollingIntervals[searchId] = setInterval(() => {
@@ -1082,11 +1086,15 @@
     
     // Controlar visibilidade dos botões quando a lista estiver expandida
     document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOMContentLoaded - Iniciando polling para buscas em processamento');
         // Iniciar polling para buscas em processamento
         {% for search_data in searches_with_partners_status %}
         {% with search=search_data.search %}
         {% if search.status == 'processing' %}
+        console.log('Iniciando polling para busca {{ search.id }}');
         startSearchPolling({{ search.id }});
+        {% else %}
+        console.log('Busca {{ search.id }} não está em processamento (status: {{ search.status }})');
         {% endif %}
         {% endwith %}
         {% endfor %}
