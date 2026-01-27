@@ -107,19 +107,13 @@
                             {% if socio.cpf_data.dados_gerais.nome %}
                             <div class="small text-muted mb-1"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
                             {% endif %}
-                            {% for phone in socio.cpf_data.telefones_fixos %}
-                                {% if phone %}
-                                <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone }}</span>
-                                {% endif %}
-                            {% endfor %}
-                            {% for phone in socio.cpf_data.telefones_moveis %}
-                                {% if phone %}
-                                <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone }}</span>
-                                {% endif %}
-                            {% endfor %}
-                            {% for phone in socio.cpf_data.whatsapps %}
-                                {% if phone %}
-                                <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone }}</span>
+                            {% for phone_info in socio.cpf_data|get_unique_phones %}
+                                {% if phone_info.type == 'fixo' %}
+                                <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone_info.phone }}</span>
+                                {% elif phone_info.type == 'movel' %}
+                                <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone_info.phone }}</span>
+                                {% elif phone_info.type == 'whatsapp' %}
+                                <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone_info.phone }}</span>
                                 {% endif %}
                             {% endfor %}
                             {% for email in socio.cpf_data.emails %}
@@ -436,41 +430,58 @@
                             dataDiv.appendChild(nomeDiv);
                         }
                         
-                        // Adicionar telefones fixos
-                        if (result.cpf_data.telefones_fixos) {
-                            result.cpf_data.telefones_fixos.forEach(phone => {
-                                if (phone) {
-                                    const badge = document.createElement('span');
-                                    badge.className = 'badge bg-success me-1';
-                                    badge.innerHTML = `<i class="fas fa-phone me-1"></i>${phone}`;
-                                    dataDiv.appendChild(badge);
-                                }
-                            });
-                        }
+                        // Função para normalizar telefone (remover caracteres não numéricos)
+                        const normalizePhone = (phone) => {
+                            if (!phone) return null;
+                            return String(phone).replace(/\D/g, '');
+                        };
                         
-                        // Adicionar telefones móveis
-                        if (result.cpf_data.telefones_moveis) {
-                            result.cpf_data.telefones_moveis.forEach(phone => {
-                                if (phone) {
-                                    const badge = document.createElement('span');
-                                    badge.className = 'badge bg-success me-1';
-                                    badge.innerHTML = `<i class="fas fa-mobile-alt me-1"></i>${phone}`;
-                                    dataDiv.appendChild(badge);
-                                }
-                            });
-                        }
+                        // Coletar telefones únicos, priorizando WhatsApp
+                        const phonesDict = {};
                         
-                        // Adicionar WhatsApps
-                        if (result.cpf_data.whatsapps) {
-                            result.cpf_data.whatsapps.forEach(phone => {
-                                if (phone) {
-                                    const badge = document.createElement('span');
-                                    badge.className = 'badge bg-success me-1';
-                                    badge.innerHTML = `<i class="fab fa-whatsapp me-1"></i>${phone}`;
-                                    dataDiv.appendChild(badge);
+                        // Processar WhatsApp primeiro (maior prioridade)
+                        (result.cpf_data.whatsapps || []).forEach(phone => {
+                            if (phone) {
+                                const normalized = normalizePhone(phone);
+                                if (normalized) {
+                                    phonesDict[normalized] = {phone: phone, type: 'whatsapp'};
                                 }
-                            });
-                        }
+                            }
+                        });
+                        
+                        // Processar móveis (menor prioridade que WhatsApp)
+                        (result.cpf_data.telefones_moveis || []).forEach(phone => {
+                            if (phone) {
+                                const normalized = normalizePhone(phone);
+                                if (normalized && !phonesDict[normalized]) {
+                                    phonesDict[normalized] = {phone: phone, type: 'movel'};
+                                }
+                            }
+                        });
+                        
+                        // Processar fixos (menor prioridade)
+                        (result.cpf_data.telefones_fixos || []).forEach(phone => {
+                            if (phone) {
+                                const normalized = normalizePhone(phone);
+                                if (normalized && !phonesDict[normalized]) {
+                                    phonesDict[normalized] = {phone: phone, type: 'fixo'};
+                                }
+                            }
+                        });
+                        
+                        // Renderizar telefones únicos
+                        Object.values(phonesDict).forEach(phoneInfo => {
+                            let icon = 'fas fa-phone';
+                            if (phoneInfo.type === 'movel') {
+                                icon = 'fas fa-mobile-alt';
+                            } else if (phoneInfo.type === 'whatsapp') {
+                                icon = 'fab fa-whatsapp';
+                            }
+                            const badge = document.createElement('span');
+                            badge.className = 'badge bg-success me-1';
+                            badge.innerHTML = `<i class="${icon} me-1"></i>${phoneInfo.phone}`;
+                            dataDiv.appendChild(badge);
+                        });
                         
                         // Adicionar emails
                         if (result.cpf_data.emails) {

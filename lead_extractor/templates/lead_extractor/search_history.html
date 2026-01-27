@@ -245,19 +245,13 @@
                                                     {% if socio.cpf_data.dados_gerais.nome %}
                                                     <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
                                                     {% endif %}
-                                                    {% for phone in socio.cpf_data.telefones_fixos %}
-                                                        {% if phone %}
-                                                        <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone }}</span>
-                                                        {% endif %}
-                                                    {% endfor %}
-                                                    {% for phone in socio.cpf_data.telefones_moveis %}
-                                                        {% if phone %}
-                                                        <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone }}</span>
-                                                        {% endif %}
-                                                    {% endfor %}
-                                                    {% for phone in socio.cpf_data.whatsapps %}
-                                                        {% if phone %}
-                                                        <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone }}</span>
+                                                    {% for phone_info in socio.cpf_data|get_unique_phones %}
+                                                        {% if phone_info.type == 'fixo' %}
+                                                        <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone_info.phone }}</span>
+                                                        {% elif phone_info.type == 'movel' %}
+                                                        <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone_info.phone }}</span>
+                                                        {% elif phone_info.type == 'whatsapp' %}
+                                                        <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone_info.phone }}</span>
                                                         {% endif %}
                                                     {% endfor %}
                                                     {% for email in socio.cpf_data.emails %}
@@ -1003,13 +997,54 @@
                 if (socio.cpf_data.dados_gerais && socio.cpf_data.dados_gerais.nome) {
                     html += `<div class="small text-muted"><i class="fas fa-user me-1"></i>${socio.cpf_data.dados_gerais.nome}</div>`;
                 }
-                const allPhones = [
-                    ...(socio.cpf_data.telefones_fixos || []),
-                    ...(socio.cpf_data.telefones_moveis || []),
-                    ...(socio.cpf_data.whatsapps || [])
-                ].filter(p => p && p.trim());
-                allPhones.forEach(phone => {
-                    html += `<span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>${phone}</span>`;
+                // Função para normalizar telefone (remover caracteres não numéricos)
+                const normalizePhone = (phone) => {
+                    if (!phone) return null;
+                    return String(phone).replace(/\D/g, '');
+                };
+                
+                // Coletar telefones únicos, priorizando WhatsApp
+                const phonesDict = {};
+                
+                // Processar WhatsApp primeiro (maior prioridade)
+                (socio.cpf_data.whatsapps || []).forEach(phone => {
+                    if (phone) {
+                        const normalized = normalizePhone(phone);
+                        if (normalized) {
+                            phonesDict[normalized] = {phone: phone, type: 'whatsapp'};
+                        }
+                    }
+                });
+                
+                // Processar móveis (menor prioridade que WhatsApp)
+                (socio.cpf_data.telefones_moveis || []).forEach(phone => {
+                    if (phone) {
+                        const normalized = normalizePhone(phone);
+                        if (normalized && !phonesDict[normalized]) {
+                            phonesDict[normalized] = {phone: phone, type: 'movel'};
+                        }
+                    }
+                });
+                
+                // Processar fixos (menor prioridade)
+                (socio.cpf_data.telefones_fixos || []).forEach(phone => {
+                    if (phone) {
+                        const normalized = normalizePhone(phone);
+                        if (normalized && !phonesDict[normalized]) {
+                            phonesDict[normalized] = {phone: phone, type: 'fixo'};
+                        }
+                    }
+                });
+                
+                // Renderizar telefones únicos
+                Object.values(phonesDict).forEach(phoneInfo => {
+                    let icon = 'fas fa-phone';
+                    if (phoneInfo.type === 'movel') {
+                        icon = 'fas fa-mobile-alt';
+                    } else if (phoneInfo.type === 'whatsapp') {
+                        icon = 'fab fa-whatsapp';
+                    }
+                    html += `<span class="badge bg-success me-1"><i class="${icon} me-1"></i>${phoneInfo.phone}</span>`;
                 });
                 const emails = (socio.cpf_data.emails || []).filter(e => e && e.trim());
                 emails.forEach(email => {
@@ -1953,16 +1988,56 @@
                         dataDiv.innerHTML = '';
                         
                         // Combinar telefones fixos e móveis (filtrando vazios)
-                        const allPhones = [
-                            ...(result.data.telefones_fixos || []),
-                            ...(result.data.telefones_moveis || []),
-                            ...(result.data.whatsapps || [])
-                        ].filter(p => p && p.trim());
+                        // Função para normalizar telefone (remover caracteres não numéricos)
+                        const normalizePhone = (phone) => {
+                            if (!phone) return null;
+                            return String(phone).replace(/\D/g, '');
+                        };
                         
-                        allPhones.forEach(phone => {
+                        // Coletar telefones únicos, priorizando WhatsApp
+                        const phonesDict = {};
+                        
+                        // Processar WhatsApp primeiro (maior prioridade)
+                        (result.data.whatsapps || []).forEach(phone => {
+                            if (phone) {
+                                const normalized = normalizePhone(phone);
+                                if (normalized) {
+                                    phonesDict[normalized] = {phone: phone, type: 'whatsapp'};
+                                }
+                            }
+                        });
+                        
+                        // Processar móveis (menor prioridade que WhatsApp)
+                        (result.data.telefones_moveis || []).forEach(phone => {
+                            if (phone) {
+                                const normalized = normalizePhone(phone);
+                                if (normalized && !phonesDict[normalized]) {
+                                    phonesDict[normalized] = {phone: phone, type: 'movel'};
+                                }
+                            }
+                        });
+                        
+                        // Processar fixos (menor prioridade)
+                        (result.data.telefones_fixos || []).forEach(phone => {
+                            if (phone) {
+                                const normalized = normalizePhone(phone);
+                                if (normalized && !phonesDict[normalized]) {
+                                    phonesDict[normalized] = {phone: phone, type: 'fixo'};
+                                }
+                            }
+                        });
+                        
+                        // Renderizar telefones únicos
+                        Object.values(phonesDict).forEach(phoneInfo => {
+                            let icon = 'fas fa-phone';
+                            if (phoneInfo.type === 'movel') {
+                                icon = 'fas fa-mobile-alt';
+                            } else if (phoneInfo.type === 'whatsapp') {
+                                icon = 'fab fa-whatsapp';
+                            }
                             const badge = document.createElement('span');
                             badge.className = 'badge bg-success me-1';
-                            badge.innerHTML = '<i class="fas fa-phone me-1"></i>' + phone;
+                            badge.innerHTML = `<i class="${icon} me-1"></i>${phoneInfo.phone}`;
                             dataDiv.appendChild(badge);
                         });
                         

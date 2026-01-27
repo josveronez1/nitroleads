@@ -59,3 +59,41 @@ def has_unenriched_partners(viper_data):
         if socio.get('DOCUMENTO') and not socio.get('cpf_enriched'):
             return True
     return False
+
+@register.filter
+def get_unique_phones(cpf_data):
+    """
+    Retorna telefones únicos, priorizando WhatsApp quando há duplicatas.
+    Retorna lista de dicts: [{'phone': '123', 'type': 'whatsapp'}, ...]
+    """
+    if not cpf_data:
+        return []
+    
+    # Normalizar números (remover caracteres não numéricos)
+    def normalize_phone(phone):
+        if not phone:
+            return None
+        return re.sub(r'\D', '', str(phone))
+    
+    # Coletar todos os telefones com seus tipos
+    phones_dict = {}  # {numero_normalizado: {'phone': original, 'type': tipo}}
+    
+    # Processar WhatsApp primeiro (maior prioridade)
+    for phone in cpf_data.get('whatsapps', []):
+        normalized = normalize_phone(phone)
+        if normalized:
+            phones_dict[normalized] = {'phone': phone, 'type': 'whatsapp'}
+    
+    # Processar móveis (menor prioridade que WhatsApp)
+    for phone in cpf_data.get('telefones_moveis', []):
+        normalized = normalize_phone(phone)
+        if normalized and normalized not in phones_dict:
+            phones_dict[normalized] = {'phone': phone, 'type': 'movel'}
+    
+    # Processar fixos (menor prioridade)
+    for phone in cpf_data.get('telefones_fixos', []):
+        normalized = normalize_phone(phone)
+        if normalized and normalized not in phones_dict:
+            phones_dict[normalized] = {'phone': phone, 'type': 'fixo'}
+    
+    return list(phones_dict.values())

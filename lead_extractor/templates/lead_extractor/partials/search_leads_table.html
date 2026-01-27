@@ -70,19 +70,13 @@
                                     {% if socio.cpf_data.dados_gerais.nome %}
                                     <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
                                     {% endif %}
-                                    {% for phone in socio.cpf_data.telefones_fixos %}
-                                        {% if phone %}
-                                        <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone }}</span>
-                                        {% endif %}
-                                    {% endfor %}
-                                    {% for phone in socio.cpf_data.telefones_moveis %}
-                                        {% if phone %}
-                                        <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone }}</span>
-                                        {% endif %}
-                                    {% endfor %}
-                                    {% for phone in socio.cpf_data.whatsapps %}
-                                        {% if phone %}
-                                        <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone }}</span>
+                                    {% for phone_info in socio.cpf_data|get_unique_phones %}
+                                        {% if phone_info.type == 'fixo' %}
+                                        <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone_info.phone }}</span>
+                                        {% elif phone_info.type == 'movel' %}
+                                        <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone_info.phone }}</span>
+                                        {% elif phone_info.type == 'whatsapp' %}
+                                        <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone_info.phone }}</span>
                                         {% endif %}
                                     {% endfor %}
                                     {% for email in socio.cpf_data.emails %}
