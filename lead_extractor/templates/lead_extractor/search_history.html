@@ -434,7 +434,17 @@
     // Abrir pesquisa em modal fullscreen
     function openSearchFullscreen(searchId) {
         const searchCard = document.getElementById(`search-card-${searchId}`);
-        if (!searchCard) return;
+        if (!searchCard) {
+            console.error('Card de pesquisa não encontrado:', searchId);
+            return;
+        }
+        
+        // Verificar se o modal existe
+        const modal = document.getElementById('searchFullscreenModal');
+        if (!modal) {
+            console.error('Modal fullscreen não encontrado no DOM');
+            return;
+        }
         
         // Extrair dados do card
         const title = searchCard.querySelector('.card-header h5')?.textContent.trim() || '';
@@ -442,10 +452,19 @@
         const creditsUsed = searchCard.querySelector('.badge.bg-secondary')?.textContent || '0';
         
         // Atualizar título do modal
-        document.getElementById('searchFullscreenTitle').innerHTML = `<i class="fas fa-search me-2"></i>${title}`;
-        document.getElementById('searchFullscreenQuery').textContent = title;
-        document.getElementById('searchFullscreenResults').textContent = resultsCount;
-        document.getElementById('searchFullscreenCredits').textContent = creditsUsed;
+        const queryElement = document.getElementById('searchFullscreenQuery');
+        const resultsElement = document.getElementById('searchFullscreenResults');
+        const creditsElement = document.getElementById('searchFullscreenCredits');
+        
+        if (queryElement) {
+            queryElement.textContent = title;
+        }
+        if (resultsElement) {
+            resultsElement.textContent = resultsCount;
+        }
+        if (creditsElement) {
+            creditsElement.textContent = creditsUsed;
+        }
         
         // Link de exportação
         const exportLink = document.getElementById('searchFullscreenExport');
@@ -469,15 +488,23 @@
             }
         }
         
-        if (leadsTable) {
-            document.getElementById('searchFullscreenBody').innerHTML = leadsTable;
-        } else {
-            // Se collapse não existe ou não tem tabela, mostrar mensagem
-            document.getElementById('searchFullscreenBody').innerHTML = '<div class="alert alert-info">Clique em "Ver leads" no card da pesquisa para carregar os dados primeiro.</div>';
+        const modalBody = document.getElementById('searchFullscreenBody');
+        if (modalBody) {
+            if (leadsTable) {
+                modalBody.innerHTML = leadsTable;
+            } else {
+                // Se collapse não existe ou não tem tabela, mostrar mensagem
+                modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" no card da pesquisa para carregar os dados primeiro.</div>';
+            }
         }
         
-        const modal = new bootstrap.Modal(document.getElementById('searchFullscreenModal'));
-        modal.show();
+        const modalElement = document.getElementById('searchFullscreenModal');
+        if (modalElement) {
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+        } else {
+            console.error('Modal fullscreen não encontrado');
+        }
     }
     
     // Funções para mostrar modais ao invés de alerts

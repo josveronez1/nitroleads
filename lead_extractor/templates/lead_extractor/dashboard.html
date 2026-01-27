@@ -489,8 +489,18 @@
 
     // Abrir detalhes do lead
     function openLeadDetails(leadIndex) {
-        if (typeof leadsData === 'undefined' || !leadsData || !leadsData[leadIndex]) {
-            console.error('Lead não encontrado no índice:', leadIndex);
+        if (typeof leadsData === 'undefined' || !leadsData) {
+            console.error('leadsData não está definido');
+            return;
+        }
+        
+        if (!Array.isArray(leadsData)) {
+            console.error('leadsData não é um array:', typeof leadsData);
+            return;
+        }
+        
+        if (leadIndex < 0 || leadIndex >= leadsData.length || !leadsData[leadIndex]) {
+            console.error('Lead não encontrado no índice:', leadIndex, 'de', leadsData.length);
             return;
         }
         
