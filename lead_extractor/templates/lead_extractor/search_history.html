@@ -842,9 +842,88 @@
             return;
         }
         
-        // Recarregar a célula de sócios via AJAX ou atualizar manualmente
-        // Por enquanto, vamos recarregar apenas a parte necessária
-        location.reload();
+        const socios = viperData.socios_qsa.socios;
+        let partnersList = partnersCell.querySelector(`#partners-list-${leadId}`);
+        
+        if (!partnersList) {
+            partnersList = document.createElement('div');
+            partnersList.className = 'partners-list';
+            partnersList.id = `partners-list-${leadId}`;
+            partnersCell.innerHTML = '';
+            partnersCell.appendChild(partnersList);
+        }
+        
+        // Limpar e recriar lista de sócios
+        partnersList.innerHTML = '';
+        
+        socios.forEach((socio, index) => {
+            const socioItem = document.createElement('div');
+            socioItem.className = 'socio-item mb-2';
+            socioItem.setAttribute('data-socio-cpf', socio.DOCUMENTO || '');
+            
+            let html = `
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <strong class="small">${socio.NOME || 'N/A'}</strong>
+                        <span class="text-muted small ms-1">(${socio.CARGO || 'Sócio'})</span>
+                        ${socio.DOCUMENTO ? `<br><span class="text-muted small">CPF: ${socio.DOCUMENTO}</span>` : ''}
+                    </div>
+                    ${socio.DOCUMENTO ? `
+                    <input type="checkbox" class="cpf-checkbox ms-2" 
+                           data-cpf="${socio.DOCUMENTO}"
+                           data-lead-id="${leadId}"
+                           data-socio-name="${socio.NOME || 'N/A'}"
+                           id="cpf-${leadId}-${index + 1}"
+                           style="display: none;">
+                    ` : ''}
+                </div>
+            `;
+            
+            if (socio.cpf_enriched && socio.cpf_data) {
+                html += '<div class="mt-1 cpf-data">';
+                if (socio.cpf_data.dados_gerais && socio.cpf_data.dados_gerais.nome) {
+                    html += `<div class="small text-muted"><i class="fas fa-user me-1"></i>${socio.cpf_data.dados_gerais.nome}</div>`;
+                }
+                const allPhones = [
+                    ...(socio.cpf_data.telefones_fixos || []),
+                    ...(socio.cpf_data.telefones_moveis || []),
+                    ...(socio.cpf_data.whatsapps || [])
+                ].filter(p => p && p.trim());
+                allPhones.forEach(phone => {
+                    html += `<span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>${phone}</span>`;
+                });
+                const emails = (socio.cpf_data.emails || []).filter(e => e && e.trim());
+                emails.forEach(email => {
+                    html += `<span class="badge bg-info me-1"><i class="fas fa-envelope me-1"></i>${email}</span>`;
+                });
+                if (allPhones.length === 0 && emails.length === 0) {
+                    html += '<span class="text-muted small">Nenhum contato encontrado</span>';
+                }
+                html += '</div>';
+            }
+            
+            socioItem.innerHTML = html;
+            partnersList.appendChild(socioItem);
+        });
+        
+        // Re-anexar event listeners para botões de CPF
+        setTimeout(() => {
+            const searchBtn = partnersCell.querySelector(`#search-cpf-btn-${leadId}`);
+            const cancelBtn = partnersCell.querySelector(`#cancel-cpf-btn-${leadId}`);
+            
+            if (searchBtn) {
+                searchBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    toggleCpfSelection(leadId);
+                };
+            }
+            if (cancelBtn) {
+                cancelBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    cancelCpfSelection(leadId);
+                };
+            }
+        }, 100);
     }
     
     // Sistema de polling para atualização em tempo real
