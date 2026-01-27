@@ -146,7 +146,7 @@
                     <button class="btn btn-sm btn-primary ms-2" type="button" 
                             onclick="event.stopPropagation(); togglePartnersSelection({{ search.id }})" 
                             id="search-partners-btn-{{ search.id }}">
-                        <i class="fas fa-users"></i> Buscar Dados dos Sócios
+                        <i class="fas fa-users"></i> Buscar Quadro Societário
                     </button>
                     {% endif %}
                 </div>
@@ -154,7 +154,7 @@
             <!-- Modo seleção de empresas para buscar sócios -->
             <div id="partners-selection-{{ search.id }}" style="display: none;" class="mt-3" onclick="event.stopPropagation();">
                 <div class="alert alert-info">
-                    <h6 class="mb-2"><i class="fas fa-info-circle"></i> Selecione as empresas para buscar dados dos sócios</h6>
+                    <h6 class="mb-2"><i class="fas fa-info-circle"></i> Selecione as empresas para buscar quadro societário</h6>
                     <p class="mb-2 small">Será debitado <strong>1 crédito por empresa</strong> selecionada.</p>
                     <div class="mt-2">
                         <button class="btn btn-sm btn-primary" type="button" 
@@ -462,7 +462,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" id="searchFullscreenPartnersBtn" onclick="event.stopPropagation();">
-                    <i class="fas fa-users me-1"></i>Buscar Dados dos Sócios
+                    <i class="fas fa-users me-1"></i>Buscar Quadro Societário
                 </button>
                 <a href="#" id="searchFullscreenExport" class="btn btn-outline-success" onclick="event.stopPropagation();">
                     <i class="fas fa-download me-1"></i>Exportar CSV
@@ -516,7 +516,7 @@
         const partnersBtn = document.getElementById('searchFullscreenPartnersBtn');
         if (partnersBtn) {
             // Resetar botão para estado inicial
-            partnersBtn.innerHTML = '<i class="fas fa-users me-1"></i>Buscar Dados dos Sócios';
+            partnersBtn.innerHTML = '<i class="fas fa-users me-1"></i>Buscar Quadro Societário';
             partnersBtn.classList.remove('btn-success');
             partnersBtn.classList.add('btn-primary');
             partnersBtn.style.display = '';
@@ -619,7 +619,7 @@
                 // Resetar botão de buscar sócios quando modal fecha
                 const partnersBtn = document.getElementById('searchFullscreenPartnersBtn');
                 if (partnersBtn) {
-                    partnersBtn.innerHTML = '<i class="fas fa-users me-1"></i>Buscar Dados dos Sócios';
+                    partnersBtn.innerHTML = '<i class="fas fa-users me-1"></i>Buscar Quadro Societário';
                     partnersBtn.classList.remove('btn-success');
                     partnersBtn.classList.add('btn-primary');
                     partnersBtn.style.display = '';
@@ -803,7 +803,7 @@
                 .filter(id => !isNaN(id));
             
             if (selectedLeads.length === 0) {
-                showAlert('Selecione pelo menos uma empresa para buscar dados dos sócios.', 'warning');
+                showAlert('Selecione pelo menos uma empresa para buscar quadro societário.', 'warning');
                 return;
             }
             
@@ -1490,7 +1490,7 @@
             console.log('Leads selecionados:', leadIds);
             
             if (leadIds.length === 0) {
-                showAlert('Selecione pelo menos uma empresa para buscar dados dos sócios.', 'warning');
+                showAlert('Selecione pelo menos uma empresa para buscar quadro societário.', 'warning');
                 return;
             }
             
