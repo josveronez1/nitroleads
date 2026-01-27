@@ -814,7 +814,8 @@
     // Controlar visibilidade dos botões quando a lista estiver expandida
     document.addEventListener('DOMContentLoaded', function() {
         // Para cada card de pesquisa
-        {% for search in searches %}
+        {% for search_data in searches_with_partners_status %}
+        {% with search=search_data.search %}
         const collapseElement{{ search.id }} = document.getElementById('search-{{ search.id }}');
         const actionButtons{{ search.id }} = document.getElementById('action-buttons-{{ search.id }}');
         const toggleBtn{{ search.id }} = document.getElementById('toggle-leads-btn-{{ search.id }}');
@@ -847,6 +848,7 @@
                 saveExpandedSearches();
             });
         }
+        {% endwith %}
         {% endfor %}
         
         // Restaurar estado de expansão
