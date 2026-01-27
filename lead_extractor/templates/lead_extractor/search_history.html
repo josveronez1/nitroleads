@@ -433,16 +433,17 @@
 <script>
     // Abrir pesquisa em modal fullscreen
     function openSearchFullscreen(searchId) {
+        console.log('openSearchFullscreen chamado com searchId:', searchId);
+        
         const searchCard = document.getElementById(`search-card-${searchId}`);
         if (!searchCard) {
-            console.error('Card de pesquisa não encontrado:', searchId);
+            alert('Card não encontrado');
             return;
         }
         
-        // Verificar se o modal existe
-        const modal = document.getElementById('searchFullscreenModal');
-        if (!modal) {
-            console.error('Modal fullscreen não encontrado no DOM');
+        const modalElement = document.getElementById('searchFullscreenModal');
+        if (!modalElement) {
+            alert('Modal não encontrado no DOM');
             return;
         }
         
@@ -451,67 +452,54 @@
         const resultsCount = searchCard.querySelector('.badge.bg-primary')?.textContent || '0';
         const creditsUsed = searchCard.querySelector('.badge.bg-secondary')?.textContent || '0';
         
-        // Atualizar título do modal
+        // Atualizar conteúdo do modal
         const queryElement = document.getElementById('searchFullscreenQuery');
         const resultsElement = document.getElementById('searchFullscreenResults');
         const creditsElement = document.getElementById('searchFullscreenCredits');
         
-        if (queryElement) {
-            queryElement.textContent = title;
-        }
-        if (resultsElement) {
-            resultsElement.textContent = resultsCount;
-        }
-        if (creditsElement) {
-            creditsElement.textContent = creditsUsed;
-        }
+        if (queryElement) queryElement.textContent = title;
+        if (resultsElement) resultsElement.textContent = resultsCount;
+        if (creditsElement) creditsElement.textContent = creditsUsed;
         
         // Link de exportação
         const exportLink = document.getElementById('searchFullscreenExport');
-        const exportUrl = `{% url 'export_csv_search' 0 %}`.replace('0', searchId);
-        exportLink.href = exportUrl;
+        if (exportLink) {
+            exportLink.href = `{% url 'export_csv_search' 0 %}`.replace('0', searchId);
+        }
         
-        // Buscar tabela de leads do collapse (já renderizada)
+        // Buscar tabela de leads
         const collapseElement = document.getElementById(`search-${searchId}`);
-        let leadsTable = '';
-        
-        if (collapseElement) {
-            // Copiar HTML do collapse (tabela já renderizada)
-            const tableContainer = collapseElement.querySelector('.table-responsive');
-            if (tableContainer) {
-                leadsTable = tableContainer.outerHTML;
-            } else {
-                const table = collapseElement.querySelector('table');
-                if (table) {
-                    leadsTable = '<div class="table-responsive">' + table.outerHTML + '</div>';
-                }
-            }
-        }
-        
         const modalBody = document.getElementById('searchFullscreenBody');
+        
         if (modalBody) {
-            if (leadsTable) {
-                modalBody.innerHTML = leadsTable;
+            if (collapseElement) {
+                const tableContainer = collapseElement.querySelector('.table-responsive');
+                const table = collapseElement.querySelector('table');
+                if (tableContainer) {
+                    modalBody.innerHTML = tableContainer.outerHTML;
+                } else if (table) {
+                    modalBody.innerHTML = '<div class="table-responsive">' + table.outerHTML + '</div>';
+                } else {
+                    modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
+                }
             } else {
-                // Se collapse não existe ou não tem tabela, mostrar mensagem
-                modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" no card da pesquisa para carregar os dados primeiro.</div>';
+                modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
             }
         }
         
-        const modalElement = document.getElementById('searchFullscreenModal');
-        if (modalElement) {
-            // Reutilizar instância existente ou criar nova
-            let modal = bootstrap.Modal.getInstance(modalElement);
-            if (!modal) {
-                modal = new bootstrap.Modal(modalElement, {
-                    backdrop: true,
-                    keyboard: true,
-                    focus: true
-                });
-            }
+        // Mostrar modal
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = new bootstrap.Modal(modalElement);
             modal.show();
         } else {
-            console.error('Modal fullscreen não encontrado');
+            // Fallback manual
+            modalElement.classList.add('show');
+            modalElement.style.display = 'block';
+            modalElement.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop fade show';
+            document.body.appendChild(backdrop);
         }
     }
     
