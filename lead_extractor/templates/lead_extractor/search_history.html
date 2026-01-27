@@ -7,21 +7,10 @@
 <style>
     .search-card {
         transition: transform 0.2s, box-shadow 0.2s;
-        cursor: pointer;
     }
     .search-card:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
-    }
-    .search-card .card-header button,
-    .search-card .card-header .dropdown,
-    .search-card .card-header a {
-        cursor: pointer;
-    }
-    .search-card .card-header button:hover,
-    .search-card .card-header .dropdown:hover {
-        z-index: 10;
-        position: relative;
     }
     .enrichment-mode .lead-checkbox {
         display: block;
@@ -51,7 +40,7 @@
 
 {% if searches %}
     {% for search in searches %}
-    <div class="card mb-3 search-card" id="search-card-{{ search.id }}" onclick="openSearchFullscreen({{ search.id }})">
+    <div class="card mb-3 search-card" id="search-card-{{ search.id }}">
         <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
@@ -94,9 +83,13 @@
                     </div>
                     <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
                             data-bs-target="#search-{{ search.id }}" aria-expanded="false"
-                            id="toggle-leads-btn-{{ search.id }}"
-                            onclick="event.stopPropagation(); openSearchFullscreen({{ search.id }});">
+                            id="toggle-leads-btn-{{ search.id }}">
                         <i class="fas fa-chevron-down"></i> Ver leads
+                    </button>
+                    <button class="btn btn-sm btn-outline-info" type="button" 
+                            onclick="openSearchFullscreen({{ search.id }})"
+                            title="Abrir em tela cheia">
+                        <i class="fas fa-expand"></i>
                     </button>
                 </div>
             </div>
@@ -397,7 +390,7 @@
     </div>
 
 <!-- Modal Fullscreen para Resultados da Pesquisa -->
-<div class="modal fade" id="searchFullscreenModal" tabindex="-1" aria-labelledby="searchFullscreenTitle">
+<div class="modal fade" id="searchFullscreenModal" tabindex="-1" aria-labelledby="searchFullscreenTitle" aria-modal="true">
     <div class="modal-dialog modal-fullscreen">
         <div class="modal-content">
             <div class="modal-header border-bottom" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
@@ -513,9 +506,6 @@
             }
         }
         
-        // Limpar estado anterior do modal
-        modalElement.setAttribute('aria-hidden', 'false');
-        
         // Mostrar modal
         if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
             // Remover instância anterior se existir
@@ -523,21 +513,33 @@
             if (existingModal) {
                 existingModal.dispose();
             }
+            
             const modal = new bootstrap.Modal(modalElement, {
                 backdrop: true,
-                keyboard: true
+                keyboard: true,
+                focus: true
             });
-            modal.show();
             
-            // Garantir que aria-hidden seja false quando modal estiver visível
-            modalElement.addEventListener('shown.bs.modal', function() {
-                modalElement.setAttribute('aria-hidden', 'false');
-            });
+            // Event listeners para gerenciar aria-hidden corretamente
+            const handleShown = function() {
+                modalElement.removeAttribute('aria-hidden');
+                modalElement.setAttribute('aria-modal', 'true');
+            };
+            const handleHidden = function() {
+                modalElement.setAttribute('aria-hidden', 'true');
+                modalElement.removeAttribute('aria-modal');
+            };
+            
+            modalElement.addEventListener('shown.bs.modal', handleShown, { once: true });
+            modalElement.addEventListener('hidden.bs.modal', handleHidden, { once: true });
+            
+            modal.show();
         } else {
             // Fallback manual
             modalElement.classList.add('show');
             modalElement.style.display = 'block';
-            modalElement.setAttribute('aria-hidden', 'false');
+            modalElement.removeAttribute('aria-hidden');
+            modalElement.setAttribute('aria-modal', 'true');
             document.body.classList.add('modal-open');
             const backdrop = document.createElement('div');
             backdrop.className = 'modal-backdrop fade show';
