@@ -1152,6 +1152,40 @@ def api_search_status(request, search_id):
         return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
 
 
+@require_user_profile
+def api_search_leads(request, search_id):
+    """
+    Endpoint para obter leads de uma busca específica.
+    GET /api/search/<int:search_id>/leads/
+    Retorna HTML da tabela de leads para atualização dinâmica.
+    """
+    user_profile = request.user_profile
+    
+    try:
+        search_obj = Search.objects.get(id=search_id, user=user_profile)
+        
+        # Renderizar apenas a parte da tabela
+        from django.template.loader import render_to_string
+        from django.template import RequestContext
+        
+        leads_html = render_to_string(
+            'lead_extractor/partials/search_leads_table.html',
+            {
+                'search': search_obj,
+                'user_profile': user_profile,
+            },
+            request=request
+        )
+        
+        return HttpResponse(leads_html)
+        
+    except Search.DoesNotExist:
+        return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
+    except Exception as e:
+        logger.error(f"Erro ao obter leads da busca {search_id}: {e}", exc_info=True)
+        return JsonResponse({'error': f'Erro ao obter leads: {str(e)}'}, status=500)
+
+
 @ratelimit(key='user', rate='30/m', method='POST', block=True)  # 30 requisições por minuto por usuário
 @require_user_profile
 def enrich_leads(request, search_id):

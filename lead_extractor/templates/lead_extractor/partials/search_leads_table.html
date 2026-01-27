@@ -1,0 +1,123 @@
+{% load phone_filters %}
+<div class="table-responsive">
+    <table class="table table-sm table-hover">
+        <thead>
+            <tr>
+                <th class="partners-checkbox-header" id="partners-checkbox-header-{{ search.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
+                    <input type="checkbox" id="select-all-partners-{{ search.id }}" 
+                           onchange="toggleAllPartnersLeads({{ search.id }})"
+                           style="display: none !important;">
+                </th>
+                <th>Empresa</th>
+                <th>CNPJ</th>
+                <th>Endereço</th>
+                <th>Contatos</th>
+                <th>Sócios</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lead_access in search.lead_accesses.all %}
+            {% with lead=lead_access.lead %}
+            <tr id="lead-row-{{ lead.id }}">
+                <td class="partners-checkbox-cell" id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
+                    <input type="checkbox" class="partner-lead-checkbox" 
+                           data-lead-id="{{ lead.id }}" 
+                           data-search-id="{{ search.id }}"
+                           checked
+                           onchange="updatePartnersCost({{ search.id }})"
+                           style="display: none !important;">
+                </td>
+                <td>{{ lead.name }}</td>
+                <td>{{ lead.cnpj|default:"-" }}</td>
+                <td>{{ lead.address|default:"-" }}</td>
+                <td>
+                    {% if lead.viper_data %}
+                        {% for phone in lead.viper_data|get_phones %}
+                        <div class="badge bg-light text-dark">{{ phone|format_phone }}</div>
+                        {% endfor %}
+                        {% for email in lead.viper_data|get_emails %}
+                        <div class="badge bg-light text-dark"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-muted small">-</span>
+                    {% endif %}
+                </td>
+                <td id="partners-cell-{{ lead.id }}">
+                    {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                        <div class="partners-list" id="partners-list-{{ lead.id }}">
+                            {% for socio in lead.viper_data.socios_qsa.socios %}
+                            <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div>
+                                        <strong class="small">{{ socio.NOME|default:"N/A" }}</strong>
+                                        <span class="text-muted small ms-1">({{ socio.CARGO|default:"Sócio" }})</span>
+                                        {% if socio.DOCUMENTO %}
+                                        <br><span class="text-muted small">CPF: {{ socio.DOCUMENTO }}</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if socio.DOCUMENTO %}
+                                    <input type="checkbox" class="cpf-checkbox ms-2" 
+                                           data-cpf="{{ socio.DOCUMENTO }}"
+                                           data-lead-id="{{ lead.id }}"
+                                           data-socio-name="{{ socio.NOME|default:"N/A" }}"
+                                           id="cpf-{{ lead.id }}-{{ forloop.counter }}"
+                                           style="display: none;">
+                                    {% endif %}
+                                </div>
+                                {% if socio.cpf_enriched and socio.cpf_data %}
+                                <div class="mt-1 cpf-data">
+                                    {% if socio.cpf_data.dados_gerais.nome %}
+                                    <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
+                                    {% endif %}
+                                    {% for phone in socio.cpf_data.telefones_fixos %}
+                                        {% if phone %}
+                                        <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone }}</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% for phone in socio.cpf_data.telefones_moveis %}
+                                        {% if phone %}
+                                        <span class="badge bg-success me-1"><i class="fas fa-mobile-alt me-1"></i>{{ phone }}</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% for phone in socio.cpf_data.whatsapps %}
+                                        {% if phone %}
+                                        <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone }}</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% for email in socio.cpf_data.emails %}
+                                        {% if email %}
+                                        <span class="badge bg-info me-1"><i class="fas fa-envelope me-1"></i>{{ email }}</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% if lead.viper_data|has_unenriched_partners %}
+                        <div class="d-flex align-items-center gap-2 mt-2">
+                            <button class="btn btn-sm btn-outline-primary" 
+                                    type="button"
+                                    onclick="toggleCpfSelection({{ lead.id }})"
+                                    id="search-cpf-btn-{{ lead.id }}">
+                                <i class="fas fa-search"></i> Buscar informações dos sócios
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" 
+                                    type="button"
+                                    onclick="cancelCpfSelection({{ lead.id }})"
+                                    id="cancel-cpf-btn-{{ lead.id }}"
+                                    style="display: none;">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-muted small">-</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

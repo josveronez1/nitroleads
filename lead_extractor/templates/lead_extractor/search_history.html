@@ -995,40 +995,45 @@
                     // Atualizar conteúdo se estiver expandido - recarregar apenas a tabela
                     const collapse = document.getElementById(`search-${searchId}`);
                     if (collapse && collapse.classList.contains('show')) {
-                        // Recarregar apenas a parte da tabela via AJAX
-                        fetch(`/history/`, {
+                        // Usar a API específica para obter apenas a tabela
+                        fetch(`/api/search/${searchId}/leads/`, {
                             method: 'GET',
                             headers: {
                                 'X-CSRFToken': csrfToken
                             }
                         })
-                        .then(response => response.text())
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            return response.text();
+                        })
                         .then(html => {
-                            // Criar um elemento temporário para parsear o HTML
-                            const tempDiv = document.createElement('div');
-                            tempDiv.innerHTML = html;
-                            
-                            // Encontrar a tabela atualizada
-                            const newTable = tempDiv.querySelector(`#search-${searchId} .table-responsive`);
-                            if (newTable) {
-                                const currentTable = collapse.querySelector('.table-responsive');
-                                if (currentTable) {
-                                    currentTable.innerHTML = newTable.innerHTML;
-                                } else {
-                                    collapse.innerHTML = newTable.outerHTML;
-                                }
+                            // Atualizar apenas o conteúdo da tabela
+                            const currentTable = collapse.querySelector('.table-responsive');
+                            if (currentTable && html) {
+                                // Criar um elemento temporário para parsear o HTML
+                                const tempDiv = document.createElement('div');
+                                tempDiv.innerHTML = html;
                                 
-                                // Re-anexar event listeners
-                                reattachEventListeners(searchId);
+                                const newTable = tempDiv.querySelector('.table-responsive');
+                                if (newTable) {
+                                    currentTable.innerHTML = newTable.innerHTML;
+                                    
+                                    // Re-anexar event listeners
+                                    reattachEventListeners(searchId);
+                                    console.log(`Tabela da busca ${searchId} atualizada com sucesso!`);
+                                }
                             }
                         })
                         .catch(error => {
-                            console.error('Erro ao atualizar tabela:', error);
+                            console.error(`Erro ao atualizar tabela da busca ${searchId}:`, error);
                             // Fallback: recarregar página se falhar
                             location.reload();
                         });
                     } else {
                         // Se não estiver expandido, apenas atualizar os badges já foi feito
+                        console.log(`Busca ${searchId} completada, mas lista não está expandida`);
                     }
                 } else if (data.status === 'failed') {
                     clearInterval(searchPollingIntervals[searchId]);
