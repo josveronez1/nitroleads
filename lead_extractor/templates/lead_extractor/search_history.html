@@ -1809,46 +1809,106 @@
                     }
                     
                     if (searchId) {
+                        const csrfToken = getCsrfToken();
+                        if (!csrfToken) {
+                            console.error('Token CSRF não encontrado');
+                            return;
+                        }
+                        
+                        // Verificar se modal está aberto
+                        const modalElement = document.getElementById('searchFullscreenModal');
+                        const isModalOpen = modalElement && modalElement.classList.contains('show');
+                        
+                        // Atualizar tabela na view normal se estiver expandida
                         const collapse = document.getElementById(`search-${searchId}`);
                         if (collapse && collapse.classList.contains('show')) {
-                            console.log(`Recarregando tabela da busca ${searchId} após busca de CPF`);
-                            const csrfToken = getCsrfToken();
-                            if (csrfToken) {
-                                fetch(`/api/search/${searchId}/leads/`, {
-                                    method: 'GET',
-                                    headers: {
-                                        'X-CSRFToken': csrfToken
+                            console.log(`Recarregando tabela da busca ${searchId} após busca de CPF (view normal)`);
+                            fetch(`/api/search/${searchId}/leads/`, {
+                                method: 'GET',
+                                headers: {
+                                    'X-CSRFToken': csrfToken
+                                }
+                            })
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`HTTP error! status: ${response.status}`);
+                                }
+                                return response.text();
+                            })
+                            .then(html => {
+                                const currentTable = collapse.querySelector('.table-responsive');
+                                if (currentTable && html) {
+                                    const tempDiv = document.createElement('div');
+                                    tempDiv.innerHTML = html;
+                                    const newTable = tempDiv.querySelector('.table-responsive');
+                                    if (newTable) {
+                                        currentTable.innerHTML = newTable.innerHTML;
+                                        reattachEventListeners(searchId);
+                                        console.log(`Tabela da view normal atualizada após busca de CPF`);
                                     }
-                                })
-                                .then(response => {
-                                    if (!response.ok) {
-                                        throw new Error(`HTTP error! status: ${response.status}`);
-                                    }
-                                    return response.text();
-                                })
-                                .then(html => {
-                                    const currentTable = collapse.querySelector('.table-responsive');
-                                    if (currentTable && html) {
-                                        const tempDiv = document.createElement('div');
-                                        tempDiv.innerHTML = html;
-                                        const newTable = tempDiv.querySelector('.table-responsive');
-                                        if (newTable) {
-                                            currentTable.innerHTML = newTable.innerHTML;
-                                            reattachEventListeners(searchId);
-                                            console.log(`Tabela atualizada após busca de CPF`);
-                                        } else {
-                                            console.warn('Nova tabela não encontrada no HTML retornado');
-                                        }
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Erro ao atualizar tabela da view normal:', error);
+                            });
+                        }
+                        
+                        // Atualizar modal se estiver aberto
+                        if (isModalOpen) {
+                            console.log(`Recarregando tabela da busca ${searchId} após busca de CPF (modal)`);
+                            fetch(`/api/search/${searchId}/leads/`, {
+                                method: 'GET',
+                                headers: {
+                                    'X-CSRFToken': csrfToken
+                                }
+                            })
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`HTTP error! status: ${response.status}`);
+                                }
+                                return response.text();
+                            })
+                            .then(html => {
+                                const modalBody = document.getElementById('searchFullscreenBody');
+                                if (modalBody && html) {
+                                    const tempDiv = document.createElement('div');
+                                    tempDiv.innerHTML = html;
+                                    const newTable = tempDiv.querySelector('.table-responsive');
+                                    if (newTable) {
+                                        modalBody.innerHTML = newTable.outerHTML;
+                                        
+                                        // Re-anexar event listeners no modal
+                                        setTimeout(() => {
+                                            document.querySelectorAll('#searchFullscreenBody .search-cpf-btn').forEach(btn => {
+                                                const btnLeadId = btn.getAttribute('id')?.replace('search-cpf-btn-', '');
+                                                if (btnLeadId) {
+                                                    btn.onclick = function(e) {
+                                                        e.stopPropagation();
+                                                        toggleCpfSelection(btnLeadId);
+                                                    };
+                                                }
+                                            });
+                                            
+                                            document.querySelectorAll('#searchFullscreenBody .cancel-cpf-btn').forEach(btn => {
+                                                const btnLeadId = btn.getAttribute('id')?.replace('cancel-cpf-btn-', '');
+                                                if (btnLeadId) {
+                                                    btn.onclick = function(e) {
+                                                        e.stopPropagation();
+                                                        cancelCpfSelection(btnLeadId);
+                                                    };
+                                                }
+                                            });
+                                        }, 100);
+                                        
+                                        console.log(`Tabela do modal atualizada após busca de CPF`);
                                     } else {
-                                        console.warn('Tabela atual ou HTML não encontrado');
+                                        console.warn('Nova tabela não encontrada no HTML retornado para o modal');
                                     }
-                                })
-                                .catch(error => {
-                                    console.error('Erro ao atualizar tabela após busca de CPF:', error);
-                                });
-                            }
-                        } else {
-                            console.log(`Lista da busca ${searchId} não está expandida, não precisa atualizar tabela`);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Erro ao atualizar tabela do modal:', error);
+                            });
                         }
                     } else {
                         console.warn(`Não foi possível encontrar searchId para lead ${leadId}`);
