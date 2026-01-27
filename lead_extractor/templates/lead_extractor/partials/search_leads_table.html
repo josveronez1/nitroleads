@@ -5,7 +5,7 @@
             <tr>
                 <th class="partners-checkbox-header" id="partners-checkbox-header-{{ search.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
                     <input type="checkbox" id="select-all-partners-{{ search.id }}" 
-                           onchange="toggleAllPartnersLeads({{ search.id }})"
+                           onchange="if(document.getElementById('searchFullscreenBody')) { toggleAllPartnersLeadsInModal({{ search.id }}); } else { toggleAllPartnersLeads({{ search.id }}); }"
                            style="display: none !important;">
                 </th>
                 <th>Empresa</th>
@@ -23,7 +23,7 @@
                     <input type="checkbox" class="partner-lead-checkbox" 
                            data-lead-id="{{ lead.id }}" 
                            data-search-id="{{ search.id }}"
-                           checked
+                           {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
                            onchange="updatePartnersCost({{ search.id }})"
                            style="display: none !important;">
                 </td>

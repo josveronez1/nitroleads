@@ -28,7 +28,8 @@
         margin: 0 !important;
     }
     /* Estilo para checkboxes desabilitadas */
-    .cpf-checkbox:disabled {
+    .cpf-checkbox:disabled,
+    .partner-lead-checkbox:disabled {
         opacity: 0.5;
         cursor: not-allowed;
     }
@@ -177,7 +178,7 @@
                                     <input type="checkbox" class="partner-lead-checkbox" 
                                            data-lead-id="{{ lead.id }}" 
                                            data-search-id="{{ search.id }}"
-                                           checked
+                                           {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
                                            onchange="updatePartnersCost({{ search.id }})"
                                            style="display: none !important;">
                                 </td>
@@ -599,17 +600,37 @@
                     partnersBtn.classList.add('btn-primary');
                     partnersBtn.style.display = '';
                 }
-                // Esconder checkboxes quando modal fecha
+                // Esconder checkboxes quando modal fecha (igual à view normal)
                 const modalBody = document.getElementById('searchFullscreenBody');
                 if (modalBody) {
                     modalBody.querySelectorAll('.partner-lead-checkbox').forEach(cb => {
                         cb.style.display = 'none';
                     });
-                    modalBody.querySelectorAll('.partners-checkbox-cell').forEach(td => {
+                    const checkboxTds = Array.from(modalBody.querySelectorAll('td')).filter(td => 
+                        td.id && td.id.startsWith('partners-checkbox-')
+                    );
+                    checkboxTds.forEach(td => {
                         td.style.display = 'none';
+                        td.style.width = '0';
+                        td.style.padding = '0';
+                        td.style.border = 'none';
+                        td.style.visibility = 'hidden';
+                        const checkboxInput = td.querySelector('input[type="checkbox"]');
+                        if (checkboxInput) {
+                            checkboxInput.style.display = 'none';
+                        }
                     });
                     modalBody.querySelectorAll('.partners-checkbox-header').forEach(th => {
                         th.style.display = 'none';
+                        th.style.width = '0';
+                        th.style.padding = '0';
+                        th.style.border = 'none';
+                        th.style.visibility = 'hidden';
+                        const checkboxInput = th.querySelector('input[type="checkbox"]');
+                        if (checkboxInput) {
+                            checkboxInput.style.display = 'none';
+                            checkboxInput.checked = false;
+                        }
                     });
                 }
             }, { once: true });
@@ -661,6 +682,10 @@
         // Encontrar todos os checkboxes de leads no modal
         const checkboxes = modalBody.querySelectorAll('.partner-lead-checkbox');
         const btn = document.getElementById('searchFullscreenPartnersBtn');
+        const checkboxHeader = modalBody.querySelector('.partners-checkbox-header');
+        const checkboxTds = Array.from(modalBody.querySelectorAll('td')).filter(td => 
+            td.id && td.id.startsWith('partners-checkbox-')
+        );
         
         if (!btn) return;
         
@@ -671,34 +696,85 @@
                          window.getComputedStyle(checkboxes[0]).display !== 'none';
         
         if (!isVisible) {
-            // Mostrar checkboxes
+            // Mostrar checkboxes (igual à view normal)
+            let hasEnabledCheckboxes = false;
             checkboxes.forEach(cb => {
                 cb.style.display = 'block';
-                cb.checked = true;
+                if (!cb.disabled) {
+                    cb.checked = true;
+                    hasEnabledCheckboxes = true;
+                } else {
+                    // Manter desabilitadas não marcadas
+                    cb.checked = false;
+                }
             });
+            
+            // Se não há checkboxes habilitadas, mostrar aviso
+            if (!hasEnabledCheckboxes) {
+                showAlert('Todos os leads já possuem dados de sócios disponíveis. Não é possível buscar novamente.', 'info');
+                // Ocultar checkboxes novamente
+                checkboxes.forEach(cb => {
+                    cb.style.display = 'none';
+                });
+                checkboxTds.forEach(td => {
+                    td.style.display = 'none';
+                    td.style.width = '0';
+                    td.style.padding = '0';
+                    td.style.border = 'none';
+                    td.style.visibility = 'hidden';
+                });
+                if (checkboxHeader) {
+                    checkboxHeader.style.display = 'none';
+                    checkboxHeader.style.width = '0';
+                    checkboxHeader.style.padding = '0';
+                    checkboxHeader.style.border = 'none';
+                    checkboxHeader.style.visibility = 'hidden';
+                }
+                return;
+            }
+            
             // Mostrar coluna de checkbox na tabela
-            modalBody.querySelectorAll('.partners-checkbox-cell').forEach(td => {
+            if (checkboxHeader) {
+                checkboxHeader.style.display = 'table-cell';
+                checkboxHeader.style.width = '40px';
+                checkboxHeader.style.padding = '';
+                checkboxHeader.style.border = '';
+                checkboxHeader.style.visibility = 'visible';
+                const checkboxInput = checkboxHeader.querySelector('input[type="checkbox"]');
+                if (checkboxInput) {
+                    checkboxInput.style.display = 'block';
+                }
+            }
+            checkboxTds.forEach(td => {
                 td.style.display = 'table-cell';
                 td.style.width = '40px';
                 td.style.padding = '';
                 td.style.border = '';
                 td.style.visibility = 'visible';
+                const checkboxInput = td.querySelector('input[type="checkbox"]');
+                if (checkboxInput) {
+                    checkboxInput.style.display = 'block';
+                }
             });
-            modalBody.querySelectorAll('.partners-checkbox-header').forEach(th => {
-                th.style.display = 'table-cell';
-                th.style.width = '40px';
-                th.style.padding = '';
-                th.style.border = '';
-                th.style.visibility = 'visible';
-            });
+            
             // Atualizar botão para mostrar confirmação
-            btn.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Busca';
+            updatePartnersCostInModal(searchId);
             btn.classList.remove('btn-primary');
             btn.classList.add('btn-success');
             btn.style.display = ''; // Garantir que está visível
+            
+            // Adicionar listener para atualizar custo quando checkboxes mudarem
+            checkboxes.forEach(cb => {
+                cb.onchange = function() {
+                    updatePartnersCostInModal(searchId);
+                };
+            });
         } else {
             // Confirmar busca
-            const selectedLeads = Array.from(modalBody.querySelectorAll('.partner-lead-checkbox:checked'))
+            // Filtrar apenas checkboxes que não estão desabilitadas
+            const allChecked = modalBody.querySelectorAll('.partner-lead-checkbox:checked');
+            const selectedLeads = Array.from(allChecked)
+                .filter(cb => !cb.disabled)
                 .map(cb => parseInt(cb.getAttribute('data-lead-id')))
                 .filter(id => !isNaN(id));
             
@@ -1222,10 +1298,51 @@
                     checkboxInput.style.display = 'block';
                 }
             });
+            let hasEnabledCheckboxes = false;
             checkboxes.forEach(cb => {
                 cb.style.display = 'block';
-                cb.checked = true;
+                if (!cb.disabled) {
+                    cb.checked = true;
+                    hasEnabledCheckboxes = true;
+                } else {
+                    // Manter desabilitadas não marcadas
+                    cb.checked = false;
+                }
             });
+            
+            // Se não há checkboxes habilitadas, mostrar aviso
+            if (!hasEnabledCheckboxes) {
+                showAlert('Todos os leads já possuem dados de sócios disponíveis. Não é possível buscar novamente.', 'info');
+                // Ocultar seleção novamente
+                selectionDiv.style.display = 'none';
+                if (checkboxHeader) {
+                    checkboxHeader.style.display = 'none';
+                    checkboxHeader.style.width = '0';
+                    checkboxHeader.style.padding = '0';
+                    checkboxHeader.style.border = 'none';
+                    checkboxHeader.style.visibility = 'hidden';
+                    const checkboxInput = checkboxHeader.querySelector('input[type="checkbox"]');
+                    if (checkboxInput) {
+                        checkboxInput.style.display = 'none';
+                    }
+                }
+                checkboxTds.forEach(td => {
+                    td.style.display = 'none';
+                    td.style.width = '0';
+                    td.style.padding = '0';
+                    td.style.border = 'none';
+                    td.style.visibility = 'hidden';
+                    const checkboxInput = td.querySelector('input[type="checkbox"]');
+                    if (checkboxInput) {
+                        checkboxInput.style.display = 'none';
+                    }
+                });
+                checkboxes.forEach(cb => {
+                    cb.style.display = 'none';
+                });
+                return;
+            }
+            
             updatePartnersCost(searchId);
         } else {
             // Ocultar seleção
@@ -1260,11 +1377,33 @@
 
     // Atualizar contador de créditos conforme seleção
     function updatePartnersCost(searchId) {
-        const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
+        // Filtrar apenas checkboxes que não estão desabilitadas
+        const allCheckboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
+        const checkboxes = Array.from(allCheckboxes).filter(cb => !cb.disabled);
         const cost = checkboxes.length;
         const costSpan = document.getElementById(`partners-cost-${searchId}`);
         if (costSpan) {
             costSpan.textContent = cost;
+        }
+    }
+    
+    // Atualizar contador de créditos no modal
+    function updatePartnersCostInModal(searchId) {
+        const modalBody = document.getElementById('searchFullscreenBody');
+        if (!modalBody) return;
+        
+        // Filtrar apenas checkboxes que não estão desabilitadas
+        const allCheckboxes = modalBody.querySelectorAll('.partner-lead-checkbox:checked');
+        const checkboxes = Array.from(allCheckboxes).filter(cb => !cb.disabled);
+        const cost = checkboxes.length;
+        
+        const btn = document.getElementById('searchFullscreenPartnersBtn');
+        if (btn) {
+            if (checkboxes.length > 0) {
+                btn.innerHTML = `<i class="fas fa-check me-1"></i>Confirmar Busca (${cost} créditos)`;
+            } else {
+                btn.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Busca';
+            }
         }
     }
 
@@ -1273,9 +1412,28 @@
         const selectAll = document.getElementById(`select-all-partners-${searchId}`);
         const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox`);
         checkboxes.forEach(cb => {
-            cb.checked = selectAll.checked;
+            if (!cb.disabled) {
+                cb.checked = selectAll.checked;
+            }
         });
         updatePartnersCost(searchId);
+    }
+    
+    // Selecionar/deselecionar todos os leads no modal
+    function toggleAllPartnersLeadsInModal(searchId) {
+        const modalBody = document.getElementById('searchFullscreenBody');
+        if (!modalBody) return;
+        
+        const selectAll = modalBody.querySelector(`#select-all-partners-${searchId}`);
+        if (!selectAll) return;
+        
+        const checkboxes = modalBody.querySelectorAll('.partner-lead-checkbox');
+        checkboxes.forEach(cb => {
+            if (!cb.disabled) {
+                cb.checked = selectAll.checked;
+            }
+        });
+        updatePartnersCostInModal(searchId);
     }
 
     // Confirmar busca de sócios (aceita leadIds como parâmetro opcional para uso no modal)
@@ -1284,9 +1442,10 @@
         
         try {
             if (!leadIds) {
-                // Buscar do DOM se não fornecido
-                const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
-                leadIds = Array.from(checkboxes).map(cb => {
+                // Buscar do DOM se não fornecido (filtrar apenas checkboxes não desabilitadas)
+                const allCheckboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
+                const checkboxes = Array.from(allCheckboxes).filter(cb => !cb.disabled);
+                leadIds = checkboxes.map(cb => {
                     const leadId = cb.getAttribute('data-lead-id');
                     return leadId ? parseInt(leadId) : null;
                 }).filter(id => id !== null);
