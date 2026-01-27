@@ -1401,6 +1401,65 @@ def search_partners(request, search_id):
 
 
 @require_user_profile
+def api_partners_status(request, search_id):
+    """
+    Endpoint para verificar status de processamento de sócios.
+    POST /api/search/<int:search_id>/partners-status/
+    Body: {'lead_ids': [1, 2, 3]}
+    Retorna leads que foram atualizados com dados de sócios.
+    """
+    user_profile = request.user_profile
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+    
+    try:
+        search_obj = Search.objects.get(id=search_id, user=user_profile)
+        
+        # Obter lista de lead_ids do body
+        data = json.loads(request.body) if request.body else {}
+        lead_ids = data.get('lead_ids', [])
+        
+        if not lead_ids:
+            return JsonResponse({'error': 'Nenhum lead_id fornecido'}, status=400)
+        
+        updated_leads = []
+        all_processed = True
+        
+        for lead_id in lead_ids:
+            try:
+                lead_access = search_obj.lead_accesses.filter(lead_id=lead_id).first()
+                if not lead_access:
+                    continue
+                
+                lead = lead_access.lead
+                has_partners = has_valid_partners_data(lead)
+                
+                if has_partners:
+                    updated_leads.append({
+                        'lead_id': lead.id,
+                        'viper_data': lead.viper_data
+                    })
+                else:
+                    all_processed = False
+                    
+            except Exception as e:
+                logger.error(f"Erro ao verificar lead {lead_id}: {e}", exc_info=True)
+                all_processed = False
+        
+        return JsonResponse({
+            'updated_leads': updated_leads,
+            'all_processed': all_processed
+        })
+        
+    except Search.DoesNotExist:
+        return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
+    except Exception as e:
+        logger.error(f"Erro ao verificar status de sócios: {e}", exc_info=True)
+        return JsonResponse({'error': f'Erro ao verificar status: {str(e)}'}, status=500)
+
+
+@require_user_profile
 def search_cpf_batch(request):
     """
     Busca dados de CPF em lote para sócios selecionados.

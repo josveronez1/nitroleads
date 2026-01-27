@@ -20,8 +20,8 @@ from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
     search_by_cpf, search_by_cnpj, search_history, delete_search,
     purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success, payment_cancel,
-    viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
-    api_search_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
+    viper_queue_status, get_viper_result,     api_autocomplete_niches, api_autocomplete_locations,
+    api_search_status, api_partners_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
     password_reset_view, password_reset_confirm_view, root_redirect_view, serve_favicon
 )
 
@@ -51,6 +51,7 @@ urlpatterns = [
     path('api/autocomplete/niches/', api_autocomplete_niches, name='api_autocomplete_niches'),
     path('api/autocomplete/locations/', api_autocomplete_locations, name='api_autocomplete_locations'),
     path('api/search/<int:search_id>/status/', api_search_status, name='api_search_status'),
+    path('api/search/<int:search_id>/partners-status/', api_partners_status, name='api_partners_status'),
     path('search/<int:search_id>/enrich/', enrich_leads, name='enrich_leads'),
     path('search/<int:search_id>/partners/', search_partners, name='search_partners'),
     path('search/cpf/batch/', search_cpf_batch, name='search_cpf_batch'),
