@@ -210,6 +210,7 @@
                                                            data-lead-id="{{ lead.id }}"
                                                            data-socio-name="{{ socio.NOME|default:"N/A" }}"
                                                            id="cpf-{{ lead.id }}-{{ forloop.counter }}"
+                                                           {% if socio.cpf_enriched and socio.cpf_data %}disabled{% endif %}
                                                            style="display: none;">
                                                     {% endif %}
                                                 </div>
@@ -874,6 +875,7 @@
                            data-lead-id="${leadId}"
                            data-socio-name="${socio.NOME || 'N/A'}"
                            id="cpf-${leadId}-${index + 1}"
+                           ${socio.cpf_enriched && socio.cpf_data ? 'disabled' : ''}
                            style="display: none;">
                     ` : ''}
                 </div>
@@ -1624,9 +1626,11 @@
             partnersList = document.getElementById(`partners-list-${leadId}`);
         }
         
-        const checkboxes = partnersList ? 
-            partnersList.querySelectorAll('.cpf-checkbox:checked') : 
-            document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox:checked`);
+        // Filtrar apenas checkboxes que não estão desabilitadas
+        const allCheckboxes = partnersList ? 
+            partnersList.querySelectorAll('.cpf-checkbox') : 
+            document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        const checkboxes = Array.from(allCheckboxes).filter(cb => cb.checked && !cb.disabled);
         
         const cpfData = Array.from(checkboxes).map(cb => ({
             lead_id: parseInt(cb.dataset.leadId),

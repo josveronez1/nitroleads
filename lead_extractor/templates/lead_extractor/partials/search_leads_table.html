@@ -61,6 +61,7 @@
                                            data-lead-id="{{ lead.id }}"
                                            data-socio-name="{{ socio.NOME|default:"N/A" }}"
                                            id="cpf-{{ lead.id }}-{{ forloop.counter }}"
+                                           {% if socio.cpf_enriched and socio.cpf_data %}disabled{% endif %}
                                            style="display: none;">
                                     {% endif %}
                                 </div>
