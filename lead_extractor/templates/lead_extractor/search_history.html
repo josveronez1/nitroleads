@@ -938,6 +938,7 @@
         const csrfToken = getCsrfToken();
         if (!csrfToken) return;
         
+        console.log(`Iniciando polling para busca ${searchId}`);
         searchPollingIntervals[searchId] = setInterval(() => {
             fetch(`/api/search/${searchId}/status/`, {
                 method: 'GET',
@@ -945,16 +946,23 @@
                     'X-CSRFToken': csrfToken
                 }
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.error) {
+                    console.error(`Erro na busca ${searchId}:`, data.error);
                     clearInterval(searchPollingIntervals[searchId]);
                     delete searchPollingIntervals[searchId];
                     return;
                 }
                 
+                console.log(`Status da busca ${searchId}:`, data.status);
+                
                 // Atualizar status no card
-                const statusBadge = document.querySelector(`#search-card-${searchId} .badge`);
                 const resultsBadge = document.querySelector(`#search-card-${searchId} .badge.bg-primary`);
                 const creditsBadge = document.querySelector(`#search-card-${searchId} .badge.bg-secondary`);
                 
@@ -962,6 +970,7 @@
                     // Parar polling
                     clearInterval(searchPollingIntervals[searchId]);
                     delete searchPollingIntervals[searchId];
+                    console.log(`Busca ${searchId} completada!`);
                     
                     // Atualizar badges
                     if (resultsBadge) {
@@ -983,14 +992,48 @@
                         actionButtons.style.display = 'block';
                     }
                     
-                    // Recarregar conteúdo se estiver expandido
+                    // Atualizar conteúdo se estiver expandido - recarregar apenas a tabela
                     const collapse = document.getElementById(`search-${searchId}`);
                     if (collapse && collapse.classList.contains('show')) {
-                        location.reload();
+                        // Recarregar apenas a parte da tabela via AJAX
+                        fetch(`/history/`, {
+                            method: 'GET',
+                            headers: {
+                                'X-CSRFToken': csrfToken
+                            }
+                        })
+                        .then(response => response.text())
+                        .then(html => {
+                            // Criar um elemento temporário para parsear o HTML
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = html;
+                            
+                            // Encontrar a tabela atualizada
+                            const newTable = tempDiv.querySelector(`#search-${searchId} .table-responsive`);
+                            if (newTable) {
+                                const currentTable = collapse.querySelector('.table-responsive');
+                                if (currentTable) {
+                                    currentTable.innerHTML = newTable.innerHTML;
+                                } else {
+                                    collapse.innerHTML = newTable.outerHTML;
+                                }
+                                
+                                // Re-anexar event listeners
+                                reattachEventListeners(searchId);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Erro ao atualizar tabela:', error);
+                            // Fallback: recarregar página se falhar
+                            location.reload();
+                        });
+                    } else {
+                        // Se não estiver expandido, apenas atualizar os badges já foi feito
                     }
                 } else if (data.status === 'failed') {
                     clearInterval(searchPollingIntervals[searchId]);
                     delete searchPollingIntervals[searchId];
+                    console.log(`Busca ${searchId} falhou!`);
                     
                     // Atualizar badge para erro
                     const processingBadge = document.querySelector(`#search-card-${searchId} .badge.bg-warning`);
@@ -1001,9 +1044,35 @@
                 }
             })
             .catch(error => {
-                console.error('Erro ao verificar status da busca:', error);
+                console.error(`Erro ao verificar status da busca ${searchId}:`, error);
             });
-        }, 5000); // Polling a cada 5 segundos
+        }, 3000); // Polling a cada 3 segundos (mais frequente)
+    }
+    
+    // Função para re-anexar event listeners após atualização dinâmica
+    function reattachEventListeners(searchId) {
+        // Re-anexar listeners para botões de CPF
+        setTimeout(() => {
+            document.querySelectorAll(`#search-${searchId} .search-cpf-btn`).forEach(btn => {
+                const leadId = btn.getAttribute('id')?.replace('search-cpf-btn-', '');
+                if (leadId) {
+                    btn.onclick = function(e) {
+                        e.stopPropagation();
+                        toggleCpfSelection(leadId);
+                    };
+                }
+            });
+            
+            document.querySelectorAll(`#search-${searchId} .cancel-cpf-btn`).forEach(btn => {
+                const leadId = btn.getAttribute('id')?.replace('cancel-cpf-btn-', '');
+                if (leadId) {
+                    btn.onclick = function(e) {
+                        e.stopPropagation();
+                        cancelCpfSelection(leadId);
+                    };
+                }
+            });
+        }, 100);
     }
     
     // Controlar visibilidade dos botões quando a lista estiver expandida
