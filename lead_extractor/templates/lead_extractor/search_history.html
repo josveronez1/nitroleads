@@ -1211,23 +1211,44 @@
     function toggleCpfSelection(leadId) {
         // Buscar no modal primeiro, depois na view normal
         const modalBody = document.getElementById('searchFullscreenBody');
-        const partnersList = modalBody ? 
-            modalBody.querySelector(`#partners-list-${leadId}`) : 
-            document.getElementById(`partners-list-${leadId}`);
         
+        // Procurar botões tanto no modal quanto na view normal
+        let searchBtn = null;
+        let cancelBtn = null;
+        let partnersList = null;
+        
+        if (modalBody) {
+            // Procurar dentro do modal
+            searchBtn = modalBody.querySelector(`#search-cpf-btn-${leadId}`);
+            cancelBtn = modalBody.querySelector(`#cancel-cpf-btn-${leadId}`);
+            partnersList = modalBody.querySelector(`#partners-list-${leadId}`);
+        }
+        
+        // Se não encontrou no modal, procurar na view normal
+        if (!searchBtn) {
+            searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        }
+        if (!cancelBtn) {
+            cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+        }
+        if (!partnersList) {
+            partnersList = document.getElementById(`partners-list-${leadId}`);
+        }
+        
+        // Procurar checkboxes
         const checkboxes = partnersList ? 
             partnersList.querySelectorAll('.cpf-checkbox') : 
             document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
-        
-        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
-        const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
         
         if (checkboxes.length === 0) {
             showAlert('Nenhum sócio com CPF encontrado para este lead.', 'warning');
             return;
         }
         
-        const isVisible = checkboxes[0].style.display !== 'none' && checkboxes[0].offsetParent !== null;
+        const isVisible = checkboxes[0] && 
+                         checkboxes[0].style.display !== 'none' && 
+                         checkboxes[0].offsetParent !== null &&
+                         window.getComputedStyle(checkboxes[0]).display !== 'none';
         
         if (!isVisible) {
             // Mostrar checkboxes
@@ -1258,16 +1279,34 @@
     // Função para cancelar seleção de CPFs (funciona no modal e na view normal)
     function cancelCpfSelection(leadId) {
         const modalBody = document.getElementById('searchFullscreenBody');
-        const partnersList = modalBody ? 
-            modalBody.querySelector(`#partners-list-${leadId}`) : 
-            document.getElementById(`partners-list-${leadId}`);
         
+        // Procurar botões tanto no modal quanto na view normal
+        let searchBtn = null;
+        let cancelBtn = null;
+        let partnersList = null;
+        
+        if (modalBody) {
+            // Procurar dentro do modal
+            searchBtn = modalBody.querySelector(`#search-cpf-btn-${leadId}`);
+            cancelBtn = modalBody.querySelector(`#cancel-cpf-btn-${leadId}`);
+            partnersList = modalBody.querySelector(`#partners-list-${leadId}`);
+        }
+        
+        // Se não encontrou no modal, procurar na view normal
+        if (!searchBtn) {
+            searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        }
+        if (!cancelBtn) {
+            cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+        }
+        if (!partnersList) {
+            partnersList = document.getElementById(`partners-list-${leadId}`);
+        }
+        
+        // Procurar checkboxes
         const checkboxes = partnersList ? 
             partnersList.querySelectorAll('.cpf-checkbox') : 
             document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
-        
-        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
-        const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
         
         // Ocultar checkboxes
         checkboxes.forEach(cb => {
@@ -1288,9 +1327,29 @@
     // Buscar CPFs em lote (funciona no modal e na view normal)
     function searchCpfsBatch(leadId) {
         const modalBody = document.getElementById('searchFullscreenBody');
-        const partnersList = modalBody ? 
-            modalBody.querySelector(`#partners-list-${leadId}`) : 
-            document.getElementById(`partners-list-${leadId}`);
+        
+        // Procurar botões tanto no modal quanto na view normal
+        let searchBtn = null;
+        let cancelBtn = null;
+        let partnersList = null;
+        
+        if (modalBody) {
+            // Procurar dentro do modal
+            searchBtn = modalBody.querySelector(`#search-cpf-btn-${leadId}`);
+            cancelBtn = modalBody.querySelector(`#cancel-cpf-btn-${leadId}`);
+            partnersList = modalBody.querySelector(`#partners-list-${leadId}`);
+        }
+        
+        // Se não encontrou no modal, procurar na view normal
+        if (!searchBtn) {
+            searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
+        }
+        if (!cancelBtn) {
+            cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
+        }
+        if (!partnersList) {
+            partnersList = document.getElementById(`partners-list-${leadId}`);
+        }
         
         const checkboxes = partnersList ? 
             partnersList.querySelectorAll('.cpf-checkbox:checked') : 
@@ -1309,11 +1368,9 @@
                 partnersList.querySelectorAll('.cpf-checkbox') : 
                 document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
             allCheckboxes.forEach(cb => cb.style.display = 'none');
-            const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
             if (searchBtn) {
                 searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
             }
-            const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
             if (cancelBtn) {
                 cancelBtn.style.display = 'none';
             }
@@ -1321,7 +1378,6 @@
         }
         
         // Mostrar loading
-        const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
         const originalText = searchBtn ? searchBtn.innerHTML : '';
         if (searchBtn) {
             searchBtn.disabled = true;
@@ -1422,7 +1478,6 @@
                 }
                 
                 // Ocultar botão cancelar
-                const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
                 if (cancelBtn) {
                     cancelBtn.style.display = 'none';
                 }
@@ -1432,7 +1487,6 @@
                     searchBtn.disabled = false;
                     searchBtn.innerHTML = originalText;
                 }
-                const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
                 if (cancelBtn) {
                     cancelBtn.style.display = 'none';
                 }
@@ -1445,7 +1499,6 @@
                 searchBtn.disabled = false;
                 searchBtn.innerHTML = originalText;
             }
-            const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
             if (cancelBtn) {
                 cancelBtn.style.display = 'none';
             }
