@@ -56,6 +56,16 @@
         border-color: #dc3545;
         box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
     }
+    
+    /* Hover effect para linhas de leads clicáveis */
+    .lead-row-clickable:hover {
+        background-color: #f8f9fa !important;
+        transition: background-color 0.2s ease;
+    }
+    
+    .lead-row-clickable:hover td {
+        background-color: transparent;
+    }
 </style>
 {% endblock %}
 
@@ -160,7 +170,9 @@
                     </thead>
                     <tbody>
                         {% for item in results %}
-                        <tr>
+                        <tr class="lead-row-clickable" style="cursor: pointer;" 
+                            data-lead-index="{{ forloop.counter0 }}"
+                            onclick="openLeadDetails({{ forloop.counter0 }})">
                             <td>
                                 <div class="fw-bold text-dark">{{ item.name }}</div>
                         <div class="text-muted small mt-1">
@@ -213,7 +225,8 @@
                                 <button class="btn btn-sm btn-outline-primary ms-2 search-cpf-btn" 
                                         data-cpf="{{ socio.CPF }}"
                                         data-name="{{ socio.NOME }}"
-                                        title="Buscar dados por CPF">
+                                        title="Buscar dados por CPF"
+                                        onclick="event.stopPropagation();">
                                     <i class="fas fa-search"></i>
                                 </button>
                                 {% endif %}
@@ -231,6 +244,27 @@
             </div>
         </div>
         {% endif %}
+
+<!-- Modal de Detalhes do Lead -->
+<div class="modal fade" id="leadDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="leadDetailsTitle">
+                    <i class="fas fa-building me-2"></i><span id="leadDetailsName">-</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="leadDetailsBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Modal para resultados de busca por CPF -->
 <div class="modal fade" id="cpfResultModal" tabindex="-1">
@@ -254,46 +288,88 @@
 
 {% block extra_js %}
 <script>
-    // Autocomplete para nichos
+    // Armazenar dados dos leads em objeto JavaScript global
+    {% if results %}
+    const leadsData = [
+        {% for item in results %}
+        {
+            name: {% if item.name %}'{{ item.name|escapejs }}'{% else %}''{% endif %},
+            cnpj: {% if item.cnpj %}'{{ item.cnpj|escapejs }}'{% else %}''{% endif %},
+            address: {% if item.address %}'{{ item.address|escapejs }}'{% else %}''{% endif %},
+            phone_maps: {% if item.phone_maps %}'{{ item.phone_maps|escapejs }}'{% else %}''{% endif %},
+            viper_data: {% if item.viper_data %}{{ item.viper_data|safe }}{% else %}{}{% endif %}
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+    {% else %}
+    const leadsData = [];
+    {% endif %}
+    
+    // Autocomplete para nichos - Lista completa com filtro client-side
     (function() {
         const nicheInput = document.getElementById('niche');
         const nicheSuggestions = document.getElementById('niche-suggestions');
-        let nicheTimeout = null;
+        let allNiches = null;
+        let nicheCacheLoaded = false;
         let activeNicheIndex = -1;
         
-        nicheInput.addEventListener('input', function() {
-            const query = this.value.trim();
-            clearTimeout(nicheTimeout);
-            if (query.length < 2) {
+        // Função para renderizar sugestões filtradas
+        function renderNicheSuggestions(filtered) {
+            nicheSuggestions.innerHTML = '';
+            if (filtered.length === 0) {
                 nicheSuggestions.style.display = 'none';
                 return;
             }
-            nicheTimeout = setTimeout(() => {
-                fetch(`{% url 'api_autocomplete_niches' %}?q=${encodeURIComponent(query)}`)
+            filtered.forEach((item) => {
+                const li = document.createElement('a');
+                li.className = 'list-group-item list-group-item-action';
+                li.textContent = item.display;
+                li.href = '#';
+                li.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    nicheInput.value = item.value;
+                    nicheSuggestions.style.display = 'none';
+                });
+                nicheSuggestions.appendChild(li);
+            });
+            nicheSuggestions.style.display = 'block';
+            activeNicheIndex = -1;
+        }
+        
+        // Função para filtrar e mostrar sugestões
+        function filterAndShowNicheSuggestions(query) {
+            if (!allNiches || allNiches.length === 0) {
+                nicheSuggestions.style.display = 'none';
+                return;
+            }
+            const queryLower = query.toLowerCase();
+            const filtered = allNiches.filter(item => 
+                item.display.toLowerCase().includes(queryLower)
+            ).slice(0, 20); // Limitar exibição a 20 itens
+            renderNicheSuggestions(filtered);
+        }
+        
+        // Carregar lista completa no foco
+        nicheInput.addEventListener('focus', function() {
+            if (!nicheCacheLoaded) {
+                fetch(`{% url 'api_autocomplete_niches' %}?q=`)
                     .then(response => response.json())
                     .then(data => {
-                        if (data.results && data.results.length > 0) {
-                            nicheSuggestions.innerHTML = '';
-                            data.results.forEach((item) => {
-                                const li = document.createElement('a');
-                                li.className = 'list-group-item list-group-item-action';
-                                li.textContent = item.display;
-                                li.href = '#';
-                                li.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    nicheInput.value = item.value;
-                                    nicheSuggestions.style.display = 'none';
-                                });
-                                nicheSuggestions.appendChild(li);
-                            });
-                            nicheSuggestions.style.display = 'block';
-                            activeNicheIndex = -1;
-                        } else {
-                            nicheSuggestions.style.display = 'none';
-                        }
+                        allNiches = data.results || [];
+                        nicheCacheLoaded = true;
+                        filterAndShowNicheSuggestions(this.value);
                     })
-                    .catch(error => console.error('Erro ao buscar sugestões de nichos:', error));
-            }, 300);
+                    .catch(error => console.error('Erro ao carregar nichos:', error));
+            } else {
+                filterAndShowNicheSuggestions(this.value);
+            }
+        });
+        
+        // Filtrar conforme digita (sem delay, instantâneo)
+        nicheInput.addEventListener('input', function() {
+            if (nicheCacheLoaded && allNiches) {
+                filterAndShowNicheSuggestions(this.value);
+            }
         });
         
         nicheInput.addEventListener('keydown', function(e) {
@@ -320,46 +396,71 @@
         });
     })();
     
-    // Autocomplete para localizações
+    // Autocomplete para localizações - Lista completa com filtro client-side
     (function() {
         const locationInput = document.getElementById('location');
         const locationSuggestions = document.getElementById('location-suggestions');
-        let locationTimeout = null;
+        let allLocations = null;
+        let locationCacheLoaded = false;
         let activeLocationIndex = -1;
         
-        locationInput.addEventListener('input', function() {
-            const query = this.value.trim();
-            clearTimeout(locationTimeout);
-            if (query.length < 2) {
+        // Função para renderizar sugestões filtradas
+        function renderLocationSuggestions(filtered) {
+            locationSuggestions.innerHTML = '';
+            if (filtered.length === 0) {
                 locationSuggestions.style.display = 'none';
                 return;
             }
-            locationTimeout = setTimeout(() => {
-                fetch(`{% url 'api_autocomplete_locations' %}?q=${encodeURIComponent(query)}`)
+            filtered.forEach((item) => {
+                const li = document.createElement('a');
+                li.className = 'list-group-item list-group-item-action';
+                li.textContent = item.display;
+                li.href = '#';
+                li.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    locationInput.value = item.value;
+                    locationSuggestions.style.display = 'none';
+                });
+                locationSuggestions.appendChild(li);
+            });
+            locationSuggestions.style.display = 'block';
+            activeLocationIndex = -1;
+        }
+        
+        // Função para filtrar e mostrar sugestões
+        function filterAndShowLocationSuggestions(query) {
+            if (!allLocations || allLocations.length === 0) {
+                locationSuggestions.style.display = 'none';
+                return;
+            }
+            const queryLower = query.toLowerCase();
+            const filtered = allLocations.filter(item => 
+                item.display.toLowerCase().includes(queryLower)
+            ).slice(0, 20); // Limitar exibição a 20 itens
+            renderLocationSuggestions(filtered);
+        }
+        
+        // Carregar lista completa no foco
+        locationInput.addEventListener('focus', function() {
+            if (!locationCacheLoaded) {
+                fetch(`{% url 'api_autocomplete_locations' %}?q=`)
                     .then(response => response.json())
                     .then(data => {
-                        if (data.results && data.results.length > 0) {
-                            locationSuggestions.innerHTML = '';
-                            data.results.forEach((item) => {
-                                const li = document.createElement('a');
-                                li.className = 'list-group-item list-group-item-action';
-                                li.textContent = item.display;
-                                li.href = '#';
-                                li.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    locationInput.value = item.value;
-                                    locationSuggestions.style.display = 'none';
-                                });
-                                locationSuggestions.appendChild(li);
-                            });
-                            locationSuggestions.style.display = 'block';
-                            activeLocationIndex = -1;
-                        } else {
-                            locationSuggestions.style.display = 'none';
-                        }
+                        allLocations = data.results || [];
+                        locationCacheLoaded = true;
+                        filterAndShowLocationSuggestions(this.value);
                     })
-                    .catch(error => console.error('Erro ao buscar sugestões de localizações:', error));
-            }, 300);
+                    .catch(error => console.error('Erro ao carregar localizações:', error));
+            } else {
+                filterAndShowLocationSuggestions(this.value);
+            }
+        });
+        
+        // Filtrar conforme digita (sem delay, instantâneo)
+        locationInput.addEventListener('input', function() {
+            if (locationCacheLoaded && allLocations) {
+                filterAndShowLocationSuggestions(this.value);
+            }
         });
         
         locationInput.addEventListener('keydown', function(e) {
@@ -385,6 +486,122 @@
             }
         });
     })();
+
+    // Abrir detalhes do lead
+    function openLeadDetails(leadIndex) {
+        if (typeof leadsData === 'undefined' || !leadsData || !leadsData[leadIndex]) {
+            console.error('Lead não encontrado no índice:', leadIndex, 'leadsData:', leadsData);
+            return;
+        }
+        
+        const lead = leadsData[leadIndex];
+        const name = lead.name || '-';
+        const cnpj = lead.cnpj || '';
+        const address = lead.address || '';
+        const phoneMaps = lead.phone_maps || '';
+        const viperData = (typeof lead.viper_data === 'object' && lead.viper_data !== null) ? lead.viper_data : {};
+        
+        // Atualizar título
+        document.getElementById('leadDetailsName').textContent = name;
+        
+        // Construir HTML dos detalhes
+        let html = '<div class="row g-4">';
+        
+        // Informações Básicas
+        html += '<div class="col-md-6">';
+        html += '<div class="card h-100">';
+        html += '<div class="card-header bg-light"><h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Informações Básicas</h6></div>';
+        html += '<div class="card-body">';
+        if (cnpj) {
+            html += `<p class="mb-2"><strong>CNPJ:</strong> <span class="badge bg-secondary">${cnpj}</span></p>`;
+        }
+        if (address) {
+            html += `<p class="mb-2"><strong><i class="fas fa-map-marker-alt me-1"></i>Endereço:</strong><br>${address}</p>`;
+        }
+        if (phoneMaps) {
+            html += `<p class="mb-0"><strong><i class="fas fa-phone-alt me-1"></i>Telefone (Maps):</strong> ${phoneMaps}</p>`;
+        }
+        html += '</div></div></div>';
+        
+        // Contatos Viper
+        html += '<div class="col-md-6">';
+        html += '<div class="card h-100">';
+        html += '<div class="card-header bg-light"><h6 class="mb-0"><i class="fas fa-address-book me-2"></i>Contatos (Viper)</h6></div>';
+        html += '<div class="card-body">';
+        
+        const phones = viperData.telefones || [];
+        const emails = viperData.emails || [];
+        
+        if (phones.length > 0 || emails.length > 0) {
+            if (phones.length > 0) {
+                html += '<div class="mb-3"><strong>Telefones:</strong><div class="mt-2">';
+                phones.forEach(phone => {
+                    html += `<span class="badge bg-success me-2 mb-2"><i class="fas fa-phone me-1"></i>${phone}</span>`;
+                });
+                html += '</div></div>';
+            }
+            if (emails.length > 0) {
+                html += '<div><strong>Emails:</strong><div class="mt-2">';
+                emails.forEach(email => {
+                    html += `<span class="badge bg-info me-2 mb-2"><i class="fas fa-envelope me-1"></i>${email}</span>`;
+                });
+                html += '</div></div>';
+            }
+        } else {
+            html += '<p class="text-muted mb-0">Nenhum contato disponível</p>';
+        }
+        html += '</div></div></div>';
+        
+        // Sócios / Decisores
+        html += '<div class="col-12">';
+        html += '<div class="card">';
+        html += '<div class="card-header bg-light"><h6 class="mb-0"><i class="fas fa-users me-2"></i>Sócios / Decisores</h6></div>';
+        html += '<div class="card-body">';
+        
+        const sociosQsa = viperData.socios_qsa || {};
+        const socios = sociosQsa.socios || [];
+        
+        if (socios.length > 0) {
+            html += '<div class="row g-3">';
+            socios.forEach((socio, idx) => {
+                html += '<div class="col-md-6 col-lg-4">';
+                html += '<div class="card border">';
+                html += '<div class="card-body p-3">';
+                html += `<div class="d-flex align-items-center mb-2">`;
+                html += `<div class="avatar-initial bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px; font-weight: bold;">${(socio.NOME || '?')[0].toUpperCase()}</div>`;
+                html += `<div><strong class="d-block">${socio.NOME || 'N/A'}</strong><small class="text-muted">${socio.CARGO || 'Sócio/Admin'}</small></div>`;
+                html += '</div>';
+                if (socio.DOCUMENTO) {
+                    html += `<p class="mb-2 small"><strong>CPF:</strong> ${socio.DOCUMENTO}</p>`;
+                }
+                if (socio.CPF) {
+                    html += `<button class="btn btn-sm btn-outline-primary w-100 search-cpf-btn" data-cpf="${socio.CPF}" data-name="${socio.NOME || ''}" onclick="event.stopPropagation(); searchCpfInline('${socio.CPF}', '${(socio.NOME || '').replace(/'/g, "\\'")}')"><i class="fas fa-search me-1"></i>Buscar dados por CPF</button>`;
+                }
+                html += '</div></div></div>';
+            });
+            html += '</div>';
+        } else {
+            html += '<p class="text-muted mb-0">Sem dados de sócios disponíveis</p>';
+        }
+        html += '</div></div></div>';
+        
+        html += '</div>'; // fecha row
+        
+        document.getElementById('leadDetailsBody').innerHTML = html;
+        
+        // Re-attach event listeners para botões de CPF dentro do modal
+        document.querySelectorAll('#leadDetailsModal .search-cpf-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const cpf = this.getAttribute('data-cpf');
+                const name = this.getAttribute('data-name');
+                searchCpfInline(cpf, name);
+            });
+        });
+        
+        const modal = new bootstrap.Modal(document.getElementById('leadDetailsModal'));
+        modal.show();
+    }
 
     // Busca por CPF inline
     function searchCpfInline(cpf, name) {

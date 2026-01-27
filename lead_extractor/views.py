@@ -1033,18 +1033,22 @@ def api_autocomplete_niches(request):
     """
     Endpoint de autocomplete para nichos.
     GET /api/autocomplete/niches/?q=adv
+    Se q estiver vazio, retorna todos os nichos ativos (até 200) para carregamento completo.
     """
     q = request.GET.get('q', '').strip()
     
-    if not q:
-        return JsonResponse({'results': []})
-    
     try:
-        # Buscar nichos que começam com a query (case insensitive)
-        niches = NormalizedNiche.objects.filter(
-            display_name__icontains=q,
-            is_active=True
-        ).order_by('display_name')[:20]
+        if q:
+            # Buscar nichos que contêm a query (case insensitive)
+            niches = NormalizedNiche.objects.filter(
+                display_name__icontains=q,
+                is_active=True
+            ).order_by('display_name')[:20]
+        else:
+            # Retornar todos os nichos ativos (para carregamento completo no front-end)
+            niches = NormalizedNiche.objects.filter(
+                is_active=True
+            ).order_by('display_name')[:200]
         
         results = [{'value': niche.display_name, 'display': niche.display_name} for niche in niches]
         
@@ -1059,19 +1063,23 @@ def api_autocomplete_locations(request):
     """
     Endpoint de autocomplete para localizações (cidades).
     GET /api/autocomplete/locations/?q=são
+    Se q estiver vazio, retorna todas as localizações ativas (até 200) para carregamento completo.
     """
     q = request.GET.get('q', '').strip()
     
-    if not q:
-        return JsonResponse({'results': []})
-    
     try:
-        # Buscar cidades que começam com a query (case insensitive)
-        # Formato esperado: "Cidade - UF"
-        locations = NormalizedLocation.objects.filter(
-            display_name__icontains=q,
-            is_active=True
-        ).order_by('state', 'city')[:20]
+        if q:
+            # Buscar cidades que contêm a query (case insensitive)
+            # Formato esperado: "Cidade - UF"
+            locations = NormalizedLocation.objects.filter(
+                display_name__icontains=q,
+                is_active=True
+            ).order_by('state', 'city')[:20]
+        else:
+            # Retornar todas as localizações ativas (para carregamento completo no front-end)
+            locations = NormalizedLocation.objects.filter(
+                is_active=True
+            ).order_by('state', 'city')[:200]
         
         results = [{'value': loc.display_name, 'display': loc.display_name} for loc in locations]
         

@@ -7,10 +7,21 @@
 <style>
     .search-card {
         transition: transform 0.2s, box-shadow 0.2s;
+        cursor: pointer;
     }
     .search-card:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
+    }
+    .search-card .card-header button,
+    .search-card .card-header .dropdown,
+    .search-card .card-header a {
+        cursor: pointer;
+    }
+    .search-card .card-header button:hover,
+    .search-card .card-header .dropdown:hover {
+        z-index: 10;
+        position: relative;
     }
     .enrichment-mode .lead-checkbox {
         display: block;
@@ -40,8 +51,8 @@
 
 {% if searches %}
     {% for search in searches %}
-    <div class="card mb-3 search-card" id="search-card-{{ search.id }}">
-        <div class="card-header">
+    <div class="card mb-3 search-card" id="search-card-{{ search.id }}" onclick="openSearchFullscreen({{ search.id }})">
+        <div class="card-header" onclick="event.stopPropagation();">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <div class="d-flex align-items-center gap-2">
@@ -68,7 +79,8 @@
                                 id="dropdownMenuButton-{{ search.id }}" 
                                 data-bs-toggle="dropdown" 
                                 aria-expanded="false"
-                                title="Mais opções">
+                                title="Mais opções"
+                                onclick="event.stopPropagation();">
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownMenuButton-{{ search.id }}">
@@ -83,7 +95,8 @@
                     </div>
                     <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
                             data-bs-target="#search-{{ search.id }}" aria-expanded="false"
-                            id="toggle-leads-btn-{{ search.id }}">
+                            id="toggle-leads-btn-{{ search.id }}"
+                            onclick="event.stopPropagation();">
                         <i class="fas fa-chevron-down"></i> Ver leads
                     </button>
                 </div>
@@ -97,13 +110,13 @@
                 <div class="col-md-3">
                     <strong>Resultados encontrados:</strong> {{ search.results_count }}
                 </div>
-                <div class="col-md-6 text-end" id="action-buttons-{{ search.id }}" style="display: none;">
-                    <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success">
+                <div class="col-md-6 text-end" id="action-buttons-{{ search.id }}" style="display: none;" onclick="event.stopPropagation();">
+                    <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success" onclick="event.stopPropagation();">
                         <i class="fas fa-download"></i> Exportar
                     </a>
                     {% if search.status == 'completed' %}
                     <button class="btn btn-sm btn-primary ms-2" type="button" 
-                            onclick="togglePartnersSelection({{ search.id }})" 
+                            onclick="event.stopPropagation(); togglePartnersSelection({{ search.id }})" 
                             id="search-partners-btn-{{ search.id }}">
                         <i class="fas fa-users"></i> Buscar Dados dos Sócios
                     </button>
@@ -111,7 +124,7 @@
                 </div>
             </div>
             <!-- Modo seleção de empresas para buscar sócios -->
-            <div id="partners-selection-{{ search.id }}" style="display: none;" class="mt-3">
+            <div id="partners-selection-{{ search.id }}" style="display: none;" class="mt-3" onclick="event.stopPropagation();">
                 <div class="alert alert-info">
                     <h6 class="mb-2"><i class="fas fa-info-circle"></i> Selecione as empresas para buscar dados dos sócios</h6>
                     <p class="mb-2 small">Será debitado <strong>1 crédito por empresa</strong> selecionada.</p>
@@ -128,7 +141,7 @@
                     </div>
                 </div>
             </div>
-            <div class="collapse mt-3" id="search-{{ search.id }}">
+            <div class="collapse mt-3" id="search-{{ search.id }}" onclick="event.stopPropagation();">
                 <div class="table-responsive">
                     <table class="table table-sm table-hover">
                         <thead>
@@ -381,12 +394,92 @@
                 </button>
             </div>
         </div>
+        </div>
+    </div>
+
+<!-- Modal Fullscreen para Resultados da Pesquisa -->
+<div class="modal fade" id="searchFullscreenModal" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="searchFullscreenTitle">
+                    <i class="fas fa-search me-2"></i><span id="searchFullscreenQuery">-</span>
+                </h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-light text-dark" id="searchFullscreenResults">0 resultados</span>
+                    <span class="badge bg-light text-dark" id="searchFullscreenCredits">0 créditos</span>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body" id="searchFullscreenBody" style="overflow-y: auto;">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" id="searchFullscreenExport" class="btn btn-outline-success" onclick="event.stopPropagation();">
+                    <i class="fas fa-download me-1"></i>Exportar CSV
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // Abrir pesquisa em modal fullscreen
+    function openSearchFullscreen(searchId) {
+        const searchCard = document.getElementById(`search-card-${searchId}`);
+        if (!searchCard) return;
+        
+        // Extrair dados do card
+        const title = searchCard.querySelector('.card-header h5')?.textContent.trim() || '';
+        const resultsCount = searchCard.querySelector('.badge.bg-primary')?.textContent || '0';
+        const creditsUsed = searchCard.querySelector('.badge.bg-secondary')?.textContent || '0';
+        
+        // Atualizar título do modal
+        document.getElementById('searchFullscreenTitle').innerHTML = `<i class="fas fa-search me-2"></i>${title}`;
+        document.getElementById('searchFullscreenQuery').textContent = title;
+        document.getElementById('searchFullscreenResults').textContent = resultsCount;
+        document.getElementById('searchFullscreenCredits').textContent = creditsUsed;
+        
+        // Link de exportação
+        const exportLink = document.getElementById('searchFullscreenExport');
+        const exportUrl = `{% url 'export_csv_search' 0 %}`.replace('0', searchId);
+        exportLink.href = exportUrl;
+        
+        // Buscar tabela de leads do collapse (já renderizada)
+        const collapseElement = document.getElementById(`search-${searchId}`);
+        let leadsTable = '';
+        
+        if (collapseElement) {
+            // Copiar HTML do collapse (tabela já renderizada)
+            const tableContainer = collapseElement.querySelector('.table-responsive');
+            if (tableContainer) {
+                leadsTable = tableContainer.outerHTML;
+            } else {
+                const table = collapseElement.querySelector('table');
+                if (table) {
+                    leadsTable = '<div class="table-responsive">' + table.outerHTML + '</div>';
+                }
+            }
+        }
+        
+        if (leadsTable) {
+            document.getElementById('searchFullscreenBody').innerHTML = leadsTable;
+        } else {
+            // Se collapse não existe ou não tem tabela, mostrar mensagem
+            document.getElementById('searchFullscreenBody').innerHTML = '<div class="alert alert-info">Clique em "Ver leads" no card da pesquisa para carregar os dados primeiro.</div>';
+        }
+        
+        const modal = new bootstrap.Modal(document.getElementById('searchFullscreenModal'));
+        modal.show();
+    }
+    
     // Funções para mostrar modais ao invés de alerts
     function showAlert(message, type = 'info') {
         const modal = new bootstrap.Modal(document.getElementById('alertModal'));
