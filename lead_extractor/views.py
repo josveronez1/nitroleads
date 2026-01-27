@@ -239,8 +239,12 @@ def dashboard(request):
         created_at__gte=today
     ).count() if user_profile else 0
     
+    # Serializar results como JSON para uso no JavaScript
+    results_json = json.dumps(results, ensure_ascii=False, default=str) if results else '[]'
+    
     context = {
         'results': results,
+        'results_json': results_json,  # JSON serializado para JavaScript (sempre definido)
         'search_term': search_term,
         'niche': niche,
         'location': location,
