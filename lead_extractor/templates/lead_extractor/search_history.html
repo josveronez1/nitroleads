@@ -1531,11 +1531,29 @@
                          window.getComputedStyle(checkboxes[0]).display !== 'none';
         
         if (!isVisible) {
-            // Mostrar checkboxes
+            // Mostrar checkboxes (apenas as que não estão desabilitadas podem ser marcadas)
+            let hasEnabledCheckboxes = false;
             checkboxes.forEach(cb => {
                 cb.style.display = 'block';
-                cb.checked = true;
+                if (!cb.disabled) {
+                    cb.checked = true;
+                    hasEnabledCheckboxes = true;
+                } else {
+                    // Manter desabilitadas não marcadas
+                    cb.checked = false;
+                }
             });
+            
+            // Se não há checkboxes habilitadas, mostrar aviso
+            if (!hasEnabledCheckboxes) {
+                showAlert('Todos os sócios já possuem dados disponíveis. Não é possível buscar novamente.', 'info');
+                // Ocultar checkboxes novamente
+                checkboxes.forEach(cb => {
+                    cb.style.display = 'none';
+                });
+                return;
+            }
+            
             if (searchBtn) {
                 searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca';
             }
