@@ -33,6 +33,18 @@
         opacity: 0.5;
         cursor: not-allowed;
     }
+    /* Estilo para nomes de sócios borrados (teaser) */
+    .blurred-partners {
+        filter: blur(4px);
+        user-select: none;
+        cursor: default;
+        opacity: 0.7;
+    }
+    .blurred-partners .blurred-name {
+        display: inline-block;
+        margin-right: 8px;
+        font-weight: 500;
+    }
     /* Modais de alerta devem aparecer sobre o modal fullscreen */
     #alertModal,
     #successModal,
@@ -194,7 +206,11 @@
                                         <div class="badge bg-light text-dark"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
                                         {% endfor %}
                                     {% else %}
-                                        <span class="text-muted small">-</span>
+                                        <div class="blurred-partners">
+                                            <div class="blurred-name">Carlos Silva</div>
+                                            <div class="blurred-name">Ana Paula Santos</div>
+                                            <div class="blurred-name">Roberto Oliveira</div>
+                                        </div>
                                     {% endif %}
                                 </td>
                                 <td id="partners-cell-{{ lead.id }}">
@@ -269,7 +285,11 @@
                                         </div>
                                         {% endif %}
                                     {% else %}
-                                        <span class="text-muted small">-</span>
+                                        <div class="blurred-partners">
+                                            <div class="blurred-name">Carlos Silva</div>
+                                            <div class="blurred-name">Ana Paula Santos</div>
+                                            <div class="blurred-name">Roberto Oliveira</div>
+                                        </div>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -920,7 +940,19 @@
             partnersCell = document.getElementById(`partners-cell-${leadId}`);
         }
         
-        if (!partnersCell || !viperData || !viperData.socios_qsa || !viperData.socios_qsa.socios) {
+        if (!partnersCell) {
+            return;
+        }
+        
+        // Se não há dados de sócios, mostrar nomes borrados
+        if (!viperData || !viperData.socios_qsa || !viperData.socios_qsa.socios) {
+            partnersCell.innerHTML = `
+                <div class="blurred-partners">
+                    <div class="blurred-name">Carlos Silva</div>
+                    <div class="blurred-name">Ana Paula Santos</div>
+                    <div class="blurred-name">Roberto Oliveira</div>
+                </div>
+            `;
             return;
         }
         
