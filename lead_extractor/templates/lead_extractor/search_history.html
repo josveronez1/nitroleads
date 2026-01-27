@@ -1680,23 +1680,46 @@
             })
         })
         .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Atualizar interface com os dados retornados
-                data.results.forEach(result => {
-                    // Procurar no modal primeiro, depois na view normal
-                    let socioItem = null;
-                    if (modalBody) {
-                        socioItem = modalBody.querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
-                    }
-                    if (!socioItem && partnersList) {
-                        socioItem = partnersList.querySelector(`.socio-item[data-socio-cpf="${result.cpf}"]`);
-                    }
-                    if (!socioItem) {
-                        socioItem = document.querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
-                    }
-                    
-                    if (socioItem && result.data) {
+            .then(data => {
+                if (data.success) {
+                    console.log(`CPFs buscados com sucesso para lead ${leadId}:`, data.results);
+                    // Atualizar interface com os dados retornados
+                    data.results.forEach(result => {
+                        // Procurar no modal primeiro, depois na view normal
+                        let socioItem = null;
+                        const cpfClean = result.cpf.replace(/[.-]/g, '');
+                        
+                        // Tentar encontrar no modal
+                        if (modalBody) {
+                            const modalPartnersList = modalBody.querySelector(`#partners-list-${leadId}`);
+                            if (modalPartnersList) {
+                                // Procurar por CPF limpo
+                                const items = modalPartnersList.querySelectorAll('.socio-item');
+                                items.forEach(item => {
+                                    const itemCpf = item.getAttribute('data-socio-cpf')?.replace(/[.-]/g, '');
+                                    if (itemCpf === cpfClean) {
+                                        socioItem = item;
+                                    }
+                                });
+                            }
+                        }
+                        
+                        // Se não encontrou no modal, procurar na view normal
+                        if (!socioItem) {
+                            const normalPartnersList = document.getElementById(`partners-list-${leadId}`);
+                            if (normalPartnersList) {
+                                const items = normalPartnersList.querySelectorAll('.socio-item');
+                                items.forEach(item => {
+                                    const itemCpf = item.getAttribute('data-socio-cpf')?.replace(/[.-]/g, '');
+                                    if (itemCpf === cpfClean) {
+                                        socioItem = item;
+                                    }
+                                });
+                            }
+                        }
+                        
+                        if (socioItem && result.data) {
+                            console.log(`Atualizando sócio com CPF ${result.cpf} no lead ${leadId}`);
                         // Adicionar dados ao sócio
                         let dataDiv = socioItem.querySelector('.cpf-data');
                         if (!dataDiv) {
@@ -1745,8 +1768,55 @@
                             noDataSpan.textContent = 'Nenhum contato encontrado';
                             dataDiv.appendChild(noDataSpan);
                         }
+                        } else {
+                            console.warn(`Sócio com CPF ${result.cpf} não encontrado no DOM para lead ${leadId}`);
+                        }
+                    });
+                    
+                    // Recarregar dados do lead para garantir que tudo está atualizado
+                    // Buscar o search_id do lead para recarregar a tabela
+                    const leadRow = document.getElementById(`lead-row-${leadId}`);
+                    let searchId = null;
+                    if (leadRow) {
+                        // Tentar encontrar o search_id através do contexto
+                        const searchCard = leadRow.closest('.search-card');
+                        if (searchCard) {
+                            const cardId = searchCard.id;
+                            searchId = cardId.replace('search-card-', '');
+                        }
                     }
-                });
+                    
+                    // Se encontrou searchId e a lista está expandida, atualizar a tabela
+                    if (searchId) {
+                        const collapse = document.getElementById(`search-${searchId}`);
+                        if (collapse && collapse.classList.contains('show')) {
+                            console.log(`Recarregando tabela da busca ${searchId} após busca de CPF`);
+                            const csrfToken = getCsrfToken();
+                            fetch(`/api/search/${searchId}/leads/`, {
+                                method: 'GET',
+                                headers: {
+                                    'X-CSRFToken': csrfToken
+                                }
+                            })
+                            .then(response => response.text())
+                            .then(html => {
+                                const currentTable = collapse.querySelector('.table-responsive');
+                                if (currentTable && html) {
+                                    const tempDiv = document.createElement('div');
+                                    tempDiv.innerHTML = html;
+                                    const newTable = tempDiv.querySelector('.table-responsive');
+                                    if (newTable) {
+                                        currentTable.innerHTML = newTable.innerHTML;
+                                        reattachEventListeners(searchId);
+                                        console.log(`Tabela atualizada após busca de CPF`);
+                                    }
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Erro ao atualizar tabela após busca de CPF:', error);
+                            });
+                        }
+                    }
                 
                 showSuccess(`CPFs buscados com sucesso! ${data.processed} CPF(s) processado(s). ${data.credits_debited} crédito(s) debitado(s).`);
                 
