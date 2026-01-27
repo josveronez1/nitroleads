@@ -27,6 +27,19 @@
         visibility: hidden !important;
         margin: 0 !important;
     }
+    /* Modais de alerta devem aparecer sobre o modal fullscreen */
+    #alertModal,
+    #successModal,
+    #errorModal,
+    #confirmModal {
+        z-index: 1060 !important;
+    }
+    #alertModal .modal-backdrop,
+    #successModal .modal-backdrop,
+    #errorModal .modal-backdrop,
+    #confirmModal .modal-backdrop {
+        z-index: 1059 !important;
+    }
 </style>
 {% endblock %}
 
@@ -814,18 +827,117 @@
     
     // Atualizar sócios de um lead específico na interface
     function updateLeadPartners(leadId, viperData) {
-        const partnersCell = document.getElementById(`partners-cell-${leadId}`);
+        // Procurar no modal primeiro, depois na view normal
+        const modalBody = document.getElementById('searchFullscreenBody');
+        let partnersCell = null;
+        
+        if (modalBody) {
+            partnersCell = modalBody.querySelector(`#partners-cell-${leadId}`);
+        }
+        if (!partnersCell) {
+            partnersCell = document.getElementById(`partners-cell-${leadId}`);
+        }
+        
         if (!partnersCell || !viperData || !viperData.socios_qsa || !viperData.socios_qsa.socios) {
             return;
         }
         
-        // Atualizar HTML dos sócios (simplificado - pode ser melhorado)
-        // Por enquanto, vamos apenas recarregar a página após um delay
-        // Uma implementação mais completa atualizaria apenas os elementos necessários
+        // Recarregar a célula de sócios via AJAX ou atualizar manualmente
+        // Por enquanto, vamos recarregar apenas a parte necessária
+        location.reload();
+    }
+    
+    // Sistema de polling para atualização em tempo real
+    let searchPollingIntervals = {};
+    
+    function startSearchPolling(searchId) {
+        // Limpar intervalo anterior se existir
+        if (searchPollingIntervals[searchId]) {
+            clearInterval(searchPollingIntervals[searchId]);
+        }
+        
+        const csrfToken = getCsrfToken();
+        if (!csrfToken) return;
+        
+        searchPollingIntervals[searchId] = setInterval(() => {
+            fetch(`/api/search/${searchId}/status/`, {
+                method: 'GET',
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    clearInterval(searchPollingIntervals[searchId]);
+                    delete searchPollingIntervals[searchId];
+                    return;
+                }
+                
+                // Atualizar status no card
+                const statusBadge = document.querySelector(`#search-card-${searchId} .badge`);
+                const resultsBadge = document.querySelector(`#search-card-${searchId} .badge.bg-primary`);
+                const creditsBadge = document.querySelector(`#search-card-${searchId} .badge.bg-secondary`);
+                
+                if (data.status === 'completed') {
+                    // Parar polling
+                    clearInterval(searchPollingIntervals[searchId]);
+                    delete searchPollingIntervals[searchId];
+                    
+                    // Atualizar badges
+                    if (resultsBadge) {
+                        resultsBadge.textContent = `${data.results_count} resultados`;
+                    }
+                    if (creditsBadge) {
+                        creditsBadge.textContent = `${data.credits_used} créditos`;
+                    }
+                    
+                    // Remover badge de processando
+                    const processingBadge = document.querySelector(`#search-card-${searchId} .badge.bg-warning`);
+                    if (processingBadge) {
+                        processingBadge.remove();
+                    }
+                    
+                    // Mostrar botões de ação
+                    const actionButtons = document.getElementById(`action-buttons-${searchId}`);
+                    if (actionButtons) {
+                        actionButtons.style.display = 'block';
+                    }
+                    
+                    // Recarregar conteúdo se estiver expandido
+                    const collapse = document.getElementById(`search-${searchId}`);
+                    if (collapse && collapse.classList.contains('show')) {
+                        location.reload();
+                    }
+                } else if (data.status === 'failed') {
+                    clearInterval(searchPollingIntervals[searchId]);
+                    delete searchPollingIntervals[searchId];
+                    
+                    // Atualizar badge para erro
+                    const processingBadge = document.querySelector(`#search-card-${searchId} .badge.bg-warning`);
+                    if (processingBadge) {
+                        processingBadge.className = 'badge bg-danger';
+                        processingBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Falhou';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao verificar status da busca:', error);
+            });
+        }, 5000); // Polling a cada 5 segundos
     }
     
     // Controlar visibilidade dos botões quando a lista estiver expandida
     document.addEventListener('DOMContentLoaded', function() {
+        // Iniciar polling para buscas em processamento
+        {% for search_data in searches_with_partners_status %}
+        {% with search=search_data.search %}
+        {% if search.status == 'processing' %}
+        startSearchPolling({{ search.id }});
+        {% endif %}
+        {% endwith %}
+        {% endfor %}
+        
         // Para cada card de pesquisa
         {% for search_data in searches_with_partners_status %}
         {% with search=search_data.search %}
@@ -1411,7 +1523,18 @@
             if (data.success) {
                 // Atualizar interface com os dados retornados
                 data.results.forEach(result => {
-                    const socioItem = (partnersList || document).querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
+                    // Procurar no modal primeiro, depois na view normal
+                    let socioItem = null;
+                    if (modalBody) {
+                        socioItem = modalBody.querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
+                    }
+                    if (!socioItem && partnersList) {
+                        socioItem = partnersList.querySelector(`.socio-item[data-socio-cpf="${result.cpf}"]`);
+                    }
+                    if (!socioItem) {
+                        socioItem = document.querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
+                    }
+                    
                     if (socioItem && result.data) {
                         // Adicionar dados ao sócio
                         let dataDiv = socioItem.querySelector('.cpf-data');
