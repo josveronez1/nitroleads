@@ -52,7 +52,7 @@
 {% if searches %}
     {% for search in searches %}
     <div class="card mb-3 search-card" id="search-card-{{ search.id }}" onclick="openSearchFullscreen({{ search.id }})">
-        <div class="card-header" onclick="event.stopPropagation();">
+        <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <div class="d-flex align-items-center gap-2">
@@ -74,13 +74,12 @@
                 <div class="text-end d-flex align-items-center gap-2">
                     <span class="badge bg-primary">{{ search.results_count }} resultados</span>
                     <span class="badge bg-secondary">{{ search.credits_used }} créditos</span>
-                    <div class="dropdown">
+                    <div class="dropdown" onclick="event.stopPropagation();">
                         <button class="btn btn-sm btn-outline-secondary" type="button" 
                                 id="dropdownMenuButton-{{ search.id }}" 
                                 data-bs-toggle="dropdown" 
                                 aria-expanded="false"
-                                title="Mais opções"
-                                onclick="event.stopPropagation();">
+                                title="Mais opções">
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownMenuButton-{{ search.id }}">
@@ -96,7 +95,7 @@
                     <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
                             data-bs-target="#search-{{ search.id }}" aria-expanded="false"
                             id="toggle-leads-btn-{{ search.id }}"
-                            onclick="event.stopPropagation();">
+                            onclick="event.stopPropagation(); openSearchFullscreen({{ search.id }});">
                         <i class="fas fa-chevron-down"></i> Ver leads
                     </button>
                 </div>
@@ -398,17 +397,21 @@
     </div>
 
 <!-- Modal Fullscreen para Resultados da Pesquisa -->
-<div class="modal fade" id="searchFullscreenModal" tabindex="-1" aria-labelledby="searchFullscreenTitle" aria-hidden="true">
+<div class="modal fade" id="searchFullscreenModal" tabindex="-1" aria-labelledby="searchFullscreenTitle">
     <div class="modal-dialog modal-fullscreen">
         <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="searchFullscreenTitle">
-                    <i class="fas fa-search me-2"></i><span id="searchFullscreenQuery">-</span>
-                </h5>
-                <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-light text-dark" id="searchFullscreenResults">0 resultados</span>
-                    <span class="badge bg-light text-dark" id="searchFullscreenCredits">0 créditos</span>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            <div class="modal-header border-bottom" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+                <div class="d-flex flex-column w-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="modal-title mb-0" id="searchFullscreenTitle" style="color: #212529;">
+                            <i class="fas fa-search me-2 text-primary"></i><span id="searchFullscreenQuery">-</span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-primary" id="searchFullscreenResults">0 resultados</span>
+                        <span class="badge bg-secondary" id="searchFullscreenCredits">0 créditos</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-body" id="searchFullscreenBody" style="overflow-y: auto;">
@@ -419,6 +422,9 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="searchFullscreenPartnersBtn" onclick="event.stopPropagation();">
+                    <i class="fas fa-users me-1"></i>Buscar Dados dos Sócios
+                </button>
                 <a href="#" id="searchFullscreenExport" class="btn btn-outline-success" onclick="event.stopPropagation();">
                     <i class="fas fa-download me-1"></i>Exportar CSV
                 </a>
@@ -467,6 +473,17 @@
             exportLink.href = `{% url 'export_csv_search' 0 %}`.replace('0', searchId);
         }
         
+        // Botão de buscar sócios - armazenar searchId no botão
+        const partnersBtn = document.getElementById('searchFullscreenPartnersBtn');
+        if (partnersBtn) {
+            partnersBtn.setAttribute('data-search-id', searchId);
+            partnersBtn.onclick = function(e) {
+                e.stopPropagation();
+                const btnSearchId = parseInt(this.getAttribute('data-search-id'));
+                togglePartnersSelectionInModal(btnSearchId);
+            };
+        }
+        
         // Buscar tabela de leads
         const collapseElement = document.getElementById(`search-${searchId}`);
         const modalBody = document.getElementById('searchFullscreenBody');
@@ -483,14 +500,48 @@
                     modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
                 }
             } else {
-                modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
+                // Se collapse não existe, tentar expandir temporariamente
+                const toggleBtn = document.getElementById(`toggle-leads-btn-${searchId}`);
+                if (toggleBtn) {
+                    toggleBtn.click(); // Expandir collapse
+                    setTimeout(() => {
+                        const collapseElement2 = document.getElementById(`search-${searchId}`);
+                        if (collapseElement2) {
+                            const tableContainer = collapseElement2.querySelector('.table-responsive');
+                            const table = collapseElement2.querySelector('table');
+                            if (tableContainer) {
+                                modalBody.innerHTML = tableContainer.outerHTML;
+                            } else if (table) {
+                                modalBody.innerHTML = '<div class="table-responsive">' + table.outerHTML + '</div>';
+                            }
+                        }
+                    }, 300);
+                } else {
+                    modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
+                }
             }
         }
         
+        // Limpar estado anterior do modal
+        modalElement.setAttribute('aria-hidden', 'false');
+        
         // Mostrar modal
         if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-            const modal = new bootstrap.Modal(modalElement);
+            // Remover instância anterior se existir
+            const existingModal = bootstrap.Modal.getInstance(modalElement);
+            if (existingModal) {
+                existingModal.dispose();
+            }
+            const modal = new bootstrap.Modal(modalElement, {
+                backdrop: true,
+                keyboard: true
+            });
             modal.show();
+            
+            // Garantir que aria-hidden seja false quando modal estiver visível
+            modalElement.addEventListener('shown.bs.modal', function() {
+                modalElement.setAttribute('aria-hidden', 'false');
+            });
         } else {
             // Fallback manual
             modalElement.classList.add('show');
@@ -499,9 +550,85 @@
             document.body.classList.add('modal-open');
             const backdrop = document.createElement('div');
             backdrop.className = 'modal-backdrop fade show';
+            backdrop.id = 'modalBackdrop';
             document.body.appendChild(backdrop);
         }
+        
+        // Re-anexar event listeners para botões de CPF dentro do modal
+        setTimeout(() => {
+            document.querySelectorAll('#searchFullscreenBody .search-cpf-btn').forEach(btn => {
+                const leadId = btn.getAttribute('id')?.replace('search-cpf-btn-', '');
+                if (leadId) {
+                    btn.onclick = function(e) {
+                        e.stopPropagation();
+                        toggleCpfSelection(leadId);
+                    };
+                }
+            });
+            
+            // Garantir que botões de cancelar CPF também funcionem
+            document.querySelectorAll('#searchFullscreenBody .cancel-cpf-btn').forEach(btn => {
+                const leadId = btn.getAttribute('id')?.replace('cancel-cpf-btn-', '');
+                if (leadId) {
+                    btn.onclick = function(e) {
+                        e.stopPropagation();
+                        cancelCpfSelection(leadId);
+                    };
+                }
+            });
+        }, 100);
     }
+    
+    // Função para buscar sócios no modal
+    function togglePartnersSelectionInModal(searchId) {
+        const modalBody = document.getElementById('searchFullscreenBody');
+        if (!modalBody) return;
+        
+        // Encontrar todos os checkboxes de leads no modal
+        const checkboxes = modalBody.querySelectorAll('.partner-lead-checkbox');
+        const isVisible = checkboxes.length > 0 && checkboxes[0] && checkboxes[0].style.display !== 'none' && checkboxes[0].offsetParent !== null;
+        
+        if (!isVisible) {
+            // Mostrar checkboxes
+            checkboxes.forEach(cb => {
+                cb.style.display = 'block';
+                cb.checked = true;
+            });
+            // Mostrar coluna de checkbox na tabela
+            modalBody.querySelectorAll('.partners-checkbox-cell').forEach(td => {
+                td.style.display = 'table-cell';
+                td.style.width = '40px';
+                td.style.padding = '';
+                td.style.border = '';
+                td.style.visibility = 'visible';
+            });
+            modalBody.querySelectorAll('.partners-checkbox-header').forEach(th => {
+                th.style.display = 'table-cell';
+                th.style.width = '40px';
+                th.style.padding = '';
+                th.style.border = '';
+                th.style.visibility = 'visible';
+            });
+            // Atualizar botão
+            const btn = document.getElementById('searchFullscreenPartnersBtn');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Busca';
+            }
+        } else {
+            // Confirmar busca
+            const selectedLeads = Array.from(modalBody.querySelectorAll('.partner-lead-checkbox:checked'))
+                .map(cb => parseInt(cb.getAttribute('data-lead-id')))
+                .filter(id => !isNaN(id));
+            
+            if (selectedLeads.length === 0) {
+                showAlert('Selecione pelo menos uma empresa para buscar dados dos sócios.', 'warning');
+                return;
+            }
+            
+            confirmPartnersSearch(searchId, selectedLeads);
+        }
+    }
+    
     
     // Funções para mostrar modais ao invés de alerts
     function showAlert(message, type = 'info') {
@@ -806,16 +933,19 @@
         updatePartnersCost(searchId);
     }
 
-    // Confirmar busca de sócios
-    function confirmPartnersSearch(searchId) {
+    // Confirmar busca de sócios (aceita leadIds como parâmetro opcional para uso no modal)
+    function confirmPartnersSearch(searchId, leadIds = null) {
         console.log('confirmPartnersSearch chamado com searchId:', searchId);
         
         try {
-            const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
-            const leadIds = Array.from(checkboxes).map(cb => {
-                const leadId = cb.getAttribute('data-lead-id');
-                return leadId ? parseInt(leadId) : null;
-            }).filter(id => id !== null);
+            if (!leadIds) {
+                // Buscar do DOM se não fornecido
+                const checkboxes = document.querySelectorAll(`#search-${searchId} .partner-lead-checkbox:checked`);
+                leadIds = Array.from(checkboxes).map(cb => {
+                    const leadId = cb.getAttribute('data-lead-id');
+                    return leadId ? parseInt(leadId) : null;
+                }).filter(id => id !== null);
+            }
             
             console.log('Leads selecionados:', leadIds);
             
@@ -1012,9 +1142,18 @@
         confirmModal.show();
     }
     
-    // Função para mostrar checkboxes de seleção de CPFs
+    // Função para mostrar checkboxes de seleção de CPFs (funciona no modal e na view normal)
     function toggleCpfSelection(leadId) {
-        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        // Buscar no modal primeiro, depois na view normal
+        const modalBody = document.getElementById('searchFullscreenBody');
+        const partnersList = modalBody ? 
+            modalBody.querySelector(`#partners-list-${leadId}`) : 
+            document.getElementById(`partners-list-${leadId}`);
+        
+        const checkboxes = partnersList ? 
+            partnersList.querySelectorAll('.cpf-checkbox') : 
+            document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        
         const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
         const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
         
@@ -1023,32 +1162,45 @@
             return;
         }
         
-        if (checkboxes[0].style.display === 'none' || !checkboxes[0].style.display) {
+        const isVisible = checkboxes[0].style.display !== 'none' && checkboxes[0].offsetParent !== null;
+        
+        if (!isVisible) {
             // Mostrar checkboxes
             checkboxes.forEach(cb => {
                 cb.style.display = 'block';
                 cb.checked = true;
             });
-            searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca';
+            if (searchBtn) {
+                searchBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Busca';
+            }
             if (cancelBtn) {
                 cancelBtn.style.display = 'inline-block';
             }
             // Adicionar listener para ESC
-            document.addEventListener('keydown', function escHandler(e) {
+            const escHandler = function(e) {
                 if (e.key === 'Escape') {
                     cancelCpfSelection(leadId);
                     document.removeEventListener('keydown', escHandler);
                 }
-            });
+            };
+            document.addEventListener('keydown', escHandler);
         } else {
             // Buscar CPFs selecionados
             searchCpfsBatch(leadId);
         }
     }
     
-    // Função para cancelar seleção de CPFs
+    // Função para cancelar seleção de CPFs (funciona no modal e na view normal)
     function cancelCpfSelection(leadId) {
-        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        const modalBody = document.getElementById('searchFullscreenBody');
+        const partnersList = modalBody ? 
+            modalBody.querySelector(`#partners-list-${leadId}`) : 
+            document.getElementById(`partners-list-${leadId}`);
+        
+        const checkboxes = partnersList ? 
+            partnersList.querySelectorAll('.cpf-checkbox') : 
+            document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+        
         const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
         const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
         
@@ -1068,9 +1220,17 @@
         }
     }
 
-    // Buscar CPFs em lote
+    // Buscar CPFs em lote (funciona no modal e na view normal)
     function searchCpfsBatch(leadId) {
-        const checkboxes = document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox:checked`);
+        const modalBody = document.getElementById('searchFullscreenBody');
+        const partnersList = modalBody ? 
+            modalBody.querySelector(`#partners-list-${leadId}`) : 
+            document.getElementById(`partners-list-${leadId}`);
+        
+        const checkboxes = partnersList ? 
+            partnersList.querySelectorAll('.cpf-checkbox:checked') : 
+            document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox:checked`);
+        
         const cpfData = Array.from(checkboxes).map(cb => ({
             lead_id: parseInt(cb.dataset.leadId),
             cpf: cb.dataset.cpf,
@@ -1080,7 +1240,10 @@
         if (cpfData.length === 0) {
             showAlert('Selecione pelo menos um sócio para buscar dados por CPF.', 'warning');
             // Ocultar checkboxes novamente
-            document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
+            const allCheckboxes = partnersList ? 
+                partnersList.querySelectorAll('.cpf-checkbox') : 
+                document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+            allCheckboxes.forEach(cb => cb.style.display = 'none');
             const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
             if (searchBtn) {
                 searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
@@ -1094,35 +1257,20 @@
         
         // Mostrar loading
         const searchBtn = document.getElementById(`search-cpf-btn-${leadId}`);
-        const originalText = searchBtn.innerHTML;
-        searchBtn.disabled = true;
-        searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
-        
-        // Obter token CSRF com múltiplas tentativas
-        let csrfToken = null;
-        
-        // Tentar função getCsrfToken
-        if (typeof getCsrfToken === 'function') {
-            csrfToken = getCsrfToken();
+        const originalText = searchBtn ? searchBtn.innerHTML : '';
+        if (searchBtn) {
+            searchBtn.disabled = true;
+            searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
         }
         
-        // Se ainda não tem, tentar diretamente
-        if (!csrfToken) {
-            const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
-            if (csrfInput && csrfInput.value) {
-                csrfToken = csrfInput.value;
-            } else {
-                // Tentar cookie diretamente
-                csrfToken = getCookie('csrftoken');
-            }
-        }
-        
-        console.log('CSRF Token obtido para CPF batch:', csrfToken ? 'Sim' : 'Não');
-        
+        // Obter token CSRF
+        const csrfToken = getCsrfToken();
         if (!csrfToken) {
             showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
-            searchBtn.disabled = false;
-            searchBtn.innerHTML = originalText;
+            if (searchBtn) {
+                searchBtn.disabled = false;
+                searchBtn.innerHTML = originalText;
+            }
             return;
         }
         
@@ -1142,7 +1290,7 @@
             if (data.success) {
                 // Atualizar interface com os dados retornados
                 data.results.forEach(result => {
-                    const socioItem = document.querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
+                    const socioItem = (partnersList || document).querySelector(`#partners-list-${leadId} .socio-item[data-socio-cpf="${result.cpf}"]`);
                     if (socioItem && result.data) {
                         // Adicionar dados ao sócio
                         let dataDiv = socioItem.querySelector('.cpf-data');
@@ -1198,9 +1346,15 @@
                 showSuccess(`CPFs buscados com sucesso! ${data.processed} CPF(s) processado(s). ${data.credits_debited} crédito(s) debitado(s).`);
                 
                 // Ocultar checkboxes
-                document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`).forEach(cb => cb.style.display = 'none');
-                searchBtn.disabled = false;
-                searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
+                const allCheckboxes = partnersList ? 
+                    partnersList.querySelectorAll('.cpf-checkbox') : 
+                    document.querySelectorAll(`#partners-list-${leadId} .cpf-checkbox`);
+                allCheckboxes.forEach(cb => cb.style.display = 'none');
+                
+                if (searchBtn) {
+                    searchBtn.disabled = false;
+                    searchBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
+                }
                 
                 // Ocultar botão cancelar
                 const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
@@ -1209,8 +1363,10 @@
                 }
             } else {
                 showError('Erro ao buscar CPFs: ' + (data.error || 'Erro desconhecido'));
-                searchBtn.disabled = false;
-                searchBtn.innerHTML = originalText;
+                if (searchBtn) {
+                    searchBtn.disabled = false;
+                    searchBtn.innerHTML = originalText;
+                }
                 const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
                 if (cancelBtn) {
                     cancelBtn.style.display = 'none';
@@ -1220,8 +1376,10 @@
         .catch(error => {
             console.error('Erro:', error);
             showError('Erro ao buscar CPFs. Tente novamente.');
-            searchBtn.disabled = false;
-            searchBtn.innerHTML = originalText;
+            if (searchBtn) {
+                searchBtn.disabled = false;
+                searchBtn.innerHTML = originalText;
+            }
             const cancelBtn = document.getElementById(`cancel-cpf-btn-${leadId}`);
             if (cancelBtn) {
                 cancelBtn.style.display = 'none';
