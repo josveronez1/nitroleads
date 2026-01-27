@@ -246,7 +246,7 @@
         {% endif %}
 
 <!-- Modal de Detalhes do Lead -->
-<div class="modal fade" id="leadDetailsModal" tabindex="-1">
+<div class="modal fade" id="leadDetailsModal" tabindex="-1" aria-labelledby="leadDetailsTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
@@ -609,8 +609,19 @@
             });
         });
         
-        const modal = new bootstrap.Modal(document.getElementById('leadDetailsModal'));
-        modal.show();
+        const modalElement = document.getElementById('leadDetailsModal');
+        if (modalElement) {
+            // Reutilizar instância existente ou criar nova
+            let modal = bootstrap.Modal.getInstance(modalElement);
+            if (!modal) {
+                modal = new bootstrap.Modal(modalElement, {
+                    backdrop: true,
+                    keyboard: true,
+                    focus: true
+                });
+            }
+            modal.show();
+        }
     }
 
     // Busca por CPF inline
