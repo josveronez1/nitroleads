@@ -33,6 +33,8 @@ AUTH_BOT_TIMEOUT = 90
 
 # Pegando as chaves do arquivo .env com segurança
 SERPER_API_KEY = config('SERPER_API_KEY', default='')
+SERPER_GL = config('SERPER_GL', default='br')
+SERPER_HL = config('SERPER_HL', default='pt-br')
 VIPER_API_KEY = config('VIPER_API_KEY', default='')
 # Nota: Removemos o VIPER_JWT_TOKEN daqui porque agora ele vem do arquivo JSON
 
@@ -212,15 +214,15 @@ def normalize_places_response(response_data, source='search'):
     return normalized
 
 
-def search_google_maps(query, num=10, start=0):
+def search_google_maps(query, num=10, page=1):
     """
     Busca empresas no Google Maps via Serper com suporte a paginação.
-    Usa endpoint /places.
+    Usa endpoint /places. Paginação via page (1-based). gl/hl para Brasil.
     
     Args:
         query: Termo de busca (ex: "Advogado em São Paulo - SP")
         num: Número de resultados por página (padrão: 10)
-        start: Offset/página inicial (padrão: 0)
+        page: Página (1-based). Serper usa page, não start.
     
     Returns:
         list: Lista de lugares encontrados
@@ -228,8 +230,10 @@ def search_google_maps(query, num=10, start=0):
     url = "https://google.serper.dev/places"
     payload = {
         "q": query,
+        "gl": SERPER_GL,
+        "hl": SERPER_HL,
         "num": num,
-        "start": start
+        "page": page
     }
     headers = {
         'X-API-KEY': SERPER_API_KEY,
@@ -237,26 +241,26 @@ def search_google_maps(query, num=10, start=0):
     }
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
-        response.raise_for_status()  # Levanta exceção para status HTTP de erro
+        response.raise_for_status()
         response_data = response.json()
         return normalize_places_response(response_data, source='places')
     except requests.RequestException as e:
-        logger.error(f"Erro ao buscar no Google Maps via Serper (query: {query}, num: {num}, start: {start}): {e}", exc_info=True)
+        logger.error(f"Erro ao buscar no Google Maps via Serper (query: {query}, num: {num}, page: {page}): {e}", exc_info=True)
         return []
     except Exception as e:
         logger.error(f"Erro inesperado ao buscar no Google Maps: {e}", exc_info=True)
         return []
 
 
-def search_google_hybrid(query, num=10, start=0, min_results=None):
+def search_google_hybrid(query, num=10, page=1, min_results=None):
     """
     Busca híbrida otimizada: tenta /search primeiro, usa /places apenas quando necessário.
-    Evita fazer 2 requisições quando 1 é suficiente.
+    Paginação via page (1-based). gl/hl para Brasil.
     
     Args:
         query: Termo de busca (ex: "Advogado em São Paulo - SP")
         num: Número de resultados por página (padrão: 10)
-        start: Offset/página inicial (padrão: 0)
+        page: Página (1-based). Serper usa page, não start.
         min_results: Número mínimo de resultados esperados (opcional). Se None, usa num.
     
     Returns:
@@ -265,12 +269,13 @@ def search_google_hybrid(query, num=10, start=0, min_results=None):
     if min_results is None:
         min_results = num
     
-    # Tentar /search primeiro
     url_search = "https://google.serper.dev/search"
     payload = {
         "q": query,
+        "gl": SERPER_GL,
+        "hl": SERPER_HL,
         "num": num,
-        "start": start
+        "page": page
     }
     headers = {
         'X-API-KEY': SERPER_API_KEY,
@@ -278,24 +283,17 @@ def search_google_hybrid(query, num=10, start=0, min_results=None):
     }
     
     try:
-        # Tentar /search primeiro
         response = requests.post(url_search, headers=headers, data=json.dumps(payload))
         response.raise_for_status()
         search_data = response.json()
-        
-        # Verificar se tem places ou localPack na resposta
         places_from_search = normalize_places_response(search_data, source='search')
         
         if places_from_search and len(places_from_search) >= min_results:
-            # Se /search retornou resultados suficientes, usar apenas esses
-            logger.info(f"Usando resultados de /search (places encontrados: {len(places_from_search)}, suficiente)")
+            logger.info(f"Usando resultados de /search (places: {len(places_from_search)}, suficiente)")
             return places_from_search
         elif places_from_search:
-            # Se /search retornou resultados mas insuficientes, usar /places como complemento
-            logger.info(f"Usando /places como complemento (search retornou {len(places_from_search)} places, esperado: {min_results})")
-            places_from_places = search_google_maps(query, num=num, start=start)
-            
-            # Combinar resultados, evitando duplicatas
+            logger.info(f"Usando /places como complemento (search retornou {len(places_from_search)}, esperado: {min_results})")
+            places_from_places = search_google_maps(query, num=num, page=page)
             combined = places_from_search.copy()
             existing_titles = {p.get('title') for p in places_from_search}
             for place in places_from_places:
@@ -303,28 +301,23 @@ def search_google_hybrid(query, num=10, start=0, min_results=None):
                     combined.append(place)
                     if len(combined) >= min_results:
                         break
-            
             return combined[:min_results]
         else:
-            # Se /search não retornou places, usar /places como fallback
             logger.info("Usando /places como fallback (search não retornou places)")
-            return search_google_maps(query, num=num, start=start)
+            return search_google_maps(query, num=num, page=page)
             
     except requests.RequestException as e:
         logger.warning(f"Erro ao buscar via /search, usando /places como fallback: {e}")
-        # Em caso de erro, usar /places como fallback
-        return search_google_maps(query, num=num, start=start)
+        return search_google_maps(query, num=num, page=page)
     except Exception as e:
         logger.error(f"Erro inesperado na busca híbrida: {e}", exc_info=True)
-        # Em caso de erro, usar /places como fallback
-        return search_google_maps(query, num=num, start=start)
+        return search_google_maps(query, num=num, page=page)
 
 
 def search_google_maps_paginated(query, max_results, max_pages=20):
     """
     Busca empresas no Google Maps via Serper com paginação automática.
-    Usa busca híbrida (/search + /places) para maximizar resultados.
-    Faz múltiplas requisições até atingir a quantidade desejada ou esgotar os resultados.
+    Usa page (1-based). gl/hl para Brasil.
     
     Args:
         query: Termo de busca (ex: "Advogado em São Paulo - SP")
@@ -335,56 +328,67 @@ def search_google_maps_paginated(query, max_results, max_pages=20):
         list: Lista completa de lugares encontrados (pode ser menor que max_results se não houver mais resultados)
     """
     all_places = []
-    page = 0
-    results_per_page = 10  # API Serper retorna ~10 resultados por página
-    max_results_safe = min(max_results, 200)  # Limite de segurança: máximo 200 resultados
+    page_num = 1  # Serper usa page 1-based
+    results_per_page = 10
+    max_results_safe = min(max_results, 200)
     
-    logger.info(f"Iniciando busca paginada híbrida para '{query}': solicitando até {max_results_safe} resultados (máx. {max_pages} páginas)")
+    logger.info(f"Iniciando busca paginada para '{query}': até {max_results_safe} resultados (máx. {max_pages} páginas)")
     
-    while len(all_places) < max_results_safe and page < max_pages:
-        start = page * results_per_page
-        logger.info(f"Buscando página {page + 1} para '{query}' (start: {start}, num: {results_per_page})...")
-        
+    while len(all_places) < max_results_safe and page_num <= max_pages:
         try:
-            # Calcular quantos resultados ainda precisamos
             remaining_needed = max_results_safe - len(all_places)
-            
-            # Usar busca híbrida otimizada (tenta /search primeiro, fallback para /places)
-            # Passar min_results para evitar buscas desnecessárias
-            places = search_google_hybrid(query, num=results_per_page, start=start, min_results=min(remaining_needed, results_per_page))
+            logger.info(f"Buscando página {page_num} para '{query}' (page: {page_num})...")
+            places = search_google_hybrid(
+                query, num=results_per_page, page=page_num,
+                min_results=min(remaining_needed, results_per_page)
+            )
             
             if not places:
-                logger.info(f"Página {page + 1} retornou 0 resultados. Sem mais resultados disponíveis.")
+                logger.info(f"Página {page_num} retornou 0 resultados. Sem mais resultados.")
                 break
             
             all_places.extend(places)
-            logger.info(f"Página {page + 1} retornou {len(places)} resultados. Total acumulado: {len(all_places)}")
+            logger.info(f"Página {page_num} retornou {len(places)} resultados. Total: {len(all_places)}")
             
-            # Verificar se já atingimos a quantidade desejada ANTES de continuar
             if len(all_places) >= max_results_safe:
-                logger.info(f"Quantidade solicitada atingida: {len(all_places)} resultados encontrados (solicitado: {max_results_safe}). Parando busca.")
+                logger.info(f"Quantidade atingida: {len(all_places)} (solicitado: {max_results_safe}).")
                 break
             
-            # Se retornou menos que o esperado, provavelmente não há mais páginas
             if len(places) < results_per_page:
-                logger.info(f"Página {page + 1} retornou menos que {results_per_page} resultados. Assumindo fim dos resultados.")
+                logger.info(f"Página {page_num} retornou < {results_per_page} resultados. Fim dos resultados.")
                 break
             
-            page += 1
+            page_num += 1
                 
         except Exception as e:
-            logger.error(f"Erro ao buscar página {page + 1} para '{query}': {e}. Continuando com resultados já encontrados...", exc_info=True)
-            # Continuar com os resultados já encontrados ao invés de abortar
+            logger.error(f"Erro ao buscar página {page_num} para '{query}': {e}. Usando resultados já obtidos.", exc_info=True)
             break
     
-    logger.info(f"Busca paginada híbrida concluída para '{query}': {len(all_places)} resultados encontrados em {page + 1} página(s)")
-    return all_places[:max_results_safe]  # Garantir que não exceda o limite
+    logger.info(f"Busca paginada concluída para '{query}': {len(all_places)} resultados em {page_num} página(s)")
+    return all_places[:max_results_safe]
+
+
+def _normalize_company_name_for_cache(name):
+    """Normaliza nome para cache (strip, collapse espaços). Evita duplicatas por variações mínimas."""
+    if not name or not isinstance(name, str):
+        return ""
+    return " ".join(name.strip().split())
 
 
 def find_cnpj_by_name(company_name):
-    """Busca 'CNPJ [Nome]' no Google e extrai via Regex"""
+    """
+    Busca 'CNPJ [Nome]' no Google via Serper e extrai via Regex.
+    Usa gl/hl para Brasil. Sem page (só primeira página).
+    """
+    name = _normalize_company_name_for_cache(company_name)
+    if not name:
+        return None
     url = "https://google.serper.dev/search"
-    payload = json.dumps({"q": f"CNPJ {company_name}"})
+    payload = json.dumps({
+        "q": f"CNPJ {name}",
+        "gl": SERPER_GL,
+        "hl": SERPER_HL
+    })
     headers = {
         'X-API-KEY': SERPER_API_KEY,
         'Content-Type': 'application/json'
@@ -393,20 +397,16 @@ def find_cnpj_by_name(company_name):
     try:
         response = requests.post(url, headers=headers, data=payload)
         data = response.json()
-        
         if 'organic' in data:
             for result in data['organic']:
                 snippet = result.get('snippet', '') + " " + result.get('title', '')
-                # Regex robusto para CNPJ
                 cnpj_match = re.search(r'\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}', snippet)
                 if cnpj_match:
-                    # Retorna apenas números
                     return re.sub(r'\D', '', cnpj_match.group())
     except requests.RequestException as e:
         logger.error(f"Erro ao buscar CNPJ no Google via Serper: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Erro inesperado ao buscar CNPJ: {e}", exc_info=True)
-    
     return None
 
 def enrich_company_viper(cnpj):
@@ -1226,15 +1226,14 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
             break
         
         company_name = place.get('title', '')
+        name_key = _normalize_company_name_for_cache(company_name)
         
-        # Verificar cache antes de chamar find_cnpj_by_name
-        if company_name in cnpj_cache:
-            cnpj = cnpj_cache[company_name]
+        if name_key in cnpj_cache:
+            cnpj = cnpj_cache[name_key]
         else:
-            # Buscar CNPJ e armazenar no cache
             cnpj = find_cnpj_by_name(company_name)
             serper_calls += 1
-            cnpj_cache[company_name] = cnpj
+            cnpj_cache[name_key] = cnpj
         
         if cnpj and cnpj not in existing_cnpjs:
             new_places.append(place)
@@ -1369,6 +1368,8 @@ def process_search_async(search_id):
             # Se não temos leads suficientes, fazer busca no Serper
             additional_needed = quantity - leads_processed
             logger.info(f"Leads insuficientes na base ({leads_processed}/{quantity}). Buscando {additional_needed} leads adicionais no Serper.")
+            cnpj_cache = {}  # cache nome -> CNPJ para evitar chamadas Serper repetidas (main + incremental)
+            serper_cnpj_calls = 0  # contador de chamadas find_cnpj (cache miss) para log
             
             # Verificar se há CachedSearch para usar cache
             use_cache = False
@@ -1447,7 +1448,13 @@ def process_search_async(search_id):
                         'viper_data': {}
                     }
                     
-                    cnpj = find_cnpj_by_name(company_data['name'])
+                    name_key = _normalize_company_name_for_cache(company_data['name'])
+                    if name_key in cnpj_cache:
+                        cnpj = cnpj_cache[name_key]
+                    else:
+                        cnpj = find_cnpj_by_name(company_data['name'])
+                        serper_cnpj_calls += 1
+                        cnpj_cache[name_key] = cnpj
                     
                     # Se não tem CNPJ, pular e continuar
                     if not cnpj:
@@ -1532,6 +1539,9 @@ def process_search_async(search_id):
                     if lead_obj.cached_search != cached_search:
                         lead_obj.cached_search = cached_search
                         lead_obj.save(update_fields=['cached_search'])
+                
+                if serper_cnpj_calls or pages_searched:
+                    logger.info(f"Serper: {pages_searched} páginas + {serper_cnpj_calls} find_cnpj (cache: {len(cnpj_cache)} nomes)")
             
             # Atualizar total_leads_cached no CachedSearch após processar novos leads
             if cached_search:
@@ -1562,60 +1572,46 @@ def process_search_async(search_id):
             additional_needed = quantity - leads_processed
             logger.info(f"Faltam {additional_needed} leads, iniciando busca incremental...")
             
-            # Calcular offset inicial baseado nas páginas já buscadas
             results_per_page = 10
-            start_offset = len(places) if 'places' in locals() else 0
-            incremental_page = 0
-            max_incremental_iterations = 20  # Limite de 20 iterações (200 requisições máx)
-            max_api_requests = 50  # Limite máximo de requisições à API Serper
-            consecutive_empty_iterations = 0  # Contador de iterações sem leads válidos
-            max_consecutive_empty = 3  # Parar após 3 iterações consecutivas sem leads válidos
+            # Página inicial: 1 + páginas já buscadas (paginated retorna page 1, 2, ...)
+            pages_from_paginated = (len(places) + results_per_page - 1) // results_per_page if 'places' in locals() and places else 0
+            start_page = 1 + pages_from_paginated
+            incremental_iteration = 0
+            max_incremental_iterations = 20
+            max_api_requests = 50
+            consecutive_empty_iterations = 0
+            max_consecutive_empty = 3
             api_requests_made = 0
             
-            while leads_processed < quantity and incremental_page < max_incremental_iterations:
-                # Verificar limite de requisições à API
+            while leads_processed < quantity and incremental_iteration < max_incremental_iterations:
                 if api_requests_made >= max_api_requests:
                     logger.warning(f"Limite de requisições à API atingido ({max_api_requests}). Parando busca incremental.")
                     break
                 
-                # Buscar mais leads usando offset crescente para evitar duplicatas
-                # Reduzir para 5 páginas por iteração (50 leads) ao invés de 20 (200 leads)
                 pages_per_iteration = 5
-                current_offset = start_offset + (incremental_page * results_per_page * pages_per_iteration)
-                logger.info(f"Busca incremental (iteração {incremental_page + 1}, offset: {current_offset}, páginas: {pages_per_iteration})...")
-                
-                # Buscar páginas em lotes menores
                 incremental_places_batch = []
-                for page_in_batch in range(pages_per_iteration):
-                    if leads_processed >= quantity:
+                for i in range(pages_per_iteration):
+                    if leads_processed >= quantity or api_requests_made >= max_api_requests:
                         break
-                    
-                    if api_requests_made >= max_api_requests:
-                        break
-                    
-                    page_offset = current_offset + (page_in_batch * results_per_page)
-                    places_page = search_google_hybrid(search_term, num=results_per_page, start=page_offset)
+                    page_num = start_page + incremental_iteration * pages_per_iteration + i
+                    logger.info(f"Busca incremental (iteração {incremental_iteration + 1}, page: {page_num})...")
+                    places_page = search_google_hybrid(search_term, num=results_per_page, page=page_num)
                     api_requests_made += 1
                     
                     if not places_page:
-                        logger.info(f"Não há mais resultados disponíveis na página {page_in_batch + 1} (offset: {page_offset}).")
+                        logger.info(f"Não há mais resultados na página {page_num}.")
                         break
-                    
                     incremental_places_batch.extend(places_page)
-                    
-                    # Se retornou menos que o esperado, provavelmente não há mais páginas
                     if len(places_page) < results_per_page:
                         break
                 
                 if not incremental_places_batch:
                     consecutive_empty_iterations += 1
-                    logger.info(f"Nenhum resultado encontrado nesta iteração. Iterações consecutivas vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
-                    
+                    logger.info(f"Nenhum resultado nesta iteração. Vazias: {consecutive_empty_iterations}/{max_consecutive_empty}")
                     if consecutive_empty_iterations >= max_consecutive_empty:
-                        logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar resultados.")
+                        logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações sem resultados.")
                         break
-                    
-                    incremental_page += 1
+                    incremental_iteration += 1
                     continue
                 
                 # Filtrar leads já processados
@@ -1637,14 +1633,17 @@ def process_search_async(search_id):
                         'viper_data': {}
                     }
                     
-                    cnpj = find_cnpj_by_name(company_data['name'])
+                    name_key = _normalize_company_name_for_cache(company_data['name'])
+                    if name_key in cnpj_cache:
+                        cnpj = cnpj_cache[name_key]
+                    else:
+                        cnpj = find_cnpj_by_name(company_data['name'])
+                        serper_cnpj_calls += 1
+                        cnpj_cache[name_key] = cnpj
                     
-                    # Se não tem CNPJ, pular (sem log individual para reduzir spam)
                     if not cnpj:
                         leads_without_cnpj += 1
                         continue
-                    
-                    # Se CNPJ já foi processado nesta busca, pular
                     if cnpj in processed_cnpjs_in_search:
                         leads_duplicated += 1
                         continue
@@ -1724,13 +1723,12 @@ def process_search_async(search_id):
                         logger.warning(f"Parando busca incremental: {max_consecutive_empty} iterações consecutivas sem encontrar leads válidos.")
                         break
                 
-                incremental_page += 1
-                additional_needed = quantity - leads_processed
-                if additional_needed <= 0:
+                incremental_iteration += 1
+                if leads_processed >= quantity:
                     break
             
             if leads_processed < quantity:
-                logger.info(f"Busca incremental concluída. Processados {leads_processed} de {quantity} leads solicitados. Requisições à API: {api_requests_made}")
+                logger.info(f"Busca incremental concluída: {leads_processed}/{quantity} leads. Requisições Serper: {api_requests_made} places + {serper_cnpj_calls} find_cnpj (cache: {len(cnpj_cache)} nomes)")
         
         # Atualizar search_obj com resultados
         search_obj.results_count = leads_processed
