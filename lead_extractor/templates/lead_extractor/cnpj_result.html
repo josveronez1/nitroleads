@@ -194,6 +194,60 @@
         </div>
     </div>
 </div>
+
+<!-- Modal de Alerta -->
+<div class="modal fade" id="alertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header" id="alertModalHeader">
+                <h5 class="modal-title" id="alertModalTitle">Aviso</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="alertModalBody">
+                <p id="alertModalMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Sucesso -->
+<div class="modal fade" id="successModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Sucesso</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="successModalBody">
+                <p id="successModalMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Erro -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-circle me-2"></i>Erro</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="errorModalBody">
+                <p id="errorModalMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -229,15 +283,43 @@
 
     // Função para mostrar alertas
     function showAlert(message, type = 'info') {
-        alert(message); // Simplificado - pode usar modais se preferir
+        const modal = new bootstrap.Modal(document.getElementById('alertModal'));
+        const title = document.getElementById('alertModalTitle');
+        const body = document.getElementById('alertModalBody');
+        const header = document.getElementById('alertModalHeader');
+        
+        title.textContent = type === 'info' ? 'Aviso' : (type === 'warning' ? 'Atenção' : 'Informação');
+        document.getElementById('alertModalMessage').textContent = message;
+        
+        // Ajustar cor do header
+        header.className = 'modal-header';
+        if (type === 'warning') {
+            header.classList.add('bg-warning', 'text-dark');
+        } else if (type === 'info') {
+            header.classList.add('bg-info', 'text-white');
+        } else {
+            header.classList.add('bg-primary', 'text-white');
+        }
+        
+        modal.show();
     }
     
     function showSuccess(message) {
-        alert(message); // Simplificado - pode usar modais se preferir
+        const modal = new bootstrap.Modal(document.getElementById('successModal'));
+        const messageElement = document.getElementById('successModalMessage');
+        // Se a mensagem já contém HTML (como <br>), usar innerHTML, senão usar textContent
+        if (message.includes('<br>') || message.includes('<')) {
+            messageElement.innerHTML = message;
+        } else {
+            messageElement.textContent = message;
+        }
+        modal.show();
     }
     
     function showError(message) {
-        alert(message); // Simplificado - pode usar modais se preferir
+        const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+        document.getElementById('errorModalMessage').textContent = message;
+        modal.show();
     }
 
     // Função para expandir/contrair seleção de CPFs
