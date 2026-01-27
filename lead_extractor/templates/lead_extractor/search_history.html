@@ -2060,7 +2060,8 @@
                         }
                         
                         // Mensagem se não encontrou contatos
-                        if (allPhones.length === 0 && emails.length === 0) {
+                        const uniquePhones = Object.values(phonesDict);
+                        if (uniquePhones.length === 0 && emails.length === 0) {
                             const noDataSpan = document.createElement('span');
                             noDataSpan.className = 'text-muted small';
                             noDataSpan.textContent = 'Nenhum contato encontrado';
