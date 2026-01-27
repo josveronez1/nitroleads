@@ -39,7 +39,8 @@
 </div>
 
 {% if searches %}
-    {% for search in searches %}
+    {% for search_data in searches_with_partners_status %}
+    {% with search=search_data.search all_leads_have_partners=search_data.all_leads_have_partners %}
     <div class="card mb-3 search-card" id="search-card-{{ search.id }}">
         <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
@@ -106,7 +107,7 @@
                     <a href="{% url 'export_csv_search' search.id %}" class="btn btn-sm btn-outline-success" onclick="event.stopPropagation();">
                         <i class="fas fa-download"></i> Exportar
                     </a>
-                    {% if search.status == 'completed' %}
+                    {% if search.status == 'completed' and not all_leads_have_partners %}
                     <button class="btn btn-sm btn-primary ms-2" type="button" 
                             onclick="event.stopPropagation(); togglePartnersSelection({{ search.id }})" 
                             id="search-partners-btn-{{ search.id }}">
@@ -260,6 +261,7 @@
             </div>
         </div>
     </div>
+    {% endwith %}
     {% endfor %}
 
     <!-- Paginação -->
@@ -469,12 +471,34 @@
         // Botão de buscar sócios - armazenar searchId no botão
         const partnersBtn = document.getElementById('searchFullscreenPartnersBtn');
         if (partnersBtn) {
-            partnersBtn.setAttribute('data-search-id', searchId);
-            partnersBtn.onclick = function(e) {
-                e.stopPropagation();
-                const btnSearchId = parseInt(this.getAttribute('data-search-id'));
-                togglePartnersSelectionInModal(btnSearchId);
-            };
+            // Verificar se todos os leads já têm dados de sócios
+            setTimeout(() => {
+                const modalBody = document.getElementById('searchFullscreenBody');
+                if (modalBody) {
+                    // Verificar se há algum lead sem dados de sócios
+                    const partnersCells = modalBody.querySelectorAll('[id^="partners-cell-"]');
+                    let allHavePartners = true;
+                    partnersCells.forEach(cell => {
+                        const partnersList = cell.querySelector('.partners-list');
+                        if (!partnersList || partnersList.children.length === 0) {
+                            allHavePartners = false;
+                        }
+                    });
+                    
+                    // Se todos têm dados, esconder o botão
+                    if (allHavePartners && partnersCells.length > 0) {
+                        partnersBtn.style.display = 'none';
+                    } else {
+                        partnersBtn.style.display = '';
+                        partnersBtn.setAttribute('data-search-id', searchId);
+                        partnersBtn.onclick = function(e) {
+                            e.stopPropagation();
+                            const btnSearchId = parseInt(this.getAttribute('data-search-id'));
+                            togglePartnersSelectionInModal(btnSearchId);
+                        };
+                    }
+                }
+            }, 150);
         }
         
         // Buscar tabela de leads
@@ -539,7 +563,30 @@
             };
             
             modalElement.addEventListener('shown.bs.modal', handleShown, { once: true });
-            modalElement.addEventListener('hidden.bs.modal', handleHidden, { once: true });
+            modalElement.addEventListener('hidden.bs.modal', function() {
+                handleHidden();
+                // Resetar botão de buscar sócios quando modal fecha
+                const partnersBtn = document.getElementById('searchFullscreenPartnersBtn');
+                if (partnersBtn) {
+                    partnersBtn.innerHTML = '<i class="fas fa-users me-1"></i>Buscar Dados dos Sócios';
+                    partnersBtn.classList.remove('btn-success');
+                    partnersBtn.classList.add('btn-primary');
+                    partnersBtn.style.display = '';
+                }
+                // Esconder checkboxes quando modal fecha
+                const modalBody = document.getElementById('searchFullscreenBody');
+                if (modalBody) {
+                    modalBody.querySelectorAll('.partner-lead-checkbox').forEach(cb => {
+                        cb.style.display = 'none';
+                    });
+                    modalBody.querySelectorAll('.partners-checkbox-cell').forEach(td => {
+                        td.style.display = 'none';
+                    });
+                    modalBody.querySelectorAll('.partners-checkbox-header').forEach(th => {
+                        th.style.display = 'none';
+                    });
+                }
+            }, { once: true });
             
             modal.show();
         } else {
@@ -610,10 +657,12 @@
                 th.style.border = '';
                 th.style.visibility = 'visible';
             });
-            // Atualizar botão
+            // Atualizar botão para mostrar confirmação
             const btn = document.getElementById('searchFullscreenPartnersBtn');
             if (btn) {
                 btn.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Busca';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-success');
             }
         } else {
             // Confirmar busca

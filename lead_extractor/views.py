@@ -789,8 +789,25 @@ def search_history(request):
     # Converter para lista para compatibilidade com template
     searches_list = list(searches)
     
+    # Calcular para cada pesquisa se todos os leads já têm dados de sócios
+    searches_with_partners_status = []
+    for search in searches_list:
+        all_leads_have_partners = True
+        leads_count = 0
+        for lead_access in search.lead_accesses.all():
+            leads_count += 1
+            if not has_valid_partners_data(lead_access.lead):
+                all_leads_have_partners = False
+                break
+        
+        searches_with_partners_status.append({
+            'search': search,
+            'all_leads_have_partners': all_leads_have_partners if leads_count > 0 else False
+        })
+    
     context = {
         'searches': searches_list,
+        'searches_with_partners_status': searches_with_partners_status,
         'last_search_id': last_search_id,
         'user_profile': user_profile,
         'available_credits': check_credits(user_profile),
