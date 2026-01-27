@@ -1786,36 +1786,72 @@
                         }
                     }
                     
-                    // Se encontrou searchId e a lista está expandida, atualizar a tabela
+                    // Sempre atualizar a tabela se a lista estiver expandida
+                    // Tentar encontrar searchId de várias formas
+                    if (!searchId) {
+                        // Tentar encontrar através do checkbox
+                        const firstCheckbox = partnersList?.querySelector('.cpf-checkbox');
+                        if (firstCheckbox) {
+                            const checkboxSearchId = firstCheckbox.closest('[id^="search-"]')?.id?.replace('search-', '');
+                            if (checkboxSearchId) {
+                                searchId = checkboxSearchId;
+                            }
+                        }
+                    }
+                    
+                    // Se ainda não encontrou, procurar em todos os collapses
+                    if (!searchId) {
+                        document.querySelectorAll('[id^="search-"]').forEach(collapse => {
+                            if (collapse.querySelector(`#partners-list-${leadId}`)) {
+                                searchId = collapse.id.replace('search-', '');
+                            }
+                        });
+                    }
+                    
                     if (searchId) {
                         const collapse = document.getElementById(`search-${searchId}`);
                         if (collapse && collapse.classList.contains('show')) {
                             console.log(`Recarregando tabela da busca ${searchId} após busca de CPF`);
                             const csrfToken = getCsrfToken();
-                            fetch(`/api/search/${searchId}/leads/`, {
-                                method: 'GET',
-                                headers: {
-                                    'X-CSRFToken': csrfToken
-                                }
-                            })
-                            .then(response => response.text())
-                            .then(html => {
-                                const currentTable = collapse.querySelector('.table-responsive');
-                                if (currentTable && html) {
-                                    const tempDiv = document.createElement('div');
-                                    tempDiv.innerHTML = html;
-                                    const newTable = tempDiv.querySelector('.table-responsive');
-                                    if (newTable) {
-                                        currentTable.innerHTML = newTable.innerHTML;
-                                        reattachEventListeners(searchId);
-                                        console.log(`Tabela atualizada após busca de CPF`);
+                            if (csrfToken) {
+                                fetch(`/api/search/${searchId}/leads/`, {
+                                    method: 'GET',
+                                    headers: {
+                                        'X-CSRFToken': csrfToken
                                     }
-                                }
-                            })
-                            .catch(error => {
-                                console.error('Erro ao atualizar tabela após busca de CPF:', error);
-                            });
+                                })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`HTTP error! status: ${response.status}`);
+                                    }
+                                    return response.text();
+                                })
+                                .then(html => {
+                                    const currentTable = collapse.querySelector('.table-responsive');
+                                    if (currentTable && html) {
+                                        const tempDiv = document.createElement('div');
+                                        tempDiv.innerHTML = html;
+                                        const newTable = tempDiv.querySelector('.table-responsive');
+                                        if (newTable) {
+                                            currentTable.innerHTML = newTable.innerHTML;
+                                            reattachEventListeners(searchId);
+                                            console.log(`Tabela atualizada após busca de CPF`);
+                                        } else {
+                                            console.warn('Nova tabela não encontrada no HTML retornado');
+                                        }
+                                    } else {
+                                        console.warn('Tabela atual ou HTML não encontrado');
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Erro ao atualizar tabela após busca de CPF:', error);
+                                });
+                            }
+                        } else {
+                            console.log(`Lista da busca ${searchId} não está expandida, não precisa atualizar tabela`);
                         }
+                    } else {
+                        console.warn(`Não foi possível encontrar searchId para lead ${leadId}`);
                     }
                 
                 showSuccess(`CPFs buscados com sucesso! ${data.processed} CPF(s) processado(s). ${data.credits_debited} crédito(s) debitado(s).`);
