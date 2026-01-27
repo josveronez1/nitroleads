@@ -81,15 +81,15 @@
                             </li>
                         </ul>
                     </div>
-                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
-                            data-bs-target="#search-{{ search.id }}" aria-expanded="false"
-                            id="toggle-leads-btn-{{ search.id }}">
-                        <i class="fas fa-chevron-down"></i> Ver leads
-                    </button>
                     <button class="btn btn-sm btn-outline-info" type="button" 
                             onclick="openSearchFullscreen({{ search.id }})"
                             title="Abrir em tela cheia">
                         <i class="fas fa-expand"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" 
+                            data-bs-target="#search-{{ search.id }}" aria-expanded="false"
+                            id="toggle-leads-btn-{{ search.id }}">
+                        <i class="fas fa-chevron-down"></i> Ver leads
                     </button>
                 </div>
             </div>
@@ -522,10 +522,18 @@
             
             // Event listeners para gerenciar aria-hidden corretamente
             const handleShown = function() {
+                // Remover foco de qualquer elemento antes de remover aria-hidden
+                if (document.activeElement && document.activeElement.blur) {
+                    document.activeElement.blur();
+                }
                 modalElement.removeAttribute('aria-hidden');
                 modalElement.setAttribute('aria-modal', 'true');
             };
             const handleHidden = function() {
+                // Remover foco antes de definir aria-hidden
+                if (document.activeElement && document.activeElement.blur) {
+                    document.activeElement.blur();
+                }
                 modalElement.setAttribute('aria-hidden', 'true');
                 modalElement.removeAttribute('aria-modal');
             };

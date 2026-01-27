@@ -22,7 +22,7 @@ from lead_extractor.views import (
     purchase_credits, create_checkout, create_custom_checkout, stripe_webhook, payment_success, payment_cancel,
     viper_queue_status, get_viper_result, api_autocomplete_niches, api_autocomplete_locations,
     api_search_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
-    password_reset_view, password_reset_confirm_view, root_redirect_view
+    password_reset_view, password_reset_confirm_view, root_redirect_view, serve_favicon
 )
 
 urlpatterns = [
@@ -55,4 +55,5 @@ urlpatterns = [
     path('search/<int:search_id>/partners/', search_partners, name='search_partners'),
     path('search/cpf/batch/', search_cpf_batch, name='search_cpf_batch'),
     path('webhook/github/', github_webhook, name='github_webhook'),
+    path('favicon.ico', serve_favicon, name='favicon'),
 ]

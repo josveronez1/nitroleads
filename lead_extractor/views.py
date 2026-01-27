@@ -1,12 +1,14 @@
 from django.shortcuts import render, redirect
 from django.contrib import messages
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, FileResponse
 from django.core.paginator import Paginator
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django_ratelimit.decorators import ratelimit
 from decouple import config
+from pathlib import Path
+from django.conf import settings
 from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
     get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper,
@@ -1091,6 +1093,24 @@ def api_autocomplete_locations(request):
     except Exception as e:
         logger.error(f"Erro ao buscar localizações para autocomplete: {e}", exc_info=True)
         return JsonResponse({'results': []})
+
+
+@require_http_methods(["GET"])
+def serve_favicon(request):
+    """
+    Serve o favicon diretamente, sem passar pelo WhiteNoise.
+    Isso resolve o problema de 403 com arquivos com hash.
+    """
+    favicon_path = Path(settings.BASE_DIR) / 'static' / 'images' / 'favicon.ico'
+    
+    # Fallback para o caminho original se não encontrar
+    if not favicon_path.exists():
+        favicon_path = Path(settings.BASE_DIR) / 'lead_extractor' / 'static' / 'lead_extractor' / 'images' / 'favicon.ico'
+    
+    if favicon_path.exists():
+        return FileResponse(open(favicon_path, 'rb'), content_type='image/x-icon')
+    else:
+        return HttpResponse(status=404)
 
 
 @require_user_profile
