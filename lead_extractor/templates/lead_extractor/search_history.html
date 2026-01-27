@@ -471,14 +471,29 @@
         // Botão de buscar sócios - armazenar searchId no botão
         const partnersBtn = document.getElementById('searchFullscreenPartnersBtn');
         if (partnersBtn) {
-            // Verificar se todos os leads já têm dados de sócios
+            // Resetar botão para estado inicial
+            partnersBtn.innerHTML = '<i class="fas fa-users me-1"></i>Buscar Dados dos Sócios';
+            partnersBtn.classList.remove('btn-success');
+            partnersBtn.classList.add('btn-primary');
+            partnersBtn.style.display = '';
+            partnersBtn.setAttribute('data-search-id', searchId);
+            partnersBtn.onclick = function(e) {
+                e.stopPropagation();
+                const btnSearchId = parseInt(this.getAttribute('data-search-id'));
+                togglePartnersSelectionInModal(btnSearchId);
+            };
+            
+            // Verificar se todos os leads já têm dados de sócios (após carregar conteúdo)
             setTimeout(() => {
                 const modalBody = document.getElementById('searchFullscreenBody');
                 if (modalBody) {
                     // Verificar se há algum lead sem dados de sócios
                     const partnersCells = modalBody.querySelectorAll('[id^="partners-cell-"]');
                     let allHavePartners = true;
+                    let hasAnyLead = false;
+                    
                     partnersCells.forEach(cell => {
+                        hasAnyLead = true;
                         const partnersList = cell.querySelector('.partners-list');
                         if (!partnersList || partnersList.children.length === 0) {
                             allHavePartners = false;
@@ -486,19 +501,11 @@
                     });
                     
                     // Se todos têm dados, esconder o botão
-                    if (allHavePartners && partnersCells.length > 0) {
+                    if (allHavePartners && hasAnyLead) {
                         partnersBtn.style.display = 'none';
-                    } else {
-                        partnersBtn.style.display = '';
-                        partnersBtn.setAttribute('data-search-id', searchId);
-                        partnersBtn.onclick = function(e) {
-                            e.stopPropagation();
-                            const btnSearchId = parseInt(this.getAttribute('data-search-id'));
-                            togglePartnersSelectionInModal(btnSearchId);
-                        };
                     }
                 }
-            }, 150);
+            }, 200);
         }
         
         // Buscar tabela de leads
@@ -634,7 +641,15 @@
         
         // Encontrar todos os checkboxes de leads no modal
         const checkboxes = modalBody.querySelectorAll('.partner-lead-checkbox');
-        const isVisible = checkboxes.length > 0 && checkboxes[0] && checkboxes[0].style.display !== 'none' && checkboxes[0].offsetParent !== null;
+        const btn = document.getElementById('searchFullscreenPartnersBtn');
+        
+        if (!btn) return;
+        
+        // Verificar se checkboxes estão visíveis
+        const isVisible = checkboxes.length > 0 && checkboxes[0] && 
+                         checkboxes[0].style.display !== 'none' && 
+                         checkboxes[0].offsetParent !== null &&
+                         window.getComputedStyle(checkboxes[0]).display !== 'none';
         
         if (!isVisible) {
             // Mostrar checkboxes
@@ -658,12 +673,10 @@
                 th.style.visibility = 'visible';
             });
             // Atualizar botão para mostrar confirmação
-            const btn = document.getElementById('searchFullscreenPartnersBtn');
-            if (btn) {
-                btn.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Busca';
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-success');
-            }
+            btn.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Busca';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-success');
+            btn.style.display = ''; // Garantir que está visível
         } else {
             // Confirmar busca
             const selectedLeads = Array.from(modalBody.querySelectorAll('.partner-lead-checkbox:checked'))
