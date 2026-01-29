@@ -113,7 +113,12 @@ def get_checkout_url(package_id, user_email):
         if not links:
             logger.error("Produto %s sem links de checkout", product_id)
             return None
-        slug = links[0].get("id")
+        # Prefer checkout link (is_sales_page=False); first link is often the sales page
+        checkout_link = next(
+            (lnk for lnk in links if lnk.get("is_sales_page") is False),
+            links[0],
+        )
+        slug = checkout_link.get("id")
         if not slug:
             logger.error("Produto %s link sem id (slug)", product_id)
             return None
