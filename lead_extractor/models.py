@@ -122,7 +122,9 @@ class CreditTransaction(models.Model):
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='credit_transactions')
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     amount = models.IntegerField()  # Positivo para compra, negativo para uso
-    stripe_payment_intent_id = models.CharField(max_length=255, null=True, blank=True)
+    stripe_payment_intent_id = models.CharField(max_length=255, null=True, blank=True)  # histórico Stripe
+    kiwify_sale_id = models.CharField(max_length=255, null=True, blank=True)
+    payment_gateway = models.CharField(max_length=20, choices=[('kiwify', 'Kiwify'), ('stripe', 'Stripe')], default='kiwify')
     description = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

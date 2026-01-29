@@ -62,7 +62,7 @@ def debit_credits(user_id, amount, description=None):
         return False, 0, str(e)
 
 
-def add_credits(user_id, amount, description=None, stripe_payment_intent_id=None):
+def add_credits(user_id, amount, description=None, kiwify_sale_id=None, payment_gateway='kiwify'):
     """
     Adiciona créditos ao usuário de forma atômica.
     
@@ -70,7 +70,8 @@ def add_credits(user_id, amount, description=None, stripe_payment_intent_id=None
         user_id: ID do UserProfile ou objeto UserProfile
         amount: Quantidade de créditos a adicionar (positivo)
         description: Descrição opcional da transação
-        stripe_payment_intent_id: ID do pagamento do Stripe (opcional)
+        kiwify_sale_id: ID da venda na Kiwify (order_id do webhook)
+        payment_gateway: 'kiwify' ou 'stripe' (apenas para histórico; novas transações usam 'kiwify')
     
     Returns:
         tuple: (success: bool, new_balance: int, error_message: str)
@@ -95,7 +96,8 @@ def add_credits(user_id, amount, description=None, stripe_payment_intent_id=None
                 user=user_profile,
                 transaction_type='purchase',
                 amount=amount,
-                stripe_payment_intent_id=stripe_payment_intent_id,
+                kiwify_sale_id=kiwify_sale_id,
+                payment_gateway=payment_gateway,
                 description=description or f"Compra de {amount} crédito(s)"
             )
             

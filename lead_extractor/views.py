@@ -18,7 +18,7 @@ from .services import (
 import threading
 from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess
 from .credit_service import debit_credits, check_credits
-from .stripe_service import create_checkout_session, create_custom_checkout_session, handle_webhook_event, CREDIT_PACKAGES, MIN_CREDITS, MAX_CREDITS
+from .kiwify_service import get_checkout_url, handle_webhook_event, CREDIT_PACKAGES
 from .decorators import require_user_profile, validate_user_ownership
 import csv
 import json
@@ -827,8 +827,6 @@ def purchase_credits(request):
         'user_profile': user_profile,
         'available_credits': check_credits(user_profile),
         'packages': CREDIT_PACKAGES,
-        'MIN_CREDITS': MIN_CREDITS,
-        'MAX_CREDITS': MAX_CREDITS,
     }
     
     return render(request, 'lead_extractor/purchase_credits.html', context)
@@ -837,121 +835,49 @@ def purchase_credits(request):
 @require_user_profile
 def create_checkout(request):
     """
-    Cria sessão de checkout do Stripe.
+    Redireciona para checkout Kiwify. Monta URL com email do usuário na query (obrigatório para associar pagamento).
     """
     user_profile = request.user_profile
-    
+
     if request.method == 'POST':
         package_id = request.POST.get('package_id')
-        
+
         if not package_id:
             return JsonResponse({'error': 'Pacote não fornecido'}, status=400)
-        
+
         try:
             package_id = int(package_id)
-            logger.info(f"Criando checkout para usuário {user_profile.email}, pacote {package_id}")
-            session = create_checkout_session(package_id, user_profile.id, user_profile.email)
-            
-            if session:
-                logger.info(f"Checkout criado com sucesso: {session.id}")
-                return JsonResponse({'checkout_url': session.url, 'session_id': session.id})
-            else:
-                logger.error(f"Erro ao criar checkout: função retornou None. Verifique STRIPE_SECRET_KEY e configuração do Stripe.")
-                return JsonResponse({
-                    'error': 'Erro ao criar sessão de checkout. Verifique se a chave do Stripe está configurada corretamente.'
-                }, status=500)
-                
+            logger.info("Criando checkout Kiwify para usuário %s, pacote %s", user_profile.email, package_id)
+            checkout_url = get_checkout_url(package_id, user_profile.email)
+
+            if checkout_url:
+                logger.info("Checkout Kiwify criado com sucesso")
+                return JsonResponse({'checkout_url': checkout_url})
+            return JsonResponse({
+                'error': 'Erro ao criar checkout. Verifique KIWIFY_CLIENT_ID, KIWIFY_CLIENT_SECRET e KIWIFY_ACCOUNT_ID.'
+            }, status=500)
+
         except ValueError as e:
-            logger.error(f"Erro de valor ao criar checkout: {e}")
+            logger.error("Erro de valor ao criar checkout: %s", e)
             return JsonResponse({'error': 'ID de pacote inválido'}, status=400)
         except Exception as e:
-            logger.error(f"Erro inesperado ao criar checkout: {e}", exc_info=True)
-            import traceback
-            error_trace = traceback.format_exc()
-            logger.error(f"Traceback completo: {error_trace}")
-            return JsonResponse({'error': f'Erro ao criar checkout: {str(e)}'}, status=500)
-    
-    return JsonResponse({'error': 'Método não permitido'}, status=405)
+            logger.error("Erro inesperado ao criar checkout: %s", e, exc_info=True)
+            return JsonResponse({'error': str(e)}, status=500)
 
-
-@require_user_profile
-def create_custom_checkout(request):
-    """
-    Cria sessão de checkout customizada do Stripe para quantidade personalizada de créditos.
-    """
-    user_profile = request.user_profile
-    
-    if request.method == 'POST':
-        try:
-            credits = int(request.POST.get('credits', 0))
-            logger.info(f"Criando checkout customizado para usuário {user_profile.email}, {credits} créditos")
-            
-            if credits < MIN_CREDITS or credits > MAX_CREDITS:
-                logger.warning(f"Quantidade de créditos inválida: {credits}")
-                return JsonResponse({
-                    'error': f'Quantidade de créditos deve estar entre {MIN_CREDITS} e {MAX_CREDITS}'
-                }, status=400)
-            
-            session = create_custom_checkout_session(credits, user_profile.id, user_profile.email)
-            
-            if session:
-                logger.info(f"Checkout customizado criado com sucesso: {session.id}")
-                return JsonResponse({'checkout_url': session.url, 'session_id': session.id})
-            else:
-                logger.error(f"Erro ao criar checkout customizado: função retornou None")
-                return JsonResponse({'error': 'Erro ao criar sessão de checkout'}, status=500)
-                
-        except ValueError as e:
-            logger.error(f"Erro de valor ao criar checkout customizado: {e}")
-            return JsonResponse({'error': 'Quantidade de créditos inválida'}, status=400)
-        except Exception as e:
-            logger.error(f"Erro inesperado ao criar checkout customizado: {e}", exc_info=True)
-            return JsonResponse({'error': f'Erro ao criar checkout: {str(e)}'}, status=500)
-    
     return JsonResponse({'error': 'Método não permitido'}, status=405)
 
 
 @csrf_exempt
-def stripe_webhook(request):
+def kiwify_webhook(request):
     """
-    Endpoint para receber webhooks do Stripe.
+    Endpoint para receber webhooks da Kiwify (compra_aprovada, pix_gerado).
     """
-    import stripe
-    
-    payload = request.body
-    sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
-    
-    webhook_secret = config('STRIPE_WEBHOOK_SECRET', default='')
-    
-    logger.info("Webhook do Stripe recebido")
-    
-    if not webhook_secret:
-        logger.error("STRIPE_WEBHOOK_SECRET não está configurada")
-        return HttpResponse(status=500)
-    
+    logger.info("Webhook Kiwify recebido")
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, webhook_secret
-        )
-        logger.info(f"Evento do Stripe verificado: {event['type']} (ID: {event['id']})")
-    except ValueError as e:
-        logger.error(f"Erro ao decodificar payload do webhook: {e}")
-        return HttpResponse(status=400)
-    except stripe.error.SignatureVerificationError as e:
-        logger.error(f"Erro na verificação da assinatura do webhook: {e}")
-        return HttpResponse(status=400)
-    
-    # Processar evento
-    try:
-        result = handle_webhook_event(event)
-        if result:
-            logger.info(f"Evento {event['type']} processado com sucesso")
-            return HttpResponse(status=200)
-        else:
-            logger.error(f"Falha ao processar evento {event['type']}")
-            return HttpResponse(status=500)
+        ok = handle_webhook_event(request.body, request.META)
+        return HttpResponse(status=200 if ok else 500)
     except Exception as e:
-        logger.error(f"Erro inesperado ao processar webhook: {e}", exc_info=True)
+        logger.error("Erro ao processar webhook Kiwify: %s", e, exc_info=True)
         return HttpResponse(status=500)
 
 

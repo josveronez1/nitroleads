@@ -24,16 +24,18 @@
     <h2>Comprar Créditos</h2>
     <p class="text-muted">Escolha um pacote de créditos para continuar suas buscas</p>
     <p class="text-success small mb-0">
-        <i class="fas fa-credit-card me-1"></i> Pagamento via Boleto ou Cartão de Crédito disponível
+        <i class="fas fa-credit-card me-1"></i> Pagamento via PIX, Boleto ou Cartão de Crédito
     </p>
+    <span class="badge bg-success mt-2"><i class="fas fa-bolt me-1"></i> PIX Disponível</span>
 </div>
 
+<form id="csrf-form" style="display: none;">{% csrf_token %}</form>
 <div class="row g-4">
     {% for package in packages %}
-    <div class="col-md-6 col-lg-3">
-        <div class="card package-card h-100 {% if forloop.counter == 2 %}featured{% endif %}">
+    <div class="col-md-6 col-lg-4 col-xl-3">
+        <div class="card package-card h-100 {% if forloop.counter == 3 %}featured{% endif %}">
             <div class="card-body text-center d-flex flex-column">
-                {% if forloop.counter == 2 %}
+                {% if forloop.counter == 3 %}
                 <span class="badge bg-primary mb-2">Mais Popular</span>
                 {% endif %}
                 <h5 class="card-title">{{ package.name }}</h5>
@@ -56,169 +58,33 @@
     </div>
     {% endfor %}
 </div>
-
-<!-- Compra Customizada -->
-<div class="row mt-5">
-    <div class="col-md-8 mx-auto">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Compra Personalizada</h5>
-            </div>
-            <div class="card-body">
-                <p class="text-muted mb-4">
-                    Personalize a quantidade de créditos que deseja comprar (mínimo: {{ MIN_CREDITS }}, máximo: {{ MAX_CREDITS }})
-                </p>
-                <form id="customPurchaseForm">
-                    {% csrf_token %}
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-6">
-                            <label for="customCredits" class="form-label fw-semibold">Quantidade de Créditos</label>
-                            <input type="number" class="form-control form-control-lg" id="customCredits" 
-                                   min="{{ MIN_CREDITS }}" max="{{ MAX_CREDITS }}" 
-                                   value="{{ MIN_CREDITS }}" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold">Valor Total</label>
-                            <div class="input-group input-group-lg">
-                                <span class="input-group-text">R$</span>
-                                <input type="text" class="form-control" id="customPrice" 
-                                       value="R$ 0,00" readonly>
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <button type="submit" class="btn btn-primary btn-lg w-100">
-                                <i class="fas fa-shopping-cart me-2"></i>Comprar
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    const MIN_CREDITS = {{ MIN_CREDITS }};
-    const MAX_CREDITS = {{ MAX_CREDITS }};
-    const MIN_PRICE_PER_CREDIT = 0.26;
-    const MAX_PRICE_PER_CREDIT = 1.00;
-    
-    // Pontos de referência para cálculo progressivo
-    const PRICING_POINTS = [
-        [10, 1.00],    // 10 créditos = R$ 1,00 por crédito (máximo)
-        [100, 0.40],   // 100 créditos = R$ 0,40 por crédito
-        [500, 0.32],   // 500 créditos = R$ 0,32 por crédito
-        [1000, 0.28],  // 1000 créditos = R$ 0,28 por crédito
-        [2500, 0.26],  // 2500 créditos = R$ 0,26 por crédito (mínimo)
-    ];
-    
-    // Função para calcular preço por crédito baseado na quantidade
-    function calculatePricePerCredit(credits) {
-        // Garantir limites mínimos e máximos
-        if (credits < MIN_CREDITS) {
-            return MAX_PRICE_PER_CREDIT;
-        }
-        
-        if (credits >= PRICING_POINTS[PRICING_POINTS.length - 1][0]) { // 2500 ou mais
-            return MIN_PRICE_PER_CREDIT;
-        }
-        
-        // Encontrar o intervalo onde credits está
-        for (let i = 0; i < PRICING_POINTS.length - 1; i++) {
-            const [qty1, price1] = PRICING_POINTS[i];
-            const [qty2, price2] = PRICING_POINTS[i + 1];
-            
-            if (qty1 <= credits && credits < qty2) {
-                // Interpolação linear
-                let price = price1 + (credits - qty1) * (price2 - price1) / (qty2 - qty1);
-                // Garantir limites
-                price = Math.max(MIN_PRICE_PER_CREDIT, Math.min(MAX_PRICE_PER_CREDIT, price));
-                return Math.round(price * 100) / 100; // Arredondar para 2 casas decimais
-            }
-        }
-        
-        // Fallback (não deveria chegar aqui, mas garantia)
-        return MIN_PRICE_PER_CREDIT;
-    }
-
-    // Calcular preço customizado
-    document.getElementById('customCredits').addEventListener('input', function() {
-        const credits = parseInt(this.value) || 0;
-        if (credits >= MIN_CREDITS && credits <= MAX_CREDITS) {
-            const pricePerCredit = calculatePricePerCredit(credits);
-            const totalPrice = (credits * pricePerCredit).toFixed(2);
-            document.getElementById('customPrice').value = 'R$ ' + totalPrice.replace('.', ',');
-        } else if (credits > 0) {
-            document.getElementById('customPrice').value = 'R$ 0,00';
-        }
-    });
-    
-    // Calcular preço inicial quando a página carrega
-    document.addEventListener('DOMContentLoaded', function() {
-        const initialCredits = parseInt(document.getElementById('customCredits').value) || MIN_CREDITS;
-        const pricePerCredit = calculatePricePerCredit(initialCredits);
-        const totalPrice = (initialCredits * pricePerCredit).toFixed(2);
-        document.getElementById('customPrice').value = 'R$ ' + totalPrice.replace('.', ',');
-    });
-
-    // Comprar pacote
-    document.querySelectorAll('.buy-package-btn').forEach(btn => {
+    document.querySelectorAll('.buy-package-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
             const packageId = this.getAttribute('data-package-id');
             fetch('{% url "create_checkout" %}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    'X-CSRFToken': document.querySelector('#csrf-form [name=csrfmiddlewaretoken]').value
                 },
                 body: 'package_id=' + packageId
             })
-            .then(response => response.json())
-            .then(data => {
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
                 if (data.checkout_url) {
                     window.location.href = data.checkout_url;
                 } else {
                     alert('Erro ao criar checkout: ' + (data.error || 'Erro desconhecido'));
                 }
             })
-            .catch(error => {
+            .catch(function(error) {
                 console.error('Erro:', error);
                 alert('Erro ao processar compra');
             });
-        });
-    });
-
-    // Compra customizada
-    document.getElementById('customPurchaseForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const credits = parseInt(document.getElementById('customCredits').value);
-        
-        if (credits < MIN_CREDITS || credits > MAX_CREDITS) {
-            alert(`A quantidade de créditos deve estar entre ${MIN_CREDITS} e ${MAX_CREDITS}`);
-            return;
-        }
-
-        fetch('{% url "create_custom_checkout" %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: 'credits=' + credits
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.checkout_url) {
-                window.location.href = data.checkout_url;
-            } else {
-                alert('Erro ao criar checkout: ' + (data.error || 'Erro desconhecido'));
-            }
-        })
-        .catch(error => {
-            console.error('Erro:', error);
-            alert('Erro ao processar compra');
         });
     });
 </script>

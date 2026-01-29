@@ -26,7 +26,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/login/',
         '/static/',
         '/media/',
-        '/webhook/stripe/',  # Webhook do Stripe não precisa de autenticação
+        '/webhook/kiwify/',  # Webhook da Kiwify não precisa de autenticação
     ]
     
     def process_request(self, request):
@@ -165,15 +165,15 @@ class CSPMiddleware(MiddlewareMixin):
                 del response[header_name]
         
         # Construir diretiva CSP completa
-        # Permitir: self, api.stripe.com, *.supabase.co, cdn.jsdelivr.net
+        # Permitir: self, *.supabase.co, cdn.jsdelivr.net (Kiwify checkout é redirecionamento externo)
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://js.stripe.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https:",
-            "connect-src 'self' https://api.stripe.com https://*.supabase.co https://cdn.jsdelivr.net",
-            "frame-src https://js.stripe.com https://hooks.stripe.com",
+            "connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://public-api.kiwify.com",
+            "frame-src 'none'",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",
