@@ -19,7 +19,7 @@ from django.urls import path, re_path
 from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
     search_by_cpf, search_by_cnpj, search_history, delete_search,
-    purchase_credits, create_checkout, process_payment_view, mercadopago_webhook, payment_success, payment_cancel,
+    purchase_credits, create_checkout, process_payment_view, mercadopago_webhook, api_payment_status, payment_success, payment_cancel,
     viper_queue_status, get_viper_result,     api_autocomplete_niches, api_autocomplete_locations,
     api_search_status, api_search_leads, api_partners_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
     password_reset_view, password_reset_confirm_view, root_redirect_view, serve_favicon
@@ -56,6 +56,7 @@ urlpatterns = [
     path('search/<int:search_id>/enrich/', enrich_leads, name='enrich_leads'),
     path('search/<int:search_id>/partners/', search_partners, name='search_partners'),
     path('search/cpf/batch/', search_cpf_batch, name='search_cpf_batch'),
+    path('api/payment-status/', api_payment_status, name='api_payment_status'),
     path('webhook/github/', github_webhook, name='github_webhook'),
     path('favicon.ico', serve_favicon, name='favicon'),
 ]

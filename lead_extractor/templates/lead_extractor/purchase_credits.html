@@ -33,6 +33,13 @@
     #statusScreenBrick_container {
         min-height: 0 !important;
     }
+    #paymentModal .modal-body.status-screen-mode {
+        padding: 0.25rem 1rem 1rem;
+        overflow: hidden;
+    }
+    #paymentModal .modal-body.status-screen-mode #statusScreenBrick_container {
+        margin-top: -1rem;
+    }
 </style>
 {% endblock %}
 
@@ -48,36 +55,13 @@
 
 <form id="csrf-form" style="display: none;">{% csrf_token %}</form>
 
-{# Compra personalizada #}
-<div class="card mb-4">
-    <div class="card-body">
-        <h5 class="card-title"><i class="fas fa-sliders-h me-2"></i>Valor Personalizado</h5>
-        <p class="text-muted small">Defina a quantidade exata de créditos que precisa (mín. 10, máx. 50.000)</p>
-        <div class="row align-items-end">
-            <div class="col-md-4">
-                <label for="custom_credits" class="form-label">Quantidade de créditos</label>
-                <input type="number" id="custom_credits" class="form-control" min="10" max="50000" value="100" placeholder="Ex: 150">
-            </div>
-            <div class="col-md-4">
-                <p class="mb-0 small text-muted">Valor estimado: <strong id="custom_price">R$ 30,00</strong></p>
-                <p class="mb-0 small text-muted">R$ 0,30 por crédito</p>
-            </div>
-            <div class="col-md-4">
-                <button type="button" class="btn btn-outline-primary w-100" id="buy-custom-btn">
-                    <i class="fas fa-shopping-cart me-1"></i> Comprar Valor Personalizado
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 {# Pacotes fixos #}
-<div class="row g-4">
+<div class="row g-4 mb-4">
     {% for package in packages %}
     <div class="col-md-6 col-lg-4 col-xl-3">
-        <div class="card package-card h-100 {% if forloop.counter == 3 %}featured{% endif %}">
+        <div class="card package-card h-100 {% if package.credits == 500 %}featured{% endif %}">
             <div class="card-body text-center d-flex flex-column">
-                {% if forloop.counter == 3 %}
+                {% if package.credits == 500 %}
                 <span class="badge bg-primary mb-2">Mais Popular</span>
                 {% endif %}
                 <h5 class="card-title">{{ package.name }}</h5>
@@ -101,9 +85,32 @@
     {% endfor %}
 </div>
 
+{# Compra personalizada #}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title"><i class="fas fa-sliders-h me-2"></i>Valor Personalizado</h5>
+        <p class="text-muted small">Defina a quantidade exata de créditos que precisa (mín. 10, máx. 50.000). Quanto mais créditos, menor o preço por unidade.</p>
+        <div class="row align-items-end">
+            <div class="col-md-4">
+                <label for="custom_credits" class="form-label">Quantidade de créditos</label>
+                <input type="number" id="custom_credits" class="form-control" min="10" max="50000" value="500" placeholder="Ex: 150">
+            </div>
+            <div class="col-md-4">
+                <p class="mb-0 small text-muted">Valor estimado: <strong id="custom_price">R$ 150,00</strong></p>
+                <p class="mb-0 small text-muted"><span id="custom_price_per_credit">R$ 0,30</span> por crédito</p>
+            </div>
+            <div class="col-md-4">
+                <button type="button" class="btn btn-outline-primary w-100" id="buy-custom-btn">
+                    <i class="fas fa-shopping-cart me-1"></i> Comprar Valor Personalizado
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {# Modal de pagamento Mercado Pago #}
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 520px;">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="paymentModalLabel">
@@ -128,20 +135,47 @@
     const publicKey = '{{ mercadopago_public_key|escapejs }}';
     const createCheckoutUrl = '{% url "create_checkout" %}';
     const processPaymentUrl = '{% url "process_payment" %}';
+    const paymentStatusUrl = '{% url "api_payment_status" %}';
+    const paymentSuccessUrl = '{% url "payment_success" %}';
 
     let paymentBrickController = null;
     let statusScreenBrickController = null;
+    let paymentStatusPollingInterval = null;
     const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+
+    function startPaymentStatusPolling(paymentId) {
+        if (paymentStatusPollingInterval) clearInterval(paymentStatusPollingInterval);
+        paymentStatusPollingInterval = setInterval(function() {
+            fetch(paymentStatusUrl + '?payment_id=' + encodeURIComponent(paymentId), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.credited) {
+                    if (paymentStatusPollingInterval) clearInterval(paymentStatusPollingInterval);
+                    paymentStatusPollingInterval = null;
+                    paymentModal.hide();
+                    window.location.href = paymentSuccessUrl;
+                }
+            })
+            .catch(function() {});
+        }, 2500);
+    }
 
     function showStatusScreenBrick(paymentId, amount, credits) {
         document.getElementById('paymentBrick_container').style.display = 'none';
+        document.getElementById('paymentBrick_container').innerHTML = '';
+        document.getElementById('paymentBrick_container').style.minHeight = '0';
         document.getElementById('statusScreenBrick_container').style.display = 'block';
         document.getElementById('statusScreenBrick_container').innerHTML = '';
+        document.getElementById('paymentModal').querySelector('.modal-body').classList.add('status-screen-mode');
 
         if (paymentBrickController && typeof paymentBrickController.unmount === 'function') {
             paymentBrickController.unmount();
             paymentBrickController = null;
         }
+
+        startPaymentStatusPolling(paymentId);
 
         const mp = new MercadoPago(publicKey);
         const bricksBuilder = mp.bricks();
@@ -157,7 +191,7 @@
         }).catch(function(err) {
             console.error('Erro ao criar Status Screen:', err);
             document.getElementById('statusScreenBrick_container').innerHTML =
-                '<div class="alert alert-info"><p class="mb-0">Pagamento PIX criado! Acesse seu app de banco e pague o PIX. Os créditos serão adicionados automaticamente após a confirmação.</p><p class="mb-0 mt-2"><a href="' + window.location.origin + '/payment/success/?payment_id=' + paymentId + '" class="btn btn-primary">Ir para o Dashboard</a></p></div>';
+                '<div class="alert alert-info"><p class="mb-0">Pagamento PIX criado! Acesse seu app de banco e pague o PIX. Os créditos serão adicionados automaticamente após a confirmação.</p><p class="mb-0 mt-2"><a href="' + paymentSuccessUrl + '?payment_id=' + paymentId + '" class="btn btn-primary">Ir para o Dashboard</a></p></div>';
         });
     }
 
@@ -269,8 +303,12 @@
             statusScreenBrickController.unmount();
             statusScreenBrickController = null;
         }
+        if (paymentStatusPollingInterval) clearInterval(paymentStatusPollingInterval);
+        paymentStatusPollingInterval = null;
         document.getElementById('paymentBrick_container').style.display = '';
+        document.getElementById('paymentBrick_container').style.minHeight = '';
         document.getElementById('statusScreenBrick_container').style.display = 'none';
+        document.getElementById('paymentModal').querySelector('.modal-body').classList.remove('status-screen-mode');
     });
 
     function startCheckout(packageId, customCredits) {
@@ -320,11 +358,22 @@
         startCheckout(null, credits);
     });
 
-    document.getElementById('custom_credits').addEventListener('input', function() {
-        const credits = parseInt(this.value, 10) || 0;
-        const price = (credits * 0.30).toFixed(2).replace('.', ',');
-        document.getElementById('custom_price').textContent = 'R$ ' + price;
-    });
+    function customPricePerCredit(credits) {
+        if (credits >= 5000) return 0.26;
+        var ratio = (5000 - credits) / (5000 - 10);
+        return 0.26 + (0.50 - 0.26) * ratio;
+    }
+    function updateCustomPrice() {
+        const credits = parseInt(document.getElementById('custom_credits').value, 10) || 0;
+        const pricePer = customPricePerCredit(credits);
+        const total = (credits * pricePer).toFixed(2).replace('.', ',');
+        const perCredit = pricePer.toFixed(2).replace('.', ',');
+        document.getElementById('custom_price').textContent = 'R$ ' + total;
+        document.getElementById('custom_price_per_credit').textContent = 'R$ ' + perCredit;
+    }
+    document.getElementById('custom_credits').addEventListener('input', updateCustomPrice);
+    document.getElementById('custom_credits').addEventListener('change', updateCustomPrice);
+    updateCustomPrice();
 })();
 </script>
 {% endblock %}

@@ -16,7 +16,7 @@ from .services import (
     wait_for_partners_processing, process_search_async, sanitize_lead_data
 )
 import threading
-from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess
+from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess, CreditTransaction
 from .credit_service import debit_credits, check_credits
 from .mercadopago_service import create_preference, handle_webhook, process_payment, CREDIT_PACKAGES
 from .decorators import require_user_profile, validate_user_ownership
@@ -941,6 +941,19 @@ def mercadopago_webhook(request):
     except Exception as e:
         logger.error("Erro ao processar webhook Mercado Pago: %s", e, exc_info=True)
         return HttpResponse(status=500)
+
+
+@require_user_profile
+def api_payment_status(request):
+    """
+    Verifica se um pagamento MP já foi creditado (via webhook).
+    Usado pelo frontend para polling e redirecionar para sucesso.
+    """
+    payment_id = request.GET.get('payment_id')
+    if not payment_id:
+        return JsonResponse({'credited': False, 'error': 'payment_id ausente'}, status=400)
+    credited = CreditTransaction.objects.filter(mp_payment_id=str(payment_id)).exists()
+    return JsonResponse({'credited': credited})
 
 
 @require_user_profile

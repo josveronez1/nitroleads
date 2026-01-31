@@ -18,21 +18,31 @@ BASE_URL = config("BASE_URL", default="http://localhost:8000").rstrip("/")
 
 MP_API_BASE = "https://api.mercadopago.com"
 
-# Pacotes de créditos (7 pacotes; preço mínimo R$ 0,26 por crédito)
+# Pacotes de créditos (4 pacotes: 250, 500, 1000, 5000 - escadinha R$ 0,26 a R$ 0,50/crédito)
 CREDIT_PACKAGES = [
-    {"id": 1, "credits": 50, "price_brl": 25.00, "price_per_credit": 0.50, "name": "Pacote Inicial"},
-    {"id": 2, "credits": 100, "price_brl": 40.00, "price_per_credit": 0.40, "name": "Pacote Básico"},
-    {"id": 3, "credits": 250, "price_brl": 75.00, "price_per_credit": 0.30, "name": "Pacote Intermediário"},
-    {"id": 4, "credits": 500, "price_brl": 160.00, "price_per_credit": 0.32, "name": "Pacote Avançado"},
-    {"id": 5, "credits": 1000, "price_brl": 280.00, "price_per_credit": 0.28, "name": "Pacote Premium"},
-    {"id": 6, "credits": 2500, "price_brl": 650.00, "price_per_credit": 0.26, "name": "Pacote Enterprise"},
-    {"id": 7, "credits": 5000, "price_brl": 1300.00, "price_per_credit": 0.26, "name": "Pacote Corporativo"},
+    {"id": 1, "credits": 250, "price_brl": 90.00, "price_per_credit": 0.36, "name": "Pacote 250"},
+    {"id": 2, "credits": 500, "price_brl": 150.00, "price_per_credit": 0.30, "name": "Pacote 500"},
+    {"id": 3, "credits": 1000, "price_brl": 280.00, "price_per_credit": 0.28, "name": "Pacote 1000"},
+    {"id": 4, "credits": 5000, "price_brl": 1300.00, "price_per_credit": 0.26, "name": "Pacote 5000"},
 ]
 
 # Limites para compra personalizada
 CUSTOM_CREDITS_MIN = 10
 CUSTOM_CREDITS_MAX = 50000
-CUSTOM_PRICE_PER_CREDIT = 0.30
+CUSTOM_PRICE_MAX = 0.50  # R$ 0,50/crédito (quantidade baixa)
+CUSTOM_PRICE_MIN = 0.26  # R$ 0,26/crédito (quantidade alta)
+
+
+def _custom_price_per_credit(credits):
+    """
+    Escadinha: quantidade baixa = preço alto (0,50), quantidade alta = preço baixo (0,26).
+    Linear de 10 até 5000 créditos; acima de 5000 mantém 0,26.
+    """
+    if credits >= 5000:
+        return CUSTOM_PRICE_MIN
+    # 10 créditos -> 0,50 | 5000 créditos -> 0,26
+    ratio = (5000 - credits) / (5000 - CUSTOM_CREDITS_MIN)
+    return round(CUSTOM_PRICE_MIN + (CUSTOM_PRICE_MAX - CUSTOM_PRICE_MIN) * ratio, 4)
 
 
 def _get_package_by_id(package_id):
@@ -56,7 +66,7 @@ def create_preference(user_profile, package_id=None, custom_credits=None):
 
     Args:
         user_profile: UserProfile do usuário logado
-        package_id: ID do pacote (1-7) para compra de pacote fixo
+        package_id: ID do pacote (1-4) para compra de pacote fixo
         custom_credits: Quantidade de créditos para compra personalizada
 
     Returns:
@@ -85,7 +95,8 @@ def create_preference(user_profile, package_id=None, custom_credits=None):
             logger.error("Créditos personalizados fora do range: %s", custom_credits)
             return None
         credits = custom_credits
-        amount = round(credits * CUSTOM_PRICE_PER_CREDIT, 2)
+        price_per = _custom_price_per_credit(credits)
+        amount = round(credits * price_per, 2)
         title = f"{credits} créditos NitroLeads (personalizado)"
 
     else:
