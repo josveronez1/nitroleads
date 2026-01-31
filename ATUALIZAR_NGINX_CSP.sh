@@ -37,8 +37,8 @@ BACKUP_FILE="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 cp "$CONFIG_FILE" "$BACKUP_FILE"
 echo "Backup criado: $BACKUP_FILE"
 
-# Nova linha CSP com cdn.jsdelivr.net
-NEW_CSP='add_header Content-Security-Policy "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\'' '\''unsafe-eval'\'' https://js.stripe.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src '\''self'\'' '\''unsafe-inline'\'' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src '\''self'\'' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:; img-src '\''self'\'' data: https:; connect-src '\''self'\'' https://api.stripe.com https://*.supabase.co https://cdn.jsdelivr.net; frame-src https://js.stripe.com https://hooks.stripe.com; object-src '\''none'\''; base-uri '\''self'\''; form-action '\''self'\'';" always;'
+# Nova linha CSP com cdn.jsdelivr.net e Mercado Pago SDK
+NEW_CSP='add_header Content-Security-Policy "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\'' '\''unsafe-eval'\'' https://js.stripe.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://sdk.mercadopago.com; style-src '\''self'\'' '\''unsafe-inline'\'' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src '\''self'\'' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:; img-src '\''self'\'' data: https:; connect-src '\''self'\'' https://api.stripe.com https://*.supabase.co https://cdn.jsdelivr.net https://api.mercadopago.com https://www.mercadopago.com.br; frame-src https://js.stripe.com https://hooks.stripe.com https://www.mercadopago.com.br; object-src '\''none'\''; base-uri '\''self'\''; form-action '\''self'\'';" always;'
 
 # Remover TODAS as linhas CSP antigas (pode haver múltiplas)
 sed -i '/add_header Content-Security-Policy/d' "$CONFIG_FILE"
@@ -79,5 +79,5 @@ fi
 
 echo ""
 echo "=== Concluído ==="
-echo "CSP atualizado para incluir cdn.jsdelivr.net"
+echo "CSP atualizado para incluir cdn.jsdelivr.net e Mercado Pago SDK"
 
