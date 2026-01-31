@@ -126,10 +126,10 @@
         const bricksBuilder = mp.bricks();
 
         const settings = {
+            mercadoPago: mp,
             initialization: {
                 amount: amount,
                 preferenceId: preferenceId,
-                mercadoPago: mp,
             },
             customization: {
                 paymentMethods: {
@@ -159,18 +159,25 @@
                                 external_reference: externalReference,
                             }),
                         })
-                        .then(function(r) { return r.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                paymentModal.hide();
-                                window.location.href = '{% url "payment_success" %}';
-                                resolve();
-                            } else {
-                                reject(new Error(data.error || 'Erro ao processar pagamento'));
-                            }
+                        .then(function(r) {
+                            return r.text().then(function(text) {
+                                var data = {};
+                                try {
+                                    data = JSON.parse(text);
+                                } catch (e) {
+                                    data = { error: r.ok ? 'Resposta inválida' : 'Erro no servidor. Tente novamente.' };
+                                }
+                                if (r.ok && data.success) {
+                                    paymentModal.hide();
+                                    window.location.href = '{% url "payment_success" %}';
+                                    resolve();
+                                } else {
+                                    reject(new Error(data.error || 'Erro ao processar pagamento'));
+                                }
+                            });
                         })
                         .catch(function(err) {
-                            reject(err);
+                            reject(err instanceof Error ? err : new Error(String(err)));
                         });
                     });
                 },

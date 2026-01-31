@@ -172,7 +172,7 @@ class CSPMiddleware(MiddlewareMixin):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https:",
-            "connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://api.mercadopago.com https://www.mercadopago.com.br https://*.mlstatic.com https://www.mercadolibre.com https://api.mercadolibre.com",
+            "connect-src 'self' https: wss:",
             "frame-src 'self' https://www.mercadopago.com.br https://www.mercadolibre.com",
             "object-src 'none'",
             "base-uri 'self'",
