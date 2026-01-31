@@ -404,9 +404,14 @@ def process_payment(form_data, amount, description, external_reference, payer_em
         return r.json()
     except requests.RequestException as e:
         logger.error("Erro ao criar pagamento MP: %s", e)
+        err_msg = None
         if hasattr(e, "response") and e.response is not None:
             try:
-                logger.error("Resposta MP: %s", e.response.text[:500])
+                err_body = e.response.json()
+                logger.error("Resposta MP: %s", err_body)
+                err_msg = err_body.get("message") or err_body.get("error")
+                if isinstance(err_msg, dict):
+                    err_msg = err_msg.get("message", str(err_msg))
             except Exception:
-                pass
-        return None
+                err_msg = e.response.text[:200] if e.response.text else str(e)
+        raise ValueError(err_msg or str(e)) from e
