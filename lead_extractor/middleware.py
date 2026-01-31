@@ -165,15 +165,15 @@ class CSPMiddleware(MiddlewareMixin):
                 del response[header_name]
         
         # Construir diretiva CSP completa
-        # Permitir: self, *.supabase.co, Mercado Pago SDK e API
+        # Permitir: self, *.supabase.co, Mercado Pago SDK/API e domínios mlstatic/mercadolibre (Checkout Bricks)
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://sdk.mercadopago.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://sdk.mercadopago.com https://http2.mlstatic.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https:",
-            "connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://api.mercadopago.com https://www.mercadopago.com.br",
-            "frame-src 'self' https://www.mercadopago.com.br",
+            "connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://api.mercadopago.com https://www.mercadopago.com.br https://http2.mlstatic.com https://www.mercadolibre.com https://api.mercadolibre.com",
+            "frame-src 'self' https://www.mercadopago.com.br https://www.mercadolibre.com",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",
