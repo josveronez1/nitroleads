@@ -918,6 +918,7 @@ def process_payment_view(request):
                 'success': True,
                 'payment_id': result.get('id'),
                 'status': result.get('status'),
+                'payment_method_id': result.get('payment_method_id'),
             })
         return JsonResponse({'error': 'Erro ao processar pagamento. Verifique os logs do servidor.'}, status=500)
     except ValueError as e:

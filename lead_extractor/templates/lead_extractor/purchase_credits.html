@@ -99,6 +99,7 @@
             </div>
             <div class="modal-body">
                 <div id="paymentBrick_container"></div>
+                <div id="statusScreenBrick_container" style="display: none; min-height: 300px;"></div>
             </div>
         </div>
     </div>
@@ -115,12 +116,44 @@
     const processPaymentUrl = '{% url "process_payment" %}';
 
     let paymentBrickController = null;
+    let statusScreenBrickController = null;
     const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+
+    function showStatusScreenBrick(paymentId, amount, credits) {
+        document.getElementById('paymentBrick_container').style.display = 'none';
+        document.getElementById('statusScreenBrick_container').style.display = 'block';
+        document.getElementById('statusScreenBrick_container').innerHTML = '';
+
+        if (paymentBrickController && typeof paymentBrickController.unmount === 'function') {
+            paymentBrickController.unmount();
+            paymentBrickController = null;
+        }
+
+        const mp = new MercadoPago(publicKey);
+        const bricksBuilder = mp.bricks();
+
+        bricksBuilder.create('statusScreen', 'statusScreenBrick_container', {
+            initialization: { paymentId: String(paymentId) },
+            callbacks: {
+                onReady: function() { console.log('Status Screen pronto'); },
+                onError: function(err) { console.error('Status Screen error:', err); },
+            },
+        }).then(function(controller) {
+            statusScreenBrickController = controller;
+        }).catch(function(err) {
+            console.error('Erro ao criar Status Screen:', err);
+            document.getElementById('statusScreenBrick_container').innerHTML =
+                '<div class="alert alert-info"><p class="mb-0">Pagamento PIX criado! Acesse seu app de banco e pague o PIX. Os créditos serão adicionados automaticamente após a confirmação.</p><p class="mb-0 mt-2"><a href="' + window.location.origin + '/payment/success/?payment_id=' + paymentId + '" class="btn btn-primary">Ir para o Dashboard</a></p></div>';
+        });
+    }
 
     function openPaymentModal(preferenceId, amount, credits, externalReference) {
         document.getElementById('modal_credits').textContent = credits;
         document.getElementById('modal_amount').textContent = amount.toFixed(2).replace('.', ',');
         document.getElementById('paymentBrick_container').innerHTML = '';
+        document.getElementById('paymentBrick_container').style.display = '';
+        document.getElementById('statusScreenBrick_container').style.display = 'none';
+        document.getElementById('statusScreenBrick_container').innerHTML = '';
 
         const mp = new MercadoPago(publicKey);
         const bricksBuilder = mp.bricks();
@@ -168,9 +201,21 @@
                                     data = { error: r.ok ? 'Resposta inválida' : 'Erro no servidor. Tente novamente.' };
                                 }
                                 if (r.ok && data.success) {
-                                    paymentModal.hide();
-                                    window.location.href = '{% url "payment_success" %}';
-                                    resolve();
+                                    var status = data.status || '';
+                                    var paymentMethodId = (data.payment_method_id || '').toLowerCase();
+                                    var isPixOrBoleto = (paymentMethodId === 'pix' || paymentMethodId === 'bolbradesco');
+                                    if (status === 'approved') {
+                                        paymentModal.hide();
+                                        window.location.href = '{% url "payment_success" %}';
+                                        resolve();
+                                    } else if (status === 'pending' && isPixOrBoleto && data.payment_id) {
+                                        showStatusScreenBrick(data.payment_id, amount, credits);
+                                        resolve();
+                                    } else {
+                                        paymentModal.hide();
+                                        window.location.href = '{% url "payment_success" %}?status=' + status;
+                                        resolve();
+                                    }
                                 } else {
                                     reject(new Error(data.error || 'Erro ao processar pagamento'));
                                 }
@@ -206,6 +251,12 @@
             paymentBrickController.unmount();
             paymentBrickController = null;
         }
+        if (statusScreenBrickController && typeof statusScreenBrickController.unmount === 'function') {
+            statusScreenBrickController.unmount();
+            statusScreenBrickController = null;
+        }
+        document.getElementById('paymentBrick_container').style.display = '';
+        document.getElementById('statusScreenBrick_container').style.display = 'none';
     });
 
     function startCheckout(packageId, customCredits) {
