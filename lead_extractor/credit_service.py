@@ -62,17 +62,18 @@ def debit_credits(user_id, amount, description=None):
         return False, 0, str(e)
 
 
-def add_credits(user_id, amount, description=None, kiwify_sale_id=None, payment_gateway='kiwify'):
+def add_credits(user_id, amount, description=None, kiwify_sale_id=None, mp_payment_id=None, payment_gateway='mercadopago'):
     """
     Adiciona créditos ao usuário de forma atômica.
-    
+
     Args:
         user_id: ID do UserProfile ou objeto UserProfile
         amount: Quantidade de créditos a adicionar (positivo)
         description: Descrição opcional da transação
-        kiwify_sale_id: ID da venda na Kiwify (order_id do webhook)
-        payment_gateway: 'kiwify' ou 'stripe' (apenas para histórico; novas transações usam 'kiwify')
-    
+        kiwify_sale_id: ID da venda na Kiwify (histórico, deprecated)
+        mp_payment_id: ID do pagamento no Mercado Pago (para idempotência)
+        payment_gateway: 'mercadopago', 'kiwify' ou 'stripe'
+
     Returns:
         tuple: (success: bool, new_balance: int, error_message: str)
     """
@@ -83,20 +84,21 @@ def add_credits(user_id, amount, description=None, kiwify_sale_id=None, payment_
                 user_profile = user_id
             else:
                 user_profile = UserProfile.objects.select_for_update().get(id=user_id)
-            
+
             # Adicionar créditos
             user_profile.credits = F('credits') + amount
             user_profile.save(update_fields=['credits'])
-            
+
             # Atualizar o objeto para obter o valor atualizado
             user_profile.refresh_from_db()
-            
+
             # Criar transação de compra
             CreditTransaction.objects.create(
                 user=user_profile,
                 transaction_type='purchase',
                 amount=amount,
                 kiwify_sale_id=kiwify_sale_id,
+                mp_payment_id=mp_payment_id,
                 payment_gateway=payment_gateway,
                 description=description or f"Compra de {amount} crédito(s)"
             )

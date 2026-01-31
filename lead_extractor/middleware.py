@@ -26,7 +26,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/login/',
         '/static/',
         '/media/',
-        '/webhook/kiwify/',  # Webhook da Kiwify não precisa de autenticação
+        '/webhook/mercadopago/',  # Webhook do Mercado Pago não precisa de autenticação
     ]
     
     def process_request(self, request):
@@ -165,15 +165,15 @@ class CSPMiddleware(MiddlewareMixin):
                 del response[header_name]
         
         # Construir diretiva CSP completa
-        # Permitir: self, *.supabase.co, cdn.jsdelivr.net (Kiwify checkout é redirecionamento externo)
+        # Permitir: self, *.supabase.co, Mercado Pago SDK e API
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://sdk.mercadopago.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https:",
-            "connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://public-api.kiwify.com",
-            "frame-src 'none'",
+            "connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://api.mercadopago.com https://www.mercadopago.com.br",
+            "frame-src 'self' https://www.mercadopago.com.br",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",

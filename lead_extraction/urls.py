@@ -19,7 +19,7 @@ from django.urls import path
 from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
     search_by_cpf, search_by_cnpj, search_history, delete_search,
-    purchase_credits, create_checkout, kiwify_webhook, payment_success, payment_cancel,
+    purchase_credits, create_checkout, process_payment_view, mercadopago_webhook, payment_success, payment_cancel,
     viper_queue_status, get_viper_result,     api_autocomplete_niches, api_autocomplete_locations,
     api_search_status, api_search_leads, api_partners_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
     password_reset_view, password_reset_confirm_view, root_redirect_view, serve_favicon
@@ -42,7 +42,8 @@ urlpatterns = [
     path('search/<int:search_id>/delete/', delete_search, name='delete_search'),
     path('purchase/', purchase_credits, name='purchase_credits'),
     path('checkout/create/', create_checkout, name='create_checkout'),
-    path('webhook/kiwify/', kiwify_webhook, name='kiwify_webhook'),
+    path('checkout/process-payment/', process_payment_view, name='process_payment'),
+    path('webhook/mercadopago/', mercadopago_webhook, name='mercadopago_webhook'),
     path('payment/success/', payment_success, name='payment_success'),
     path('payment/cancel/', payment_cancel, name='payment_cancel'),
     path('api/viper-queue/<int:queue_id>/status/', viper_queue_status, name='viper_queue_status'),

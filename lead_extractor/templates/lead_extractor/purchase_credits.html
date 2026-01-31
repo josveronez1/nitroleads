@@ -16,13 +16,16 @@
         border-color: var(--primary-color);
         box-shadow: 0 0 20px rgba(13, 110, 253, 0.2);
     }
+    #paymentBrick_container {
+        min-height: 300px;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="text-center mb-5">
     <h2>Comprar Créditos</h2>
-    <p class="text-muted">Escolha um pacote de créditos para continuar suas buscas</p>
+    <p class="text-muted">Escolha um pacote de créditos ou defina a quantidade desejada</p>
     <p class="text-success small mb-0">
         <i class="fas fa-credit-card me-1"></i> Pagamento via PIX, Boleto ou Cartão de Crédito
     </p>
@@ -30,6 +33,31 @@
 </div>
 
 <form id="csrf-form" style="display: none;">{% csrf_token %}</form>
+
+{# Compra personalizada #}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title"><i class="fas fa-sliders-h me-2"></i>Valor Personalizado</h5>
+        <p class="text-muted small">Defina a quantidade exata de créditos que precisa (mín. 10, máx. 50.000)</p>
+        <div class="row align-items-end">
+            <div class="col-md-4">
+                <label for="custom_credits" class="form-label">Quantidade de créditos</label>
+                <input type="number" id="custom_credits" class="form-control" min="10" max="50000" value="100" placeholder="Ex: 150">
+            </div>
+            <div class="col-md-4">
+                <p class="mb-0 small text-muted">Valor estimado: <strong id="custom_price">R$ 30,00</strong></p>
+                <p class="mb-0 small text-muted">R$ 0,30 por crédito</p>
+            </div>
+            <div class="col-md-4">
+                <button type="button" class="btn btn-outline-primary w-100" id="buy-custom-btn">
+                    <i class="fas fa-shopping-cart me-1"></i> Comprar Valor Personalizado
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Pacotes fixos #}
 <div class="row g-4">
     {% for package in packages %}
     <div class="col-md-6 col-lg-4 col-xl-3">
@@ -58,34 +86,167 @@
     </div>
     {% endfor %}
 </div>
+
+{# Modal de pagamento Mercado Pago #}
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="paymentModalLabel">
+                    <i class="fas fa-credit-card me-2"></i> Pagar <span id="modal_credits">0</span> créditos - R$ <span id="modal_amount">0,00</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="paymentBrick_container"></div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://sdk.mercadopago.com/js/v2"></script>
 <script>
+(function() {
+    const csrfToken = document.querySelector('#csrf-form [name=csrfmiddlewaretoken]').value;
+    const publicKey = '{{ mercadopago_public_key|escapejs }}';
+    const createCheckoutUrl = '{% url "create_checkout" %}';
+    const processPaymentUrl = '{% url "process_payment" %}';
+
+    let paymentBrickController = null;
+    const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+
+    function openPaymentModal(preferenceId, amount, credits, externalReference) {
+        document.getElementById('modal_credits').textContent = credits;
+        document.getElementById('modal_amount').textContent = amount.toFixed(2).replace('.', ',');
+        document.getElementById('paymentBrick_container').innerHTML = '';
+
+        const mp = new MercadoPago(publicKey);
+        const bricksBuilder = mp.bricks();
+
+        const settings = {
+            initialization: {
+                amount: amount,
+                preferenceId: preferenceId,
+            },
+            customization: {
+                paymentMethods: {
+                    maxInstallments: 12,
+                },
+            },
+            callbacks: {
+                onReady: function() {
+                    console.log('Payment Brick pronto');
+                },
+                onSubmit: function({ formData }) {
+                    return new Promise(function(resolve, reject) {
+                        fetch(processPaymentUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrfToken,
+                            },
+                            body: JSON.stringify({
+                                formData: formData,
+                                amount: amount,
+                                description: credits + ' créditos NitroLeads',
+                                external_reference: externalReference,
+                            }),
+                        })
+                        .then(function(r) { return r.json(); })
+                        .then(function(data) {
+                            if (data.success) {
+                                paymentModal.hide();
+                                window.location.href = '{% url "payment_success" %}';
+                                resolve();
+                            } else {
+                                reject(new Error(data.error || 'Erro ao processar pagamento'));
+                            }
+                        })
+                        .catch(function(err) {
+                            reject(err);
+                        });
+                    });
+                },
+                onError: function(error) {
+                    console.error('Payment Brick error:', error);
+                    alert('Erro no pagamento: ' + (error.message || 'Tente novamente.'));
+                },
+            },
+        };
+
+        bricksBuilder.create('payment', 'paymentBrick_container', settings)
+            .then(function(controller) {
+                paymentBrickController = controller;
+            })
+            .catch(function(err) {
+                console.error('Erro ao criar Brick:', err);
+                alert('Erro ao carregar formulário de pagamento.');
+            });
+
+        paymentModal.show();
+    }
+
+    document.getElementById('paymentModal').addEventListener('hidden.bs.modal', function() {
+        if (paymentBrickController && typeof paymentBrickController.unmount === 'function') {
+            paymentBrickController.unmount();
+            paymentBrickController = null;
+        }
+    });
+
+    function startCheckout(packageId, customCredits) {
+        const formData = new FormData();
+        if (packageId) formData.append('package_id', packageId);
+        if (customCredits) formData.append('custom_credits', customCredits);
+
+        fetch(createCheckoutUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+            },
+            body: formData,
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.preference_id) {
+                openPaymentModal(
+                    data.preference_id,
+                    parseFloat(data.amount),
+                    data.credits,
+                    data.external_reference || ''
+                );
+            } else {
+                alert('Erro: ' + (data.error || 'Erro ao criar checkout'));
+            }
+        })
+        .catch(function(err) {
+            console.error('Erro:', err);
+            alert('Erro ao processar compra');
+        });
+    }
+
     document.querySelectorAll('.buy-package-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
             const packageId = this.getAttribute('data-package-id');
-            fetch('{% url "create_checkout" %}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': document.querySelector('#csrf-form [name=csrfmiddlewaretoken]').value
-                },
-                body: 'package_id=' + packageId
-            })
-            .then(function(response) { return response.json(); })
-            .then(function(data) {
-                if (data.checkout_url) {
-                    window.location.href = data.checkout_url;
-                } else {
-                    alert('Erro ao criar checkout: ' + (data.error || 'Erro desconhecido'));
-                }
-            })
-            .catch(function(error) {
-                console.error('Erro:', error);
-                alert('Erro ao processar compra');
-            });
+            startCheckout(packageId, null);
         });
     });
+
+    document.getElementById('buy-custom-btn').addEventListener('click', function() {
+        const credits = parseInt(document.getElementById('custom_credits').value, 10);
+        if (isNaN(credits) || credits < 10 || credits > 50000) {
+            alert('Informe entre 10 e 50.000 créditos');
+            return;
+        }
+        startCheckout(null, credits);
+    });
+
+    document.getElementById('custom_credits').addEventListener('input', function() {
+        const credits = parseInt(this.value, 10) || 0;
+        const price = (credits * 0.30).toFixed(2).replace('.', ',');
+        document.getElementById('custom_price').textContent = 'R$ ' + price;
+    });
+})();
 </script>
 {% endblock %}

@@ -112,9 +112,9 @@ class SearchAdmin(admin.ModelAdmin):
 
 @admin.register(CreditTransaction)
 class CreditTransactionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'transaction_type', 'amount', 'payment_gateway', 'created_at', 'kiwify_sale_id')
+    list_display = ('user', 'transaction_type', 'amount', 'payment_gateway', 'created_at', 'mp_payment_id', 'kiwify_sale_id')
     list_filter = ('transaction_type', 'payment_gateway', 'created_at')
-    search_fields = ('user__email', 'kiwify_sale_id', 'stripe_payment_intent_id')
+    search_fields = ('user__email', 'mp_payment_id', 'kiwify_sale_id', 'stripe_payment_intent_id')
     readonly_fields = ('created_at',)
 
 

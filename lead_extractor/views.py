@@ -18,7 +18,7 @@ from .services import (
 import threading
 from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess
 from .credit_service import debit_credits, check_credits
-from .kiwify_service import get_checkout_url, handle_webhook_event, CREDIT_PACKAGES
+from .mercadopago_service import create_preference, handle_webhook, process_payment, CREDIT_PACKAGES
 from .decorators import require_user_profile, validate_user_ownership
 import csv
 import json
@@ -827,57 +827,109 @@ def purchase_credits(request):
         'user_profile': user_profile,
         'available_credits': check_credits(user_profile),
         'packages': CREDIT_PACKAGES,
+        'mercadopago_public_key': config('MERCADOPAGO_PUBLIC_KEY', default=''),
     }
-    
+
     return render(request, 'lead_extractor/purchase_credits.html', context)
 
 
 @require_user_profile
 def create_checkout(request):
     """
-    Redireciona para checkout Kiwify. Monta URL com email do usuário na query (obrigatório para associar pagamento).
+    Cria preferência de pagamento no Mercado Pago para exibir no Payment Brick (modal).
+    Aceita package_id (pacote fixo) ou custom_credits (compra personalizada).
     """
     user_profile = request.user_profile
 
     if request.method == 'POST':
         package_id = request.POST.get('package_id')
+        custom_credits = request.POST.get('custom_credits')
 
-        if not package_id:
-            return JsonResponse({'error': 'Pacote não fornecido'}, status=400)
+        pkg_id = int(package_id) if package_id and str(package_id).isdigit() else None
+        cust_cred = int(custom_credits) if custom_credits and str(custom_credits).isdigit() else None
+
+        if pkg_id is None and cust_cred is None:
+            return JsonResponse({'error': 'Informe package_id ou custom_credits'}, status=400)
+
+        if pkg_id is not None and cust_cred is not None:
+            return JsonResponse({'error': 'Informe apenas package_id ou custom_credits'}, status=400)
 
         try:
-            package_id = int(package_id)
-            logger.info("Criando checkout Kiwify para usuário %s, pacote %s", user_profile.email, package_id)
-            checkout_url = get_checkout_url(package_id, user_profile.email)
-
-            if checkout_url:
-                logger.info("Checkout Kiwify criado com sucesso")
-                return JsonResponse({'checkout_url': checkout_url})
+            result = create_preference(
+                user_profile,
+                package_id=pkg_id,
+                custom_credits=cust_cred,
+            )
+            if result:
+                return JsonResponse({
+                    'preference_id': result['preference_id'],
+                    'amount': result['amount'],
+                    'credits': result['credits'],
+                    'description': result['description'],
+                    'external_reference': result.get('external_reference'),
+                })
             return JsonResponse({
-                'error': 'Erro ao criar checkout. Verifique KIWIFY_CLIENT_ID, KIWIFY_CLIENT_SECRET e KIWIFY_ACCOUNT_ID.'
+                'error': 'Erro ao criar preferência. Verifique MERCADOPAGO_ACCESS_TOKEN.'
             }, status=500)
-
-        except ValueError as e:
-            logger.error("Erro de valor ao criar checkout: %s", e)
-            return JsonResponse({'error': 'ID de pacote inválido'}, status=400)
         except Exception as e:
-            logger.error("Erro inesperado ao criar checkout: %s", e, exc_info=True)
+            logger.error("Erro ao criar preferência MP: %s", e, exc_info=True)
             return JsonResponse({'error': str(e)}, status=500)
 
     return JsonResponse({'error': 'Método não permitido'}, status=405)
 
 
-@csrf_exempt
-def kiwify_webhook(request):
+@require_user_profile
+def process_payment_view(request):
     """
-    Endpoint para receber webhooks da Kiwify (compra_aprovada, pix_gerado).
+    Recebe formData do Payment Brick e cria o pagamento no Mercado Pago.
     """
-    logger.info("Webhook Kiwify recebido")
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+
     try:
-        ok = handle_webhook_event(request.body, request.META)
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+
+    form_data = data.get('formData', data)
+    amount = data.get('amount')
+    description = data.get('description')
+    external_reference = data.get('external_reference')
+
+    if not all([form_data, amount, external_reference]):
+        return JsonResponse({
+            'error': 'Campos obrigatórios: formData, amount, external_reference'
+        }, status=400)
+
+    user_profile = request.user_profile
+    result = process_payment(
+        form_data=form_data,
+        amount=amount,
+        description=description or f'Créditos NitroLeads',
+        external_reference=external_reference,
+        payer_email=user_profile.email,
+    )
+
+    if result:
+        return JsonResponse({
+            'success': True,
+            'payment_id': result.get('id'),
+            'status': result.get('status'),
+        })
+    return JsonResponse({'error': 'Erro ao processar pagamento'}, status=500)
+
+
+@csrf_exempt
+def mercadopago_webhook(request):
+    """
+    Endpoint para receber webhooks do Mercado Pago (notificações de pagamento).
+    """
+    logger.info("Webhook Mercado Pago recebido")
+    try:
+        ok = handle_webhook(request.body, request.META)
         return HttpResponse(status=200 if ok else 500)
     except Exception as e:
-        logger.error("Erro ao processar webhook Kiwify: %s", e, exc_info=True)
+        logger.error("Erro ao processar webhook Mercado Pago: %s", e, exc_info=True)
         return HttpResponse(status=500)
 
 

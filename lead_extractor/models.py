@@ -123,8 +123,17 @@ class CreditTransaction(models.Model):
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     amount = models.IntegerField()  # Positivo para compra, negativo para uso
     stripe_payment_intent_id = models.CharField(max_length=255, null=True, blank=True)  # histórico Stripe
-    kiwify_sale_id = models.CharField(max_length=255, null=True, blank=True)
-    payment_gateway = models.CharField(max_length=20, choices=[('kiwify', 'Kiwify'), ('stripe', 'Stripe')], default='kiwify')
+    kiwify_sale_id = models.CharField(max_length=255, null=True, blank=True)  # histórico Kiwify
+    mp_payment_id = models.CharField(max_length=255, null=True, blank=True)  # Mercado Pago
+    payment_gateway = models.CharField(
+        max_length=20,
+        choices=[
+            ('mercadopago', 'Mercado Pago'),
+            ('kiwify', 'Kiwify'),
+            ('stripe', 'Stripe'),
+        ],
+        default='mercadopago',
+    )
     description = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
