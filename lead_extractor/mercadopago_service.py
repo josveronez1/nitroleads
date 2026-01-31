@@ -332,17 +332,21 @@ def process_payment(form_data, amount, description, external_reference, payer_em
     if not isinstance(form_data, dict):
         form_data = {}
 
+    pm_from_select = selected_payment_method
+    if isinstance(selected_payment_method, dict):
+        pm_from_select = selected_payment_method.get("type") or selected_payment_method.get("id")
+
     payment_method_id = (
         form_data.get("paymentMethodId")
         or form_data.get("payment_method_id")
-        or (selected_payment_method if isinstance(selected_payment_method, str) else None)
+        or (pm_from_select if pm_from_select else None)
         or "pix"
     )
 
     # Normalizar payment_method_id para PIX e boleto
-    if selected_payment_method == "bank_transfer" or payment_method_id == "bank_transfer":
+    if pm_from_select in ("bank_transfer", "pix") or payment_method_id == "bank_transfer":
         payment_method_id = "pix"
-    elif selected_payment_method == "ticket" or payment_method_id == "ticket":
+    elif pm_from_select in ("ticket", "bolbradesco") or payment_method_id in ("ticket",):
         payment_method_id = "bolbradesco"
 
     amount_float = float(amount) if amount is not None else 0

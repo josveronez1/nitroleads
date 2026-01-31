@@ -173,7 +173,7 @@ class CSPMiddleware(MiddlewareMixin):
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https:",
             "connect-src 'self' https: wss:",
-            "frame-src 'self' https://www.mercadopago.com.br https://www.mercadolibre.com",
+            "frame-src 'self' https://www.mercadopago.com.br https://www.mercadolibre.com https://secure-fields.mercadopago.com https://js.stripe.com https://hooks.stripe.com",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",
