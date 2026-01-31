@@ -892,31 +892,37 @@ def process_payment_view(request):
         return JsonResponse({'error': 'JSON inválido'}, status=400)
 
     form_data = data.get('formData', data)
+    selected_payment_method = data.get('selectedPaymentMethod')
     amount = data.get('amount')
     description = data.get('description')
     external_reference = data.get('external_reference')
 
-    if not all([form_data, amount, external_reference]):
+    if not all([form_data, amount is not None, external_reference]):
         return JsonResponse({
             'error': 'Campos obrigatórios: formData, amount, external_reference'
         }, status=400)
 
-    user_profile = request.user_profile
-    result = process_payment(
-        form_data=form_data,
-        amount=amount,
-        description=description or f'Créditos NitroLeads',
-        external_reference=external_reference,
-        payer_email=user_profile.email,
-    )
+    try:
+        user_profile = request.user_profile
+        result = process_payment(
+            form_data=form_data,
+            amount=amount,
+            description=description or 'Créditos NitroLeads',
+            external_reference=external_reference,
+            payer_email=user_profile.email,
+            selected_payment_method=selected_payment_method,
+        )
 
-    if result:
-        return JsonResponse({
-            'success': True,
-            'payment_id': result.get('id'),
-            'status': result.get('status'),
-        })
-    return JsonResponse({'error': 'Erro ao processar pagamento'}, status=500)
+        if result:
+            return JsonResponse({
+                'success': True,
+                'payment_id': result.get('id'),
+                'status': result.get('status'),
+            })
+        return JsonResponse({'error': 'Erro ao processar pagamento. Verifique os logs do servidor.'}, status=500)
+    except Exception as e:
+        logger.error("Erro em process_payment_view: %s", e, exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt

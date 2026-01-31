@@ -306,7 +306,7 @@ def handle_webhook(body, headers):
     return False
 
 
-def process_payment(form_data, amount, description, external_reference, payer_email):
+def process_payment(form_data, amount, description, external_reference, payer_email, selected_payment_method=None):
     """
     Cria um pagamento no Mercado Pago a partir dos dados do Payment Brick.
 
@@ -318,45 +318,75 @@ def process_payment(form_data, amount, description, external_reference, payer_em
         description: str, descrição do pagamento
         external_reference: str, ex: "user_id:credits:timestamp"
         payer_email: str, email do pagador
+        selected_payment_method: str opcional do Brick (pix, credit_card, bolbradesco, etc)
 
     Returns:
         dict: Resposta da API MP com status, id, etc. Ou None se falhar.
     """
+    import uuid
+
     if not MERCADOPAGO_ACCESS_TOKEN:
         logger.error("MERCADOPAGO_ACCESS_TOKEN não configurado")
         return None
 
+    if not isinstance(form_data, dict):
+        form_data = {}
+
     payment_method_id = (
         form_data.get("paymentMethodId")
         or form_data.get("payment_method_id")
+        or (selected_payment_method if isinstance(selected_payment_method, str) else None)
         or "pix"
     )
 
+    # Normalizar payment_method_id para PIX e boleto
+    if selected_payment_method == "bank_transfer" or payment_method_id == "bank_transfer":
+        payment_method_id = "pix"
+    elif selected_payment_method == "ticket" or payment_method_id == "ticket":
+        payment_method_id = "bolbradesco"
+
+    amount_float = float(amount) if amount is not None else 0
+    if amount_float <= 0:
+        logger.error("Valor inválido: %s", amount)
+        return None
+
     payload = {
-        "transaction_amount": float(amount),
+        "transaction_amount": amount_float,
         "description": description or "Créditos NitroLeads",
         "payment_method_id": payment_method_id,
-        "external_reference": external_reference,
+        "external_reference": external_reference or "",
         "payer": {
-            "email": payer_email,
+            "email": payer_email or "",
         },
     }
 
-    if payment_method_id in ("credit_card", "debit_card") or "token" in form_data:
+    # Cartão de crédito: token, installments, issuer_id, identification
+    if "token" in form_data and form_data.get("token"):
         payload["token"] = form_data.get("token") or form_data.get("Token")
         payload["installments"] = int(
             form_data.get("installments") or form_data.get("Installments") or 1
         )
-        payload["issuer_id"] = form_data.get("issuerId") or form_data.get("issuer_id")
+        issuer = form_data.get("issuerId") or form_data.get("issuer_id")
+        if issuer is not None:
+            payload["issuer_id"] = str(issuer)
         payer_obj = payload["payer"]
-        if form_data.get("payer"):
-            p = form_data["payer"]
-            payer_obj["identification"] = {
-                "type": p.get("identification", {}).get("type", "CPF"),
-                "number": p.get("identification", {}).get("number", ""),
-            }
+        p = form_data.get("payer") or {}
+        ident = p.get("identification") or {}
+        if isinstance(ident, dict):
+            id_type = ident.get("type") or ident.get("identificationType") or "CPF"
+            id_number = ident.get("number") or ident.get("identificationNumber") or ""
+            if id_number:
+                payer_obj["identification"] = {"type": id_type, "number": str(id_number).replace(".", "").replace("-", "")}
 
-    import uuid
+    # PIX e Boleto: payer.identification pode ser necessário
+    elif payment_method_id in ("pix", "bolbradesco"):
+        p = form_data.get("payer") or {}
+        ident = p.get("identification") or {}
+        if isinstance(ident, dict):
+            id_type = ident.get("type") or ident.get("identificationType") or "CPF"
+            id_number = ident.get("number") or ident.get("identificationNumber") or ""
+            if id_number:
+                payload["payer"]["identification"] = {"type": id_type, "number": str(id_number).replace(".", "").replace("-", "")}
 
     headers = {
         **_get_headers(),
@@ -376,7 +406,7 @@ def process_payment(form_data, amount, description, external_reference, payer_em
         logger.error("Erro ao criar pagamento MP: %s", e)
         if hasattr(e, "response") and e.response is not None:
             try:
-                logger.error("Resposta MP: %s", e.response.text)
+                logger.error("Resposta MP: %s", e.response.text[:500])
             except Exception:
                 pass
         return None

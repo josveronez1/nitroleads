@@ -135,9 +135,6 @@
                     ticket: 'all',       // Boleto
                     bankTransfer: 'all', // PIX
                     creditCard: 'all',
-                    debitCard: 'all',
-                    prepaidCard: 'all',
-                    mercadoPago: 'all',  // Carteira Mercado Pago
                     maxInstallments: 12,
                 },
             },
@@ -145,7 +142,7 @@
                 onReady: function() {
                     console.log('Payment Brick pronto');
                 },
-                onSubmit: function({ formData }) {
+                onSubmit: function({ formData, selectedPaymentMethod }) {
                     return new Promise(function(resolve, reject) {
                         fetch(processPaymentUrl, {
                             method: 'POST',
@@ -155,6 +152,7 @@
                             },
                             body: JSON.stringify({
                                 formData: formData,
+                                selectedPaymentMethod: selectedPaymentMethod,
                                 amount: amount,
                                 description: credits + ' créditos NitroLeads',
                                 external_reference: externalReference,
@@ -177,7 +175,8 @@
                 },
                 onError: function(error) {
                     console.error('Payment Brick error:', error);
-                    alert('Erro no pagamento: ' + (error.message || 'Tente novamente.'));
+                    var msg = (error && error.message) ? error.message : 'Tente novamente mais tarde.';
+                    alert('Erro no pagamento: ' + msg);
                 },
             },
         };
