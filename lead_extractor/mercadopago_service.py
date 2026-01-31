@@ -332,6 +332,13 @@ def process_payment(form_data, amount, description, external_reference, payer_em
     if not isinstance(form_data, dict):
         form_data = {}
 
+    logger.info(
+        "process_payment: payment_method_id=%s formData_keys=%s selectedPaymentMethod=%s",
+        form_data.get("paymentMethodId") or form_data.get("payment_method_id"),
+        list(form_data.keys()),
+        selected_payment_method,
+    )
+
     pm_from_select = selected_payment_method
     if isinstance(selected_payment_method, dict):
         pm_from_select = selected_payment_method.get("type") or selected_payment_method.get("id")
@@ -354,13 +361,17 @@ def process_payment(form_data, amount, description, external_reference, payer_em
         logger.error("Valor inválido: %s", amount)
         return None
 
+    p = form_data.get("payer") or {}
+    payer_email_final = p.get("email") if isinstance(p.get("email"), str) else None
+    payer_email_final = payer_email_final or payer_email or ""
+
     payload = {
         "transaction_amount": amount_float,
         "description": description or "Créditos NitroLeads",
         "payment_method_id": payment_method_id,
         "external_reference": external_reference or "",
         "payer": {
-            "email": payer_email or "",
+            "email": str(payer_email_final) if payer_email_final else (payer_email or ""),
         },
     }
 

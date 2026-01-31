@@ -920,6 +920,9 @@ def process_payment_view(request):
                 'status': result.get('status'),
             })
         return JsonResponse({'error': 'Erro ao processar pagamento. Verifique os logs do servidor.'}, status=500)
+    except ValueError as e:
+        logger.error("Erro em process_payment_view (MP API): %s", e)
+        return JsonResponse({'error': str(e)}, status=500)
     except Exception as e:
         logger.error("Erro em process_payment_view: %s", e, exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
