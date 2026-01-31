@@ -17,7 +17,21 @@
         box-shadow: 0 0 20px rgba(13, 110, 253, 0.2);
     }
     #paymentBrick_container {
-        min-height: 300px;
+        min-height: 280px;
+    }
+    #paymentModal .modal-dialog {
+        max-width: 520px;
+    }
+    #paymentModal .modal-header {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(0,0,0,.1);
+    }
+    #paymentModal .modal-body {
+        padding: 0.75rem 1rem 1rem;
+        min-height: 0;
+    }
+    #statusScreenBrick_container {
+        min-height: 0 !important;
     }
 </style>
 {% endblock %}
@@ -99,7 +113,7 @@
             </div>
             <div class="modal-body">
                 <div id="paymentBrick_container"></div>
-                <div id="statusScreenBrick_container" style="display: none; min-height: 300px;"></div>
+                <div id="statusScreenBrick_container" style="display: none;"></div>
             </div>
         </div>
     </div>

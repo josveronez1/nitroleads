@@ -226,6 +226,7 @@ def handle_webhook(body, headers):
         return False
 
     notif_type = data.get("type")
+    logger.info("Webhook MP recebido: type=%s", notif_type)
     if notif_type != "payment":
         logger.info("Webhook MP: type=%s ignorado", notif_type)
         return True
@@ -238,7 +239,10 @@ def handle_webhook(body, headers):
     if MERCADOPAGO_WEBHOOK_SECRET and not validate_webhook_signature(
         data, headers, MERCADOPAGO_WEBHOOK_SECRET
     ):
-        logger.error("Webhook MP: assinatura inválida")
+        logger.error(
+            "Webhook MP: assinatura inválida. Verifique se MERCADOPAGO_WEBHOOK_SECRET "
+            "corresponde à assinatura secreta do painel MP (Webhooks > Sua URL)"
+        )
         return False
 
     if CreditTransaction.objects.filter(mp_payment_id=str(payment_id)).exists():
@@ -365,11 +369,13 @@ def process_payment(form_data, amount, description, external_reference, payer_em
     payer_email_final = p.get("email") if isinstance(p.get("email"), str) else None
     payer_email_final = payer_email_final or payer_email or ""
 
+    notification_url = f"{BASE_URL}/webhook/mercadopago/"
     payload = {
         "transaction_amount": amount_float,
         "description": description or "Créditos NitroLeads",
         "payment_method_id": payment_method_id,
         "external_reference": external_reference or "",
+        "notification_url": notification_url,
         "payer": {
             "email": str(payer_email_final) if payer_email_final else (payer_email or ""),
         },

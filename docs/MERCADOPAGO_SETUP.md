@@ -36,14 +36,18 @@ Este documento descreve os passos manuais para configurar a integração com o M
 
 ## 3. Configurar Webhooks (notificações de pagamento)
 
+**Importante:** Sem o webhook configurado corretamente, pagamentos PIX e Boleto **não creditam automaticamente**. O Mercado Pago notifica seu servidor quando o pagamento é aprovado.
+
 1. Em **Suas integrações**, selecione a aplicação
 2. No menu à esquerda: **Webhooks > Configurar notificações**
-3. **URL modo produção:**
+3. **URL modo produção** (para pagamentos reais):
    - Informe: `https://nitroleads.online/webhook/mercadopago/`
    - Para testes locais, use um túnel (ngrok) e configure em "URL modo teste"
 4. **Eventos:** Marque o evento **Pagamentos** (tópico `payment`)
 5. Clique em **Salvar**
-6. Após salvar, copie a **assinatura secreta** e configure como `MERCADOPAGO_WEBHOOK_SECRET` no `.env`
+6. Após salvar, copie a **assinatura secreta** da URL de **produção** e configure como `MERCADOPAGO_WEBHOOK_SECRET` no `.env`
+   - Se usar credenciais de produção, a assinatura secreta deve ser a da URL de produção
+   - Se usar credenciais de teste, use a assinatura da URL de teste
 7. (Opcional) Use **Simular** no painel para testar se a URL responde 200
 
 ## 4. Variáveis no .env

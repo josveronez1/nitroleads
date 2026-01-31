@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, re_path
 from lead_extractor.views import (
     login_view, logout_view, dashboard, export_leads_csv, simple_search, 
     search_by_cpf, search_by_cnpj, search_history, delete_search,
@@ -43,7 +43,7 @@ urlpatterns = [
     path('purchase/', purchase_credits, name='purchase_credits'),
     path('checkout/create/', create_checkout, name='create_checkout'),
     path('checkout/process-payment/', process_payment_view, name='process_payment'),
-    path('webhook/mercadopago/', mercadopago_webhook, name='mercadopago_webhook'),
+    re_path(r'^webhook/mercadopago/?$', mercadopago_webhook, name='mercadopago_webhook'),
     path('payment/success/', payment_success, name='payment_success'),
     path('payment/cancel/', payment_cancel, name='payment_cancel'),
     path('api/viper-queue/<int:queue_id>/status/', viper_queue_status, name='viper_queue_status'),
