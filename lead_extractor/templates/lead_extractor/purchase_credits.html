@@ -349,30 +349,51 @@
         });
     });
 
-    document.getElementById('buy-custom-btn').addEventListener('click', function() {
-        const credits = parseInt(document.getElementById('custom_credits').value, 10);
-        if (isNaN(credits) || credits < 10 || credits > 50000) {
-            alert('Informe entre 10 e 50.000 créditos');
-            return;
-        }
-        startCheckout(null, credits);
-    });
+    const CUSTOM_CREDITS_MIN = 10;
+    const CUSTOM_CREDITS_MAX = 50000;
+    var priceBreakpoints = [[10, 0.50], [250, 0.36], [500, 0.30], [1000, 0.28], [5000, 0.26]];
 
     function customPricePerCredit(credits) {
         if (credits >= 5000) return 0.26;
-        var ratio = (5000 - credits) / (5000 - 10);
-        return 0.26 + (0.50 - 0.26) * ratio;
+        for (var i = 0; i < priceBreakpoints.length - 1; i++) {
+            var q1 = priceBreakpoints[i][0], p1 = priceBreakpoints[i][1];
+            var q2 = priceBreakpoints[i + 1][0], p2 = priceBreakpoints[i + 1][1];
+            if (credits >= q1 && credits <= q2) {
+                if (q1 === q2) return p2;
+                var ratio = (credits - q1) / (q2 - q1);
+                return p1 + (p2 - p1) * ratio;
+            }
+        }
+        return 0.26;
     }
-    function updateCustomPrice() {
-        const credits = parseInt(document.getElementById('custom_credits').value, 10) || 0;
-        const pricePer = customPricePerCredit(credits);
-        const total = (credits * pricePer).toFixed(2).replace('.', ',');
-        const perCredit = pricePer.toFixed(2).replace('.', ',');
+    function clampCustomCredits(val) {
+        var n = parseInt(val, 10);
+        if (isNaN(n) || n < CUSTOM_CREDITS_MIN) return CUSTOM_CREDITS_MIN;
+        if (n > CUSTOM_CREDITS_MAX) return CUSTOM_CREDITS_MAX;
+        return n;
+    }
+    function updateCustomPrice(forceClamp) {
+        var input = document.getElementById('custom_credits');
+        var credits = clampCustomCredits(input.value);
+        if (forceClamp || credits > CUSTOM_CREDITS_MAX || (input.value !== '' && credits < CUSTOM_CREDITS_MIN)) {
+            input.value = credits;
+        }
+        var pricePer = customPricePerCredit(credits);
+        var total = (credits * pricePer).toFixed(2).replace('.', ',');
+        var perCredit = pricePer.toFixed(2).replace('.', ',');
         document.getElementById('custom_price').textContent = 'R$ ' + total;
         document.getElementById('custom_price_per_credit').textContent = 'R$ ' + perCredit;
     }
-    document.getElementById('custom_credits').addEventListener('input', updateCustomPrice);
-    document.getElementById('custom_credits').addEventListener('change', updateCustomPrice);
+    document.getElementById('buy-custom-btn').addEventListener('click', function() {
+        var input = document.getElementById('custom_credits');
+        var credits = clampCustomCredits(input.value);
+        input.value = credits;
+        updateCustomPrice();
+        startCheckout(null, credits);
+    });
+    document.getElementById('custom_credits').addEventListener('input', function() { updateCustomPrice(false); });
+    document.getElementById('custom_credits').addEventListener('change', function() { updateCustomPrice(true); });
+    document.getElementById('custom_credits').addEventListener('blur', function() { updateCustomPrice(true); });
     updateCustomPrice();
 })();
 </script>

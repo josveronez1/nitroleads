@@ -29,20 +29,34 @@ CREDIT_PACKAGES = [
 # Limites para compra personalizada
 CUSTOM_CREDITS_MIN = 10
 CUSTOM_CREDITS_MAX = 50000
-CUSTOM_PRICE_MAX = 0.50  # R$ 0,50/crédito (quantidade baixa)
-CUSTOM_PRICE_MIN = 0.26  # R$ 0,26/crédito (quantidade alta)
+
+# Escadinha baseada nos pacotes: (créditos, preço/crédito). Abaixo de 250 usa 0,50.
+_PRICE_BREAKPOINTS = [
+    (10, 0.50),    # mínimo antes do primeiro pacote
+    (250, 0.36),   # Pacote 250
+    (500, 0.30),   # Pacote 500
+    (1000, 0.28),  # Pacote 1000
+    (5000, 0.26),  # Pacote 5000
+]
 
 
 def _custom_price_per_credit(credits):
     """
-    Escadinha: quantidade baixa = preço alto (0,50), quantidade alta = preço baixo (0,26).
-    Linear de 10 até 5000 créditos; acima de 5000 mantém 0,26.
+    Escadinha baseada nos valores dos pacotes.
+    Interpola linearmente entre os breakpoints.
     """
+    credits = int(credits)
     if credits >= 5000:
-        return CUSTOM_PRICE_MIN
-    # 10 créditos -> 0,50 | 5000 créditos -> 0,26
-    ratio = (5000 - credits) / (5000 - CUSTOM_CREDITS_MIN)
-    return round(CUSTOM_PRICE_MIN + (CUSTOM_PRICE_MAX - CUSTOM_PRICE_MIN) * ratio, 4)
+        return 0.26
+    for i in range(len(_PRICE_BREAKPOINTS) - 1):
+        q1, p1 = _PRICE_BREAKPOINTS[i]
+        q2, p2 = _PRICE_BREAKPOINTS[i + 1]
+        if q1 <= credits <= q2:
+            if q1 == q2:
+                return round(p2, 4)
+            ratio = (credits - q1) / (q2 - q1)
+            return round(p1 + (p2 - p1) * ratio, 4)
+    return round(_PRICE_BREAKPOINTS[-1][1], 4)
 
 
 def _get_package_by_id(package_id):
