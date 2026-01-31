@@ -34,11 +34,21 @@
         min-height: 0 !important;
     }
     #paymentModal .modal-body.status-screen-mode {
-        padding: 0.25rem 1rem 1rem;
+        padding: 0 1rem 1rem;
         overflow: hidden;
     }
+    #paymentModal .modal-body.status-screen-mode #paymentBrick_container {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+    }
     #paymentModal .modal-body.status-screen-mode #statusScreenBrick_container {
-        margin-top: -1rem;
+        margin: -1.25rem 0 0 0;
+        padding: 0;
     }
 </style>
 {% endblock %}
@@ -119,8 +129,8 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
-                <div id="paymentBrick_container"></div>
                 <div id="statusScreenBrick_container" style="display: none;"></div>
+                <div id="paymentBrick_container"></div>
             </div>
         </div>
     </div>
