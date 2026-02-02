@@ -169,7 +169,7 @@ class CSPMiddleware(MiddlewareMixin):
         # Permitir: self, *.supabase.co, Mercado Pago SDK/API e domínios mlstatic/mercadolibre (Checkout Bricks)
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://sdk.mercadopago.com https://http2.mlstatic.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://sdk.mercadopago.com https://http2.mlstatic.com https://cdn.tailwindcss.com https://esm.sh",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: https:",
