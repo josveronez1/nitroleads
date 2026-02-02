@@ -22,7 +22,8 @@ from lead_extractor.views import (
     purchase_credits, create_checkout, process_payment_view, mercadopago_webhook, api_payment_status, payment_success, payment_cancel,
     viper_queue_status, get_viper_result,     api_autocomplete_niches, api_autocomplete_locations,
     api_search_status, api_search_leads, api_partners_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
-    password_reset_view, password_reset_confirm_view, root_redirect_view, serve_favicon
+    password_reset_view, password_reset_confirm_view, root_redirect_view, serve_favicon,
+    lp_index, lp_static,
 )
 
 urlpatterns = [
@@ -59,4 +60,6 @@ urlpatterns = [
     path('api/payment-status/', api_payment_status, name='api_payment_status'),
     path('webhook/github/', github_webhook, name='github_webhook'),
     path('favicon.ico', serve_favicon, name='favicon'),
+    re_path(r'^lp/?$', lp_index, name='lp_index'),
+    re_path(r'^lp/(?P<path>.*)$', lp_static, name='lp_static'),
 ]

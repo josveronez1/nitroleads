@@ -1705,3 +1705,42 @@ def github_webhook(request):
     except Exception as e:
         logger.error(f"Webhook GitHub: Erro ao processar webhook: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
+
+
+LP_DIST = Path(settings.BASE_DIR) / 'lp' / 'Landing-Page---NitroLeads' / 'dist'
+
+
+def lp_index(request):
+    """Serve a landing page em /lp"""
+    index_path = LP_DIST / 'index.html'
+    if not index_path.exists():
+        return HttpResponse(
+            '<h1>Landing Page não encontrada</h1>'
+            '<p>Execute <code>cd lp/Landing-Page---NitroLeads && npm install && npm run build</code> primeiro.</p>',
+            status=404,
+        )
+    with open(index_path, 'r', encoding='utf-8') as f:
+        return HttpResponse(f.read(), content_type='text/html; charset=utf-8')
+
+
+def lp_static(request, path):
+    """Serve os arquivos estáticos da LP (assets, etc) em /lp/*"""
+    file_path = LP_DIST / path
+    if not file_path.exists() or not file_path.is_file():
+        return HttpResponse('Not Found', status=404)
+    if '..' in path:
+        return HttpResponse('Forbidden', status=403)
+    content_type_map = {
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.ico': 'image/x-icon',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+    }
+    content_type = content_type_map.get(file_path.suffix.lower(), 'application/octet-stream')
+    return FileResponse(open(file_path, 'rb'), content_type=content_type)

@@ -27,6 +27,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/static/',
         '/media/',
         '/webhook/mercadopago',   # Webhook do Mercado Pago (com ou sem / final)
+        '/lp',                    # Landing page (pública)
     ]
     
     def process_request(self, request):

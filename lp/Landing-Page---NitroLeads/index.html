@@ -1,0 +1,105 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NitroLeads | Pare de falar com a secretária</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Caveat:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            scroll-behavior: smooth;
+        }
+        .nitro-gradient {
+            background: linear-gradient(135deg, #0D6EFD 0%, #0A58CA 100%);
+        }
+        .nitro-text-gradient {
+            background: linear-gradient(135deg, #0D6EFD 0%, #0A58CA 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .strikethrough-custom {
+            position: relative;
+            display: inline-block;
+            color: #9ca3af;
+        }
+        .strikethrough-custom::after {
+            content: '';
+            position: absolute;
+            left: -2%;
+            top: 45%;
+            width: 104%;
+            height: 6px;
+            background: #ef4444;
+            transform: rotate(-2deg);
+            border-radius: 4px;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+            opacity: 0.85;
+        }
+        .nav-link-premium {
+            position: relative;
+            padding: 0.5rem 1rem;
+            transition: all 0.3s ease;
+            border-radius: 8px;
+        }
+        .nav-link-premium::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 0;
+            height: 2px;
+            background: #0D6EFD;
+            transition: all 0.3s ease;
+            transform: translateX(-50%);
+        }
+        .nav-link-premium:hover::after {
+            width: 70%;
+        }
+        .nav-link-premium:hover {
+            color: #0D6EFD;
+            background: rgba(13, 110, 253, 0.05);
+        }
+        .glow-button:hover {
+            box-shadow: 0 0 30px rgba(13, 110, 253, 0.6);
+            transform: translateY(-2px);
+        }
+        @keyframes pulse-soft {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+        }
+        .pulse-dot {
+            animation: pulse-soft 2s infinite;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "clsx": "https://esm.sh/clsx@^2.1.1",
+    "tailwind-merge": "https://esm.sh/tailwind-merge@^3.4.0",
+    "framer-motion": "https://esm.sh/framer-motion@^12.25.0",
+    "@tsparticles/engine": "https://esm.sh/@tsparticles/engine@^3.9.1",
+    "@tsparticles/slim": "https://esm.sh/@tsparticles/slim@^3.9.1",
+    "@tsparticles/react": "https://esm.sh/@tsparticles/react@^3.0.0",
+    "class-variance-authority": "https://esm.sh/class-variance-authority@^0.7.1",
+    "@radix-ui/react-slot": "https://esm.sh/@radix-ui/react-slot@^1.1.2"
+  }
+}
+</script>
+</head>
+<body class="bg-white text-[#212529]">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "NitroLeads Landing Page",
+  "description": "A high-conversion landing page for NitroLeads, a B2B sales intelligence platform focused on reaching decision-makers directly.",
+  "requestFramePermissions": [],
+  "dependencies": {
+    "framer-motion": "^11.0.0",
+    "@tsparticles/react": "^3.0.0",
+    "@tsparticles/slim": "^3.0.0",
+    "@tsparticles/engine": "^3.0.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.2.0",
+    "class-variance-authority": "^0.7.0",
+    "@radix-ui/react-slot": "^1.0.2",
+    "lucide-react": "^0.562.0"
+  }
+}
