@@ -112,7 +112,12 @@ export function BackgroundPaths({
                         className="inline-block group"
                     >
                         <Button
-                            onClick={() => window.open('https://nitroleads.online', '_blank')}
+                            onClick={() => {
+                                if (typeof window !== 'undefined' && (window as unknown as { fbq?: (a: string, b: string, c?: object) => void }).fbq) {
+                                    (window as unknown as { fbq: (a: string, b: string, c?: object) => void }).fbq('track', 'Lead', { content_name: 'CTA_QUERO_ME_LIBERTAR' });
+                                }
+                                window.open('https://nitroleads.online', '_blank');
+                            }}
                             className="nitro-gradient rounded-[14px] px-10 py-7 text-lg font-black 
                             text-white transition-all duration-300 shadow-xl shadow-blue-500/30
                             hover:shadow-blue-500/50 hover:-translate-y-1 uppercase italic tracking-wider flex items-center gap-2"

@@ -322,6 +322,9 @@
     });
 
     function startCheckout(packageId, customCredits) {
+        if (typeof fbq !== 'undefined') {
+            fbq('track', 'InitiateCheckout', { content_name: packageId ? 'Pacote' : 'Valor personalizado' });
+        }
         const formData = new FormData();
         if (packageId) formData.append('package_id', packageId);
         if (customCredits) formData.append('custom_credits', customCredits);

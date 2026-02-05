@@ -1710,8 +1710,28 @@ def github_webhook(request):
 LP_DIST = Path(settings.BASE_DIR) / 'lp' / 'Landing-Page---NitroLeads' / 'dist'
 
 
+META_PIXEL_LP_SNIPPET = '''<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '%s');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=%s&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
+'''
+
+
 def lp_index(request):
-    """Serve a landing page em /lp"""
+    """Serve a landing page em /lp (com Meta Pixel injetado se META_PIXEL_ID estiver configurado)."""
     index_path = LP_DIST / 'index.html'
     if not index_path.exists():
         return HttpResponse(
@@ -1720,7 +1740,12 @@ def lp_index(request):
             status=404,
         )
     with open(index_path, 'r', encoding='utf-8') as f:
-        return HttpResponse(f.read(), content_type='text/html; charset=utf-8')
+        html = f.read()
+    pixel_id = getattr(settings, 'META_PIXEL_ID', '') or ''
+    if pixel_id and '</head>' in html:
+        pixel_block = META_PIXEL_LP_SNIPPET % (pixel_id, pixel_id)
+        html = html.replace('</head>', pixel_block + '\n</head>', 1)
+    return HttpResponse(html, content_type='text/html; charset=utf-8')
 
 
 def lp_static(request, path):

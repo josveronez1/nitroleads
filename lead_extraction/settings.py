@@ -96,6 +96,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'lead_extractor.context_processors.meta_pixel',
             ],
         },
     },
@@ -175,6 +176,9 @@ SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
 
 # GitHub Webhook Configuration
 GITHUB_WEBHOOK_SECRET = config('GITHUB_WEBHOOK_SECRET', default='')
+
+# Meta Pixel (Facebook) - ID usado no frontend; token só no servidor se usar Conversions API
+META_PIXEL_ID = config('META_PIXEL_ID', default='')
 
 # Logging Configuration
 LOGGING = {

@@ -322,12 +322,14 @@
 
                     // Se já tem sessão (email confirmation desabilitado no Supabase), fazer login
                     if (data.session && data.session.access_token) {
+                        if (typeof fbq !== 'undefined') fbq('track', 'CompleteRegistration');
                         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`;
                         if (data.session.refresh_token) {
                             document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=604800; SameSite=Lax`;
                         }
                         window.location.href = '/';
                     } else {
+                        if (typeof fbq !== 'undefined') fbq('track', 'CompleteRegistration');
                         // Precisa confirmar email
                         btn.disabled = false;
                         btn.innerHTML = originalText;
