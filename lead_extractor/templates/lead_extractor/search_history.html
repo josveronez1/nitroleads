@@ -75,7 +75,7 @@
 
 {% if searches %}
     {% for search_data in searches_with_partners_status %}
-    {% with search=search_data.search all_leads_have_partners=search_data.all_leads_have_partners %}
+    {% with search=search_data.search display_leads=search_data.display_leads all_leads_have_partners=search_data.all_leads_have_partners %}
     <div class="card mb-3 search-card" id="search-card-{{ search.id }}">
         <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
@@ -187,14 +187,14 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for lead_access in search.lead_accesses.all %}
-                            {% with lead=lead_access.lead %}
+                            {% for item in display_leads %}
+                            {% with lead=item.lead lead_access=item.lead_access %}
                             <tr id="lead-row-{{ lead.id }}">
                                 <td class="partners-checkbox-cell" id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
                                     <input type="checkbox" class="partner-lead-checkbox" 
                                            data-lead-id="{{ lead.id }}" 
                                            data-search-id="{{ search.id }}"
-                                           {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
+                                           {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
                                            onchange="updatePartnersCost({{ search.id }})"
                                            style="display: none !important;">
                                 </td>
@@ -218,7 +218,7 @@
                                     {% endif %}
                                 </td>
                                 <td id="partners-cell-{{ lead.id }}">
-                                    {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                                    {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
                                         <div class="partners-list" id="partners-list-{{ lead.id }}">
                                             {% for socio in lead.viper_data.socios_qsa.socios %}
                                             <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
@@ -470,9 +470,13 @@
 
 {% block extra_js %}
 <script>
+    // ID da busca atualmente exibida no modal fullscreen (null se fechado)
+    let fullscreenModalSearchId = null;
+    
     // Abrir pesquisa em modal fullscreen
     function openSearchFullscreen(searchId) {
         console.log('openSearchFullscreen chamado com searchId:', searchId);
+        fullscreenModalSearchId = searchId;
         
         const searchCard = document.getElementById(`search-card-${searchId}`);
         if (!searchCard) {
@@ -609,6 +613,7 @@
             
             modalElement.addEventListener('shown.bs.modal', handleShown, { once: true });
             modalElement.addEventListener('hidden.bs.modal', function() {
+                fullscreenModalSearchId = null;
                 handleHidden();
                 // Resetar botão de buscar sócios quando modal fecha
                 const partnersBtn = document.getElementById('searchFullscreenPartnersBtn');
@@ -1125,7 +1130,52 @@
                 const resultsBadge = document.querySelector(`#search-card-${searchId} .badge.bg-primary`);
                 const creditsBadge = document.querySelector(`#search-card-${searchId} .badge.bg-secondary`);
                 
-                if (data.status === 'completed') {
+                if (data.status === 'processing') {
+                    // Atualizar badges durante processamento (exibição em tempo real)
+                    const rCount = data.results_count || 0;
+                    const cUsed = data.credits_used || 0;
+                    if (resultsBadge) resultsBadge.textContent = `${rCount} resultados`;
+                    if (creditsBadge) creditsBadge.textContent = `${cUsed} créditos`;
+                    if (fullscreenModalSearchId === searchId) {
+                        const modalResults = document.getElementById('searchFullscreenResults');
+                        const modalCredits = document.getElementById('searchFullscreenCredits');
+                        if (modalResults) modalResults.textContent = `${rCount} resultados`;
+                        if (modalCredits) modalCredits.textContent = `${cUsed} créditos`;
+                    }
+                    // Atualizar tabela se collapse expandido ou modal fullscreen aberto
+                    const collapse = document.getElementById(`search-${searchId}`);
+                    const collapseExpanded = collapse && collapse.classList.contains('show');
+                    const modalOpenForThisSearch = fullscreenModalSearchId === searchId;
+                    if (collapseExpanded || modalOpenForThisSearch) {
+                        fetch(`/api/search/${searchId}/leads/`, {
+                            method: 'GET',
+                            headers: { 'X-CSRFToken': csrfToken }
+                        })
+                        .then(r => r.ok ? r.text() : Promise.reject(new Error(r.status)))
+                        .then(html => {
+                            if (!html) return;
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = html;
+                            const newTable = tempDiv.querySelector('.table-responsive');
+                            if (!newTable) return;
+                            if (collapseExpanded) {
+                                const currentTable = collapse.querySelector('.table-responsive');
+                                if (currentTable) {
+                                    currentTable.innerHTML = newTable.innerHTML;
+                                    reattachEventListeners(searchId);
+                                }
+                            }
+                            if (modalOpenForThisSearch) {
+                                const modalBody = document.getElementById('searchFullscreenBody');
+                                if (modalBody) {
+                                    modalBody.innerHTML = newTable.outerHTML;
+                                    reattachEventListeners(searchId);
+                                }
+                            }
+                        })
+                        .catch(err => console.warn('Erro ao atualizar tabela durante processamento:', err));
+                    }
+                } else if (data.status === 'completed') {
                     // Parar polling
                     clearInterval(searchPollingIntervals[searchId]);
                     delete searchPollingIntervals[searchId];
@@ -1215,9 +1265,12 @@
     
     // Função para re-anexar event listeners após atualização dinâmica
     function reattachEventListeners(searchId) {
-        // Re-anexar listeners para botões de CPF
+        // Re-anexar listeners para botões de CPF (collapse e modal fullscreen)
+        const containers = [`#search-${searchId}`, '#searchFullscreenBody'];
+        const selector = containers.map(c => `${c} .search-cpf-btn`).join(', ');
+        const cancelSelector = containers.map(c => `${c} .cancel-cpf-btn`).join(', ');
         setTimeout(() => {
-            document.querySelectorAll(`#search-${searchId} .search-cpf-btn`).forEach(btn => {
+            document.querySelectorAll(selector).forEach(btn => {
                 const leadId = btn.getAttribute('id')?.replace('search-cpf-btn-', '');
                 if (leadId) {
                     btn.onclick = function(e) {
@@ -1227,7 +1280,7 @@
                 }
             });
             
-            document.querySelectorAll(`#search-${searchId} .cancel-cpf-btn`).forEach(btn => {
+            document.querySelectorAll(cancelSelector).forEach(btn => {
                 const leadId = btn.getAttribute('id')?.replace('cancel-cpf-btn-', '');
                 if (leadId) {
                     btn.onclick = function(e) {

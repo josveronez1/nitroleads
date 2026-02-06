@@ -16,14 +16,14 @@
             </tr>
         </thead>
         <tbody>
-            {% for lead_access in search.lead_accesses.all %}
-            {% with lead=lead_access.lead %}
+            {% for item in display_leads %}
+            {% with lead=item.lead lead_access=item.lead_access %}
             <tr id="lead-row-{{ lead.id }}">
                 <td class="partners-checkbox-cell" id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
                     <input type="checkbox" class="partner-lead-checkbox" 
                            data-lead-id="{{ lead.id }}" 
                            data-search-id="{{ search.id }}"
-                           {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
+                           {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
                            onchange="updatePartnersCost({{ search.id }})"
                            style="display: none !important;">
                 </td>
@@ -43,7 +43,7 @@
                     {% endif %}
                 </td>
                 <td id="partners-cell-{{ lead.id }}">
-                    {% if lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                    {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
                         <div class="partners-list" id="partners-list-{{ lead.id }}">
                             {% for socio in lead.viper_data.socios_qsa.socios %}
                             <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">

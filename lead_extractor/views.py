@@ -13,10 +13,10 @@ from .services import (
     search_google_maps, find_cnpj_by_name, enrich_company_viper, 
     get_partners_internal_queued, filter_existing_leads, search_cpf_viper, search_cnpj_viper,
     normalize_niche, normalize_location, get_cached_search, create_cached_search, get_leads_from_cache, search_incremental,
-    wait_for_partners_processing, process_search_async, sanitize_lead_data
+    wait_for_partners_processing, process_search_async, sanitize_lead_data, sanitize_socios_for_storage
 )
 import threading
-from .models import Lead, Search, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess, CreditTransaction
+from .models import Lead, Search, SearchLead, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess, CreditTransaction
 from .credit_service import debit_credits, check_credits
 from .mercadopago_service import create_preference, handle_webhook, process_payment, CREDIT_PACKAGES
 from .decorators import require_user_profile, validate_user_ownership
@@ -778,7 +778,7 @@ def search_history(request):
     # Garantir que apenas pesquisas do usuário sejam listadas
     # Mostrar apenas as 3 últimas pesquisas (por created_at)
     # Prefetch LeadAccess para otimizar queries (leads agora são acessados via LeadAccess)
-    searches = Search.objects.filter(user=user_profile).select_related('user', 'cached_search').prefetch_related('lead_accesses__lead').order_by('-created_at')[:3]
+    searches = Search.objects.filter(user=user_profile).select_related('user', 'cached_search').prefetch_related('search_leads__lead').order_by('-created_at')[:3]
     
     # Identificar última pesquisa (mais recente)
     last_search_id = None
@@ -792,16 +792,18 @@ def search_history(request):
     # Calcular para cada pesquisa se todos os leads já têm dados de sócios
     searches_with_partners_status = []
     for search in searches_list:
+        display_leads = search.get_leads_for_display(user_profile)
         all_leads_have_partners = True
         leads_count = 0
-        for lead_access in search.lead_accesses.all():
+        for item in display_leads:
             leads_count += 1
-            if not has_valid_partners_data(lead_access.lead):
+            if not has_valid_partners_data(item['lead']):
                 all_leads_have_partners = False
                 break
         
         searches_with_partners_status.append({
             'search': search,
+            'display_leads': display_leads,
             'all_leads_have_partners': all_leads_have_partners if leads_count > 0 else False
         })
     
@@ -1072,7 +1074,7 @@ def api_autocomplete_niches(request):
             # Retornar todos os nichos ativos (para carregamento completo no front-end)
             niches = NormalizedNiche.objects.filter(
                 is_active=True
-            ).order_by('display_name')[:200]
+            ).order_by('display_name')[:1000]
         
         results = [{'value': niche.display_name, 'display': niche.display_name} for niche in niches]
         
@@ -1103,7 +1105,7 @@ def api_autocomplete_locations(request):
             # Retornar todas as localizações ativas (para carregamento completo no front-end)
             locations = NormalizedLocation.objects.filter(
                 is_active=True
-            ).order_by('state', 'city')[:200]
+            ).order_by('state', 'city')[:1000]
         
         results = [{'value': loc.display_name, 'display': loc.display_name} for loc in locations]
         
@@ -1169,11 +1171,13 @@ def api_search_leads(request, search_id):
         from django.template.loader import render_to_string
         from django.template import RequestContext
         
+        display_leads = search_obj.get_leads_for_display(user_profile)
         leads_html = render_to_string(
             'lead_extractor/partials/search_leads_table.html',
             {
                 'search': search_obj,
                 'user_profile': user_profile,
+                'display_leads': display_leads,
             },
             request=request
         )
@@ -1408,11 +1412,13 @@ def search_partners(request, search_id):
                 # Recarregar Lead para pegar dados atualizados (se já existirem)
                 lead.refresh_from_db()
                 
+                partners_raw = lead.viper_data.get('socios_qsa', {}) if lead.viper_data else {}
+                partners_sanitized = sanitize_socios_for_storage(partners_raw) if partners_raw else {}
                 results.append({
                     'lead_id': lead.id,
                     'name': lead.name,
                     'cnpj': lead.cnpj,
-                    'partners': lead.viper_data.get('socios_qsa', {}) if lead.viper_data else {},
+                    'partners': partners_sanitized if isinstance(partners_sanitized, dict) else {'socios': partners_sanitized},
                     'processed': has_partners  # Indica se já tinha dados ou foi enfileirado
                 })
                 
@@ -1463,11 +1469,15 @@ def api_partners_status(request, search_id):
         
         for lead_id in lead_ids:
             try:
-                lead_access = search_obj.lead_accesses.filter(lead_id=lead_id).first()
-                if not lead_access:
-                    continue
-                
-                lead = lead_access.lead
+                # Prefer SearchLead (nova estrutura); fallback para LeadAccess
+                sl = SearchLead.objects.filter(search=search_obj, lead_id=lead_id).select_related('lead').first()
+                if sl:
+                    lead = sl.lead
+                else:
+                    lead_access = search_obj.lead_accesses.filter(lead_id=lead_id).first()
+                    if not lead_access:
+                        continue
+                    lead = lead_access.lead
                 has_partners = has_valid_partners_data(lead)
                 
                 if has_partners:

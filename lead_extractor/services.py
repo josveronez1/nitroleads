@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import timedelta
 from django.utils import timezone
 from decouple import config
-from .models import Lead, NormalizedNiche, NormalizedLocation, CachedSearch, Search
+from .models import Lead, NormalizedNiche, NormalizedLocation, CachedSearch, Search, SearchLead, LeadAccess
 
 logger = logging.getLogger(__name__)
 
@@ -903,7 +903,7 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
             - Lista de leads no formato dict como no dashboard
             - CachedSearch criado ou atualizado (ou None se não encontrou leads)
     """
-    from .models import Lead, LeadAccess, CachedSearch, Search
+    from .models import Lead, LeadAccess, CachedSearch, Search, SearchLead
     from .credit_service import debit_credits
     
     if not niche_normalized or not location_normalized:
@@ -912,6 +912,11 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
     try:
         # Primeiro, limpar LeadAccess de pesquisas antigas
         cleanup_old_search_accesses(user_profile)
+        
+        # CNPJs das últimas 3 buscas (exceto a atual) - não retornar esses leads
+        exclude_cnpjs = get_cnpjs_from_user_last_3_searches(
+            user_profile, exclude_search_id=search_obj.id if search_obj else None
+        )
         
         # Buscar leads na base global que correspondem à busca
         # Buscar por leads que têm cached_search com mesmo nicho e localização
@@ -932,25 +937,9 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
             # Retornar vazio
             return [], None
         
-        # Buscar CNPJs que o usuário já tem acesso nas 3 últimas pesquisas
-        last_3_searches = Search.objects.filter(
-            user=user_profile
-        ).order_by('-created_at')[:3]
-        
-        accessed_cnpjs = set()
-        if last_3_searches.exists():
-            last_3_search_ids = set(last_3_searches.values_list('id', flat=True))
-            accessed_cnpjs = set(
-                LeadAccess.objects.filter(
-                    user=user_profile,
-                    search_id__in=last_3_search_ids
-                ).values_list('lead__cnpj', flat=True)
-            )
-        
-        # Buscar leads que o usuário NÃO acessou nas 3 últimas pesquisas
-        # Buscar mais do que necessário (2x) para garantir que temos leads suficientes
+        # Buscar leads que NÃO estão nas últimas 3 buscas do usuário
         available_leads = leads_query.exclude(
-            cnpj__in=accessed_cnpjs
+            cnpj__in=exclude_cnpjs
         ).order_by('-created_at')[:quantity * 3]
         
         # Converter para formato esperado pelo dashboard
@@ -990,6 +979,10 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
                 if not success:
                     logger.warning(f"Erro ao debitar crédito para lead {lead.id}: {error}")
                     # Continuar mesmo se débito falhar (já criou LeadAccess)
+            
+            # Criar SearchLead para listagem consistente
+            if search_obj:
+                SearchLead.objects.get_or_create(search=search_obj, lead=lead)
             
             # Sanitizar dados (esconder QSA/telefones até enriquecer)
             sanitized_viper_data = sanitize_lead_data(
@@ -1050,19 +1043,21 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
         return []
     
     try:
-        # Buscar CNPJs já acessados pelo usuário
+        # CNPJs das últimas 3 buscas do usuário - não retornar esses leads (deduplicação)
+        exclude_cnpjs = get_cnpjs_from_user_last_3_searches(
+            user_profile, exclude_search_id=search_obj.id if search_obj else None
+        )
+        # CNPJs já acessados (para não debitar crédito novamente ao reexibir)
         accessed_cnpjs = set(
             LeadAccess.objects.filter(user=user_profile)
             .values_list('lead__cnpj', flat=True)
         )
         
-        # Buscar leads do cache que o usuário NÃO acessou primeiro
-        # Buscar mais do que necessário (2x) para garantir que temos leads suficientes
-        # Não usar distinct('cnpj') com order_by diferente - fazer deduplicação em Python
+        # Buscar leads do cache que NÃO estão nas últimas 3 buscas
         cached_leads_new = Lead.objects.filter(
             cached_search=cached_search,
             cnpj__isnull=False
-        ).exclude(cnpj='').exclude(cnpj__in=accessed_cnpjs).order_by('-created_at')[:quantity * 3]
+        ).exclude(cnpj='').exclude(cnpj__in=exclude_cnpjs).order_by('-created_at')[:quantity * 3]
         
         # Converter para formato esperado pelo dashboard
         results = []
@@ -1102,6 +1097,10 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
                     logger.warning(f"Erro ao debitar crédito para lead {lead.id}: {error}")
                     # Continuar mesmo se débito falhar (já criou LeadAccess)
             
+            # Criar SearchLead para listagem consistente
+            if search_obj:
+                SearchLead.objects.get_or_create(search=search_obj, lead=lead)
+            
             # Sanitizar dados (esconder QSA/telefones até enriquecer)
             sanitized_viper_data = sanitize_lead_data(
                 {'viper_data': lead.viper_data or {}},
@@ -1119,15 +1118,16 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
             
             results.append(company_data)
             
-        # Se ainda não temos leads suficientes, buscar leads que o usuário JÁ acessou
+        # Se ainda não temos leads suficientes, buscar leads que o usuário JÁ acessou (fora das últimas 3 buscas)
         # (mas sem debitar crédito novamente - apenas retornar os dados)
         if len(results) < quantity:
             additional_needed = quantity - len(results)
+            # Leads que usuário já acessou mas NÃO estão nas últimas 3 buscas (podemos reexibir sem debitar)
             cached_leads_accessed = Lead.objects.filter(
                 cached_search=cached_search,
                 cnpj__isnull=False,
                 cnpj__in=accessed_cnpjs
-            ).exclude(cnpj='').exclude(cnpj__in=cnpjs_processed).order_by('-created_at')[:additional_needed * 2]
+            ).exclude(cnpj='').exclude(cnpj__in=cnpjs_processed).exclude(cnpj__in=exclude_cnpjs).order_by('-created_at')[:additional_needed * 2]
             
             for lead in cached_leads_accessed:
                 if len(results) >= quantity:
@@ -1154,6 +1154,10 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
                         search=search_obj,
                         credits_paid=0  # Não debitar crédito pois já foi debitado antes
                     )
+                
+                # Criar SearchLead para listagem consistente
+                if search_obj:
+                    SearchLead.objects.get_or_create(search=search_obj, lead=lead)
                 
                 # Sanitizar dados
                 sanitized_viper_data = sanitize_lead_data(
@@ -1248,6 +1252,107 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
     return new_places, existing_cnpjs
 
 
+# Campos de contato que devem ser removidos dos socios (nunca expor sem CPF enrichment pago)
+SOCIOS_CONTACT_KEYS_TO_STRIP = {
+    'telefones', 'emails', 'TELEFONE', 'telefones_fixos', 'telefones_moveis',
+    'whatsapps', 'telefone', 'email', 'TELEFONES_FIXOS', 'TELEFONES_MOVEIS',
+    'WHATSAPPS', 'EMAILS',
+}
+
+# Campos permitidos nos socios (nomes/cargos/CPF + cpf_data quando enriquecido por nós)
+SOCIOS_ALLOWED_KEYS = {'NOME', 'CARGO', 'DOCUMENTO', 'CPF', 'cpf', 'nome', 'cargo', 'documento',
+                       'qualificacao', 'QUALIFICACAO', 'cpf_enriched', 'cpf_data'}
+
+
+def sanitize_socios_for_storage(data):
+    """
+    Remove dados de contato dos socios. Mantém apenas NOME, CARGO, DOCUMENTO (e variantes).
+    Preserva cpf_enriched e cpf_data quando existem (dados do nosso enriquecimento pago).
+    
+    REGRA: Contatos só após o usuário pagar por "Buscar informações dos sócios".
+    
+    Args:
+        data: Dict {'socios': [...]} ou lista [...] de socios
+        
+    Returns:
+        Mesma estrutura com socios sanitizados
+    """
+    if data is None:
+        return None
+    
+    # Normalizar para lista de socios
+    if isinstance(data, list):
+        socios_list = data
+        return_list = True
+    elif isinstance(data, dict) and 'socios' in data:
+        socios_list = data.get('socios', [])
+        if not isinstance(socios_list, list):
+            socios_list = [socios_list] if socios_list else []
+        return_list = False
+    else:
+        return data
+    
+    sanitized_socios = []
+    for socio in socios_list:
+        if not isinstance(socio, dict):
+            sanitized_socios.append(socio)
+            continue
+        clean = {}
+        for k, v in socio.items():
+            if k in SOCIOS_CONTACT_KEYS_TO_STRIP:
+                continue
+            if k in SOCIOS_ALLOWED_KEYS:
+                clean[k] = v
+            elif k.upper() in ('NOME', 'CARGO', 'DOCUMENTO', 'CPF', 'QUALIFICACAO'):
+                clean[k] = v
+            # cpf_enriched e cpf_data são do nosso enriquecimento - preservar
+            elif k in ('cpf_enriched', 'cpf_data'):
+                clean[k] = v
+        sanitized_socios.append(clean)
+    
+    if return_list:
+        return sanitized_socios
+    return {'socios': sanitized_socios}
+
+
+def get_cnpjs_from_user_last_3_searches(user_profile, exclude_search_id=None):
+    """
+    Retorna set de CNPJs que o usuário já viu nas últimas 3 pesquisas.
+    Usado para deduplicação: não retornar o mesmo lead se está nas últimas 3 buscas.
+    
+    Args:
+        user_profile: UserProfile do usuário
+        exclude_search_id: ID da busca atual (excluir da contagem)
+        
+    Returns:
+        set: CNPJs a excluir da busca atual
+    """
+    last_searches = Search.objects.filter(
+        user=user_profile
+    ).exclude(
+        id=exclude_search_id
+    ).order_by('-created_at')[:3]
+    
+    if not last_searches:
+        return set()
+    
+    search_ids = [s.id for s in last_searches]
+    
+    # Usar SearchLead se existir, senão LeadAccess (backward compat)
+    cnpjs_from_searchlead = set(
+        SearchLead.objects.filter(search_id__in=search_ids)
+        .values_list('lead__cnpj', flat=True)
+    )
+    cnpjs_from_leadaccess = set(
+        LeadAccess.objects.filter(search_id__in=search_ids)
+        .exclude(lead__cnpj__isnull=True)
+        .exclude(lead__cnpj='')
+        .values_list('lead__cnpj', flat=True)
+    )
+    
+    return cnpjs_from_searchlead | cnpjs_from_leadaccess
+
+
 def sanitize_lead_data(lead_data, show_partners=False, has_enriched_access=False):
     """
     Remove dados sensíveis de leads. REGRA CRÍTICA: Sócios/telefones/emails só aparecem após enriquecimento pago.
@@ -1321,7 +1426,7 @@ def process_search_async(search_id):
         
         credits_used = 0
         leads_processed = 0
-        existing_cnpjs = set()
+        existing_cnpjs = get_cnpjs_from_user_last_3_searches(user_profile, exclude_search_id=search_id)
         results = []
         cached_search = None
         
@@ -1355,6 +1460,10 @@ def process_search_async(search_id):
                     results.append(company_data)
                 
                 logger.info(f"Leads existentes encontrados: {leads_processed} leads retornados da base (solicitado: {quantity})")
+                # Atualização incremental para exibição em tempo real
+                search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
+                search_obj.credits_used = credits_used
+                search_obj.save(update_fields=['results_count', 'credits_used'])
         
         # Atualizar cached_search no search_obj se encontramos leads
         if cached_search:
@@ -1408,18 +1517,26 @@ def process_search_async(search_id):
                         break
                 
                 logger.info(f"Cache usado: {leads_processed - (len(existing_leads) if 'existing_leads' in locals() and existing_leads else 0)} leads adicionais do cache (total: {leads_processed}/{quantity})")
+                # Atualização incremental para exibição em tempo real
+                search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
+                search_obj.credits_used = credits_used
+                search_obj.save(update_fields=['results_count', 'credits_used'])
             
             # Se ainda não temos leads suficientes após usar cache, fazer busca no Serper
             if leads_processed < quantity:
+                # Set para rastrear CNPJs já processados (evitar duplicatas; usado também na busca incremental)
+                processed_cnpjs_in_search = set()
+                # Adicionar CNPJs já nos resultados
+                for r in results:
+                    c = r.get('cnpj')
+                    if c:
+                        processed_cnpjs_in_search.add(c)
+                
                 # Busca completa (sem cache ou cache insuficiente)
-                # Usar busca paginada para obter múltiplas páginas até atingir quantity
                 additional_needed = quantity - leads_processed
                 places = search_google_maps_paginated(search_term, additional_needed)
                 filtered_places, existing_cnpjs_set = filter_existing_leads(user_profile, places)
                 existing_cnpjs.update(existing_cnpjs_set)
-                
-                # Set para rastrear CNPJs já processados nesta busca específica (evitar duplicatas)
-                processed_cnpjs_in_search = set()
                 
                 # Calcular número de páginas buscadas (aproximado)
                 results_per_page = 10
@@ -1463,7 +1580,9 @@ def process_search_async(search_id):
                     
                     # Se CNPJ já foi processado nesta busca, pular (evitar duplicatas)
                     if cnpj in processed_cnpjs_in_search:
-                        logger.info(f"CNPJ {cnpj} já foi processado nesta busca, pulando...")
+                        continue
+                    # Se CNPJ está nas últimas 3 buscas do usuário, pular (deduplicação)
+                    if cnpj in existing_cnpjs:
                         continue
                     
                     company_data['cnpj'] = cnpj
@@ -1518,6 +1637,9 @@ def process_search_async(search_id):
                         
                         credits_used += 1
                     
+                    # Criar SearchLead para listagem consistente
+                    SearchLead.objects.get_or_create(search=search_obj, lead=lead_obj)
+                    
                     # Sanitizar dados (esconder QSA/telefones até enriquecer)
                     sanitized_viper_data = sanitize_lead_data(
                         {'viper_data': lead_obj.viper_data or {}},
@@ -1528,6 +1650,12 @@ def process_search_async(search_id):
                     leads_processed += 1
                     processed_cnpjs_in_search.add(cnpj)
                     results.append(company_data)
+                    
+                    # Atualização incremental a cada 5 leads (exibição em tempo real)
+                    if leads_processed % 5 == 0:
+                        search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
+                        search_obj.credits_used = credits_used
+                        search_obj.save(update_fields=['results_count', 'credits_used'])
                     
                     # Atualizar CachedSearch se necessário
                     if not cached_search:
@@ -1580,7 +1708,7 @@ def process_search_async(search_id):
             max_incremental_iterations = 20
             max_api_requests = 50
             consecutive_empty_iterations = 0
-            max_consecutive_empty = 3
+            max_consecutive_empty = 5  # Relaxado para priorizar atingir quantity (era 3)
             api_requests_made = 0
             
             while leads_processed < quantity and incremental_iteration < max_incremental_iterations:
@@ -1647,6 +1775,9 @@ def process_search_async(search_id):
                     if cnpj in processed_cnpjs_in_search:
                         leads_duplicated += 1
                         continue
+                    if cnpj in existing_cnpjs:
+                        leads_duplicated += 1
+                        continue
                     
                     company_data['cnpj'] = cnpj
                     public_data = enrich_company_viper(cnpj)
@@ -1699,6 +1830,9 @@ def process_search_async(search_id):
                         
                         credits_used += 1
                     
+                    # Criar SearchLead para listagem consistente
+                    SearchLead.objects.get_or_create(search=search_obj, lead=lead_obj)
+                    
                     # Sanitizar dados (esconder QSA/telefones até enriquecer)
                     sanitized_viper_data = sanitize_lead_data(
                         {'viper_data': lead_obj.viper_data or {}},
@@ -1708,8 +1842,15 @@ def process_search_async(search_id):
                     company_data['viper_data'] = sanitized_viper_data
                     leads_processed += 1
                     processed_cnpjs_in_search.add(cnpj)
+                    existing_cnpjs.add(cnpj)
                     leads_found_in_batch += 1
                     results.append(company_data)
+                    
+                    # Atualização incremental a cada 5 leads (exibição em tempo real)
+                    if leads_processed % 5 == 0:
+                        search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
+                        search_obj.credits_used = credits_used
+                        search_obj.save(update_fields=['results_count', 'credits_used'])
             
                 # Log resumido da iteração
                 if leads_found_in_batch > 0:
@@ -1730,8 +1871,8 @@ def process_search_async(search_id):
             if leads_processed < quantity:
                 logger.info(f"Busca incremental concluída: {leads_processed}/{quantity} leads. Requisições Serper: {api_requests_made} places + {serper_cnpj_calls} find_cnpj (cache: {len(cnpj_cache)} nomes)")
         
-        # Atualizar search_obj com resultados
-        search_obj.results_count = leads_processed
+        # Atualizar search_obj com resultados (results_count = SearchLead para consistência)
+        search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
         search_obj.credits_used = credits_used
         search_obj.results_data = {
             'leads': [

@@ -112,6 +112,25 @@ class Search(models.Model):
     def __str__(self):
         return f"{self.niche} em {self.location} - {self.user.email}"
 
+    def get_leads_for_display(self, user_profile):
+        """
+        Retorna leads desta busca para exibição (usa SearchLead para listagem consistente).
+        Cada item é dict com 'lead' e 'lead_access' (para enriched_at).
+        """
+        search_leads = SearchLead.objects.filter(search=self).select_related('lead').order_by('id')
+        if not search_leads:
+            # Fallback: buscas antigas sem SearchLead (usar LeadAccess)
+            lead_accesses = LeadAccess.objects.filter(search=self, user=user_profile).select_related('lead')
+            return [{'lead': la.lead, 'lead_access': la} for la in lead_accesses]
+        lead_ids = [sl.lead_id for sl in search_leads]
+        la_map = {la.lead_id: la for la in LeadAccess.objects.filter(
+            user=user_profile, lead_id__in=lead_ids
+        )}
+        return [
+            {'lead': sl.lead, 'lead_access': la_map.get(sl.lead_id)}
+            for sl in search_leads
+        ]
+
 
 class CreditTransaction(models.Model):
     TRANSACTION_TYPES = [
@@ -198,6 +217,25 @@ class LeadAccess(models.Model):
     
     def __str__(self):
         return f"{self.user.email} -> {self.lead.name} ({self.accessed_at})"
+
+
+class SearchLead(models.Model):
+    """
+    Tabela de junção: quais leads pertencem a qual busca.
+    Usada para listagem consistente e deduplicação (últimas 3 buscas).
+    """
+    search = models.ForeignKey(Search, on_delete=models.CASCADE, related_name='search_leads')
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='search_leads')
+
+    class Meta:
+        unique_together = [['search', 'lead']]
+        indexes = [
+            models.Index(fields=['search']),
+            models.Index(fields=['lead']),
+        ]
+
+    def __str__(self):
+        return f"Search {self.search_id} - Lead {self.lead_id}"
 
 
 class ViperRequestQueue(models.Model):

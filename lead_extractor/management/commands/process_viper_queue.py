@@ -5,7 +5,7 @@ Roda continuamente processando requisições uma por vez.
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from lead_extractor.viper_queue_service import process_next_request, mark_request_completed, mark_request_failed
-from lead_extractor.services import get_partners_internal
+from lead_extractor.services import get_partners_internal, sanitize_socios_for_storage
 from lead_extractor.models import Lead
 import time
 import logging
@@ -127,6 +127,9 @@ class Command(BaseCommand):
                                     # Formato desconhecido, criar estrutura padrão
                                     normalized_result = {'socios': []}
                                     logger.warning(f"Formato de resultado inesperado para CNPJ {cnpj}: {type(result)}")
+                                
+                                # Sanitizar: remover contatos dos socios (apenas NOME, CARGO, DOCUMENTO)
+                                normalized_result = sanitize_socios_for_storage(normalized_result)
                                 
                                 # Salvar QSA no Lead.viper_data se lead estiver associado
                                 if queue_item.lead:

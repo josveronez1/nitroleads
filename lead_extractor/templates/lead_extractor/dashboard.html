@@ -349,21 +349,28 @@
             renderNicheSuggestions(filtered);
         }
         
-        // Carregar lista completa no foco
-        nicheInput.addEventListener('focus', function() {
+        function loadNichesIfNeeded() {
             if (!nicheCacheLoaded) {
                 fetch(`{% url 'api_autocomplete_niches' %}?q=`)
                     .then(response => response.json())
                     .then(data => {
                         allNiches = data.results || [];
                         nicheCacheLoaded = true;
-                        filterAndShowNicheSuggestions(this.value);
+                        filterAndShowNicheSuggestions(nicheInput.value);
                     })
                     .catch(error => console.error('Erro ao carregar nichos:', error));
             } else {
-                filterAndShowNicheSuggestions(this.value);
+                filterAndShowNicheSuggestions(nicheInput.value);
             }
-        });
+        }
+        // Carregar no DOMContentLoaded (pré-carregar para foco instantâneo)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadNichesIfNeeded);
+        } else {
+            loadNichesIfNeeded();
+        }
+        // Carregar/atualizar também no foco
+        nicheInput.addEventListener('focus', loadNichesIfNeeded);
         
         // Filtrar conforme digita (sem delay, instantâneo)
         nicheInput.addEventListener('input', function() {
@@ -440,21 +447,28 @@
             renderLocationSuggestions(filtered);
         }
         
-        // Carregar lista completa no foco
-        locationInput.addEventListener('focus', function() {
+        function loadLocationsIfNeeded() {
             if (!locationCacheLoaded) {
                 fetch(`{% url 'api_autocomplete_locations' %}?q=`)
                     .then(response => response.json())
                     .then(data => {
                         allLocations = data.results || [];
                         locationCacheLoaded = true;
-                        filterAndShowLocationSuggestions(this.value);
+                        filterAndShowLocationSuggestions(locationInput.value);
                     })
                     .catch(error => console.error('Erro ao carregar localizações:', error));
             } else {
-                filterAndShowLocationSuggestions(this.value);
+                filterAndShowLocationSuggestions(locationInput.value);
             }
-        });
+        }
+        // Carregar no DOMContentLoaded (pré-carregar para foco instantâneo)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadLocationsIfNeeded);
+        } else {
+            loadLocationsIfNeeded();
+        }
+        // Carregar/atualizar também no foco
+        locationInput.addEventListener('focus', loadLocationsIfNeeded);
         
         // Filtrar conforme digita (sem delay, instantâneo)
         locationInput.addEventListener('input', function() {
