@@ -23,6 +23,7 @@ from lead_extractor.views import (
     viper_queue_status, get_viper_result,     api_autocomplete_niches, api_autocomplete_locations,
     api_search_status, api_search_leads, api_partners_status, enrich_leads, search_partners, search_cpf_batch, github_webhook,
     password_reset_view, password_reset_confirm_view, root_redirect_view, serve_favicon,
+    onboarding_view, onboarding_save_step, onboarding_start_demo, onboarding_complete,
     lp_index, lp_static,
 )
 
@@ -34,6 +35,10 @@ urlpatterns = [
     path('password-reset/confirm/', password_reset_confirm_view, name='password_reset_confirm'),
     path('', root_redirect_view, name='root'),  # Raiz detecta hash e redireciona ou vai para dashboard
     path('dashboard/', dashboard, name='dashboard'),  # Dashboard agora em /dashboard/
+    path('onboarding/', onboarding_view, name='onboarding'),
+    path('onboarding/step/', onboarding_save_step, name='onboarding_save_step'),
+    path('onboarding/start-demo/', onboarding_start_demo, name='onboarding_start_demo'),
+    path('onboarding/complete/', onboarding_complete, name='onboarding_complete'),
     path('export/', export_leads_csv, name='export_csv'),
     path('export/<int:search_id>/', export_leads_csv, name='export_csv_search'),
     path('simple-search/', simple_search, name='simple_search'),

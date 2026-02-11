@@ -570,6 +570,45 @@ def search_cpf_viper(cpf):
     return None
 
 
+def _normalize_cpf_api_response(data):
+    """
+    Normaliza a resposta da API Viper (CPF) para o formato esperado por get_unique_phones e templates.
+    Retorna dict com telefones_fixos, telefones_moveis, whatsapps, emails, dados_gerais.
+    """
+    if not data or not isinstance(data, dict):
+        return {}
+    out = {}
+    # Telefones fixos
+    tf = data.get('telefones_fixos') or data.get('TELEFONES_FIXOS')
+    if isinstance(tf, dict) and tf.get('TELEFONE'):
+        out['telefones_fixos'] = [tf['TELEFONE']]
+    elif isinstance(tf, list):
+        out['telefones_fixos'] = [t for t in tf if t]
+    else:
+        out['telefones_fixos'] = []
+    # Telefones móveis
+    tm = data.get('telefones_moveis') or data.get('TELEFONES_MOVEIS')
+    if isinstance(tm, dict) and tm.get('TELEFONE'):
+        out['telefones_moveis'] = [tm['TELEFONE']]
+    elif isinstance(tm, list):
+        out['telefones_moveis'] = [t for t in tm if t]
+    else:
+        out['telefones_moveis'] = []
+    out['whatsapps'] = data.get('whatsapps') or data.get('WHATSAPPS') or []
+    if not isinstance(out['whatsapps'], list):
+        out['whatsapps'] = []
+    # Emails
+    em = data.get('emails') or data.get('EMAILS')
+    if isinstance(em, dict) and em.get('EMAIL'):
+        out['emails'] = [em['EMAIL']]
+    elif isinstance(em, list):
+        out['emails'] = [e for e in em if e]
+    else:
+        out['emails'] = []
+    out['dados_gerais'] = data.get('dados_gerais') or data.get('DADOS_GERAIS') or {}
+    return out
+
+
 def search_cnpj_viper(cnpj):
     """
     Busca dados por CNPJ usando API Viper pública.
@@ -958,27 +997,26 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
                 continue
             cnpjs_processed.add(cnpj)
             
-            # Criar LeadAccess e debitar crédito (é novo acesso)
+            # Onboarding: não debitar créditos
+            skip_debit = bool(search_obj and search_obj.search_data.get('onboarding'))
+            credits_to_set = 0 if skip_debit else 1
             lead_access, created = LeadAccess.objects.get_or_create(
                 user=user_profile,
                 lead=lead,
                 defaults={
                     'search': search_obj,
-                    'credits_paid': 1,
+                    'credits_paid': credits_to_set,
                 }
             )
             
-            # Se é novo acesso, debitar crédito
-            if created:
+            if created and not skip_debit:
                 success, new_balance, error = debit_credits(
                     user_profile,
                     1,
                     description=f"Lead (base existente): {lead.name}"
                 )
-                
                 if not success:
                     logger.warning(f"Erro ao debitar crédito para lead {lead.id}: {error}")
-                    # Continuar mesmo se débito falhar (já criou LeadAccess)
             
             # Criar SearchLead para listagem consistente
             if search_obj:
@@ -1075,27 +1113,25 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
                 continue
             cnpjs_processed.add(cnpj)
             
-            # Criar LeadAccess e debitar crédito (é novo acesso)
+            skip_debit = bool(search_obj and search_obj.search_data.get('onboarding'))
+            credits_to_set = 0 if skip_debit else 1
             lead_access, created = LeadAccess.objects.get_or_create(
                 user=user_profile,
                 lead=lead,
                 defaults={
                     'search': search_obj,
-                    'credits_paid': 1,
+                    'credits_paid': credits_to_set,
                 }
             )
             
-            # Se é novo acesso, debitar crédito
-            if created:
+            if created and not skip_debit:
                 success, new_balance, error = debit_credits(
                     user_profile,
                     1,
                     description=f"Lead (cache): {lead.name}"
                 )
-                
                 if not success:
                     logger.warning(f"Erro ao debitar crédito para lead {lead.id}: {error}")
-                    # Continuar mesmo se débito falhar (já criou LeadAccess)
             
             # Criar SearchLead para listagem consistente
             if search_obj:
@@ -1418,6 +1454,9 @@ def process_search_async(search_id):
         niche = search_obj.niche
         location = search_obj.location
         quantity = search_obj.quantity_requested
+        is_onboarding = search_obj.search_data.get('onboarding') is True
+        if is_onboarding:
+            quantity = min(quantity, 5)
         search_term = f"{niche} em {location}"
         
         # Normalizar entrada
@@ -1613,45 +1652,37 @@ def process_search_async(search_id):
                             viper_data=company_data['viper_data']
                         )
                     
-                    # Criar ou obter LeadAccess e debitar crédito
+                    credits_paid_val = 0 if is_onboarding else 1
                     lead_access, created = LeadAccess.objects.get_or_create(
                         user=user_profile,
                         lead=lead_obj,
                         defaults={
                             'search': search_obj,
-                            'credits_paid': 1,
+                            'credits_paid': credits_paid_val,
                         }
                     )
                     
-                    if created:
+                    if created and not is_onboarding:
                         success, new_balance, error = debit_credits(
                             user_profile,
                             1,
                             description=f"Lead: {company_data['name']}"
                         )
-                        
-                        # Se débito falhar, PARAR busca completamente
                         if not success:
                             logger.error(f"Débito de crédito falhou: {error}. Parando busca.")
                             break
-                        
                         credits_used += 1
                     
-                    # Criar SearchLead para listagem consistente
                     SearchLead.objects.get_or_create(search=search_obj, lead=lead_obj)
-                    
-                    # Sanitizar dados (esconder QSA/telefones até enriquecer)
                     sanitized_viper_data = sanitize_lead_data(
                         {'viper_data': lead_obj.viper_data or {}},
                         show_partners=(lead_access.enriched_at is not None)
                     ).get('viper_data', {})
-                    
                     company_data['viper_data'] = sanitized_viper_data
                     leads_processed += 1
                     processed_cnpjs_in_search.add(cnpj)
                     results.append(company_data)
                     
-                    # Atualização incremental a cada 5 leads (exibição em tempo real)
                     if leads_processed % 5 == 0:
                         search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
                         search_obj.credits_used = credits_used
@@ -1806,39 +1837,32 @@ def process_search_async(search_id):
                             viper_data=company_data['viper_data']
                         )
                     
-                    # Criar ou obter LeadAccess e debitar crédito
+                    credits_paid_val = 0 if is_onboarding else 1
                     lead_access, created = LeadAccess.objects.get_or_create(
                         user=user_profile,
                         lead=lead_obj,
                         defaults={
                             'search': search_obj,
-                            'credits_paid': 1,
+                            'credits_paid': credits_paid_val,
                         }
                     )
                     
-                    if created:
+                    if created and not is_onboarding:
                         success, new_balance, error = debit_credits(
                             user_profile,
                             1,
                             description=f"Lead: {company_data['name']}"
                         )
-                        
-                        # Se débito falhar, PARAR busca completamente
                         if not success:
                             logger.error(f"Débito de crédito falhou: {error}. Parando busca incremental.")
                             break
-                        
                         credits_used += 1
                     
-                    # Criar SearchLead para listagem consistente
                     SearchLead.objects.get_or_create(search=search_obj, lead=lead_obj)
-                    
-                    # Sanitizar dados (esconder QSA/telefones até enriquecer)
                     sanitized_viper_data = sanitize_lead_data(
                         {'viper_data': lead_obj.viper_data or {}},
                         show_partners=(lead_access.enriched_at is not None)
                     ).get('viper_data', {})
-                    
                     company_data['viper_data'] = sanitized_viper_data
                     leads_processed += 1
                     processed_cnpjs_in_search.add(cnpj)
@@ -1846,7 +1870,6 @@ def process_search_async(search_id):
                     leads_found_in_batch += 1
                     results.append(company_data)
                     
-                    # Atualização incremental a cada 5 leads (exibição em tempo real)
                     if leads_processed % 5 == 0:
                         search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
                         search_obj.credits_used = credits_used
@@ -1871,6 +1894,44 @@ def process_search_async(search_id):
             if leads_processed < quantity:
                 logger.info(f"Busca incremental concluída: {leads_processed}/{quantity} leads. Requisições Serper: {api_requests_made} places + {serper_cnpj_calls} find_cnpj (cache: {len(cnpj_cache)} nomes)")
         
+        # Onboarding: preencher QSA completo (quadro societário + telefones) nos 2 primeiros leads, sem sanitizar
+        if is_onboarding:
+            first_two = list(
+                SearchLead.objects.filter(search=search_obj).order_by('id').select_related('lead')[:2]
+            )
+            for search_lead in first_two:
+                lead_obj = search_lead.lead
+                if not lead_obj or not lead_obj.cnpj:
+                    continue
+                result = get_partners_internal(lead_obj.cnpj, retry=True)
+                if result is None:
+                    continue
+                if isinstance(result, list):
+                    normalized_result = {'socios': result}
+                elif isinstance(result, dict) and 'socios' in result:
+                    normalized_result = result
+                elif isinstance(result, dict):
+                    normalized_result = {'socios': [result]} if result else {'socios': []}
+                else:
+                    normalized_result = {'socios': []}
+                if not lead_obj.viper_data:
+                    lead_obj.viper_data = {}
+                lead_obj.viper_data['socios_qsa'] = normalized_result
+                # Enriquecer cada sócio com telefones/emails via busca por CPF (API Viper pública)
+                for socio in normalized_result.get('socios') or []:
+                    if not isinstance(socio, dict):
+                        continue
+                    cpf = socio.get('DOCUMENTO') or socio.get('CPF') or socio.get('documento') or socio.get('cpf')
+                    cpf_clean = re.sub(r'\D', '', str(cpf)) if cpf else ''
+                    if len(cpf_clean) != 11:
+                        continue
+                    cpf_data_raw = search_cpf_viper(cpf_clean)
+                    if cpf_data_raw:
+                        socio['cpf_data'] = _normalize_cpf_api_response(cpf_data_raw)
+                        socio['cpf_enriched'] = True
+                lead_obj.save(update_fields=['viper_data'])
+                logger.info(f"Onboarding: QSA completo (com telefones dos sócios) salvo no lead {lead_obj.id} (CNPJ {lead_obj.cnpj})")
+
         # Atualizar search_obj com resultados (results_count = SearchLead para consistência)
         search_obj.results_count = SearchLead.objects.filter(search=search_obj).count()
         search_obj.credits_used = credits_used

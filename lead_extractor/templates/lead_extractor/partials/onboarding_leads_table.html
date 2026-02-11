@@ -1,0 +1,143 @@
+{% load phone_filters %}
+<div class="onboarding-result-table-wrap">
+    <div class="table-responsive">
+        <table class="table table-hover onboarding-result-table">
+            <thead>
+                <tr>
+                    <th>Empresa</th>
+                    <th>CNPJ</th>
+                    <th>Endereço</th>
+                    <th>Contatos</th>
+                    <th>Sócios</th>
+                    <th class="lead-expand-cell"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in display_leads_full %}
+                {% with lead=item.lead lead_access=item.lead_access show_full=item.show_full %}
+                {% with phones_all=lead.viper_data|get_phones emails_all=lead.viper_data|get_emails %}
+                {% with phones_first=phones_all|slice_list:2 emails_first=emails_all|slice_list:2 phones_rest=phones_all|slice_list_rest:2 emails_rest=emails_all|slice_list_rest:2 %}
+                <tr class="lead-row" id="lead-row-{{ lead.id }}">
+                    <td class="align-top">{{ lead.name }}</td>
+                    <td class="align-top">{{ lead.cnpj|default:"-" }}</td>
+                    <td class="align-top">
+                        <div class="lead-address lead-address-compact" title="{{ lead.address|default:'' }}">{{ lead.address|default:"-" }}</div>
+                    </td>
+                    <td class="align-top">
+                        <div class="lead-contacts-compact">
+                            {% if lead.viper_data %}
+                                {% for phone in phones_first %}
+                                <div class="badge bg-light text-dark mb-1">{{ phone|format_phone }}</div>
+                                {% endfor %}
+                                {% for email in emails_first %}
+                                <div class="badge bg-light text-dark mb-1"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
+                                {% endfor %}
+                                {% if not phones_first and not emails_first %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </div>
+                        {% if lead.viper_data %}
+                        <div class="lead-contacts-more lead-more">
+                            {% for phone in phones_rest %}
+                            <div class="badge bg-light text-dark mb-1">{{ phone|format_phone }}</div>
+                            {% endfor %}
+                            {% for email in emails_rest %}
+                            <div class="badge bg-light text-dark mb-1"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="align-top">
+                        <div class="lead-partners-wrap">
+                        {% if show_full and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                            <div class="partners-list">
+                                {% for socio in lead.viper_data.socios_qsa.socios %}
+                                <div class="socio-item mb-2">
+                                    <div>
+                                        <strong class="small">{{ socio.NOME|default:"N/A" }}</strong>
+                                        <span class="text-muted small ms-1">({{ socio.CARGO|default:"Sócio" }})</span>
+                                        {% if socio.DOCUMENTO %}
+                                        <br><span class="text-muted small">CPF: {{ socio.DOCUMENTO }}</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if socio.cpf_data %}
+                                    <div class="mt-1 cpf-data">
+                                        {% for phone_info in socio.cpf_data|get_unique_phones %}
+                                        <span class="badge bg-success me-1">{{ phone_info.phone|format_phone }}</span>
+                                        {% endfor %}
+                                        {% for email in socio.cpf_data.emails|default:"" %}
+                                        <span class="badge bg-info me-1">{{ email }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% else %}
+                                    <div class="mt-1 small">
+                                        {% if socio.telefones %}
+                                        {% for phone in socio.telefones %}
+                                        {% if phone %}<span class="badge bg-success me-1">{{ phone|format_phone }}</span>{% endif %}
+                                        {% endfor %}
+                                        {% endif %}
+                                        {% if socio.telefones_fixos %}
+                                        {% for phone in socio.telefones_fixos %}
+                                        <span class="badge bg-success me-1">{{ phone|format_phone }}</span>
+                                        {% endfor %}
+                                        {% endif %}
+                                        {% if socio.telefones_moveis %}
+                                        {% for phone in socio.telefones_moveis %}
+                                        <span class="badge bg-success me-1">{{ phone|format_phone }}</span>
+                                        {% endfor %}
+                                        {% endif %}
+                                        {% if socio.whatsapps %}
+                                        {% for phone in socio.whatsapps %}
+                                        <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone|format_phone }}</span>
+                                        {% endfor %}
+                                        {% endif %}
+                                        {% if socio.emails %}
+                                        {% for email in socio.emails %}
+                                        <span class="badge bg-info me-1">{{ email }}</span>
+                                        {% endfor %}
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% elif lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                            <div class="partners-list">
+                                {% for socio in lead.viper_data.socios_qsa.socios %}
+                                <div class="socio-item mb-2">
+                                    <strong class="small">{{ socio.NOME|default:"N/A" }}</strong>
+                                    <span class="text-muted small">({{ socio.CARGO|default:"Sócio" }})</span>
+                                    {% if socio.DOCUMENTO %}<br><span class="text-muted small">CPF: {{ socio.DOCUMENTO }}</span>{% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <span class="text-muted small">-</span>
+                        {% endif %}
+                        </div>
+                    </td>
+                    <td class="lead-expand-cell">
+                        <button type="button" class="lead-expand-btn" aria-label="Expandir" onclick="var tr=this.closest('tr');if(tr)tr.classList.toggle('lead-row-expanded');return false;"><i class="fas fa-chevron-down"></i><i class="fas fa-chevron-up"></i></button>
+                    </td>
+                </tr>
+                {% endwith %}
+                {% endwith %}
+                {% endwith %}
+                {% endfor %}
+                {% for pl in placeholder_leads %}
+                <tr>
+                    <td class="align-top">{{ pl.name }}</td>
+                    <td class="align-top"><span class="onb-blurred" title="Dado oculto">00.000.000/0001-00</span></td>
+                    <td class="align-top">{{ pl.address }}</td>
+                    <td class="align-top"><span class="onb-blurred" title="Contatos ocultos">(11) 99999-9999</span></td>
+                    <td class="align-top"><span class="onb-blurred" title="Sócios ocultos">Sócio 1 • Sócio 2</span></td>
+                    <td class="lead-expand-cell"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>

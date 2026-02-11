@@ -128,6 +128,23 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             request.user_profile = user_profile
             request.supabase_user_id = user_id
             
+            # Redirecionar para onboarding se usuário ainda não completou (primeira vez)
+            if not getattr(user_profile, 'onboarding_completed', True):
+                onboarding_exempt = (
+                    request.path.startswith('/onboarding/') or
+                    request.path.startswith('/api/') or
+                    request.path.rstrip('/') == '/logout' or
+                    request.path.startswith('/login') or
+                    request.path.startswith('/static/') or
+                    request.path.startswith('/media/') or
+                    request.path.startswith('/password-reset') or
+                    request.path == '/favicon.ico'
+                )
+                if not onboarding_exempt:
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({'error': 'Onboarding pendente', 'redirect': '/onboarding/'}, status=200)
+                    return HttpResponseRedirect(reverse('onboarding'))
+            
         except JWTError as e:
             logger.warning(f"JWT validation failed: {e}")
             # Token inválido, redirecionar para login

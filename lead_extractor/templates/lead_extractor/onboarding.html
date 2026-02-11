@@ -1,0 +1,564 @@
+{% extends "lead_extractor/base.html" %}
+{% block title %}Configurar sua máquina de prospecção - NitroLeads{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Onboarding: layout enxuto, copy em destaque, mobile-first */
+    .onboarding-wrap {
+        max-width: 28rem;
+        margin-left: auto;
+        margin-right: auto;
+        padding: 1rem 0.75rem 4rem;
+    }
+    @media (min-width: 576px) {
+        .onboarding-wrap { max-width: 32rem; padding: 1.5rem 1rem 4rem; }
+    }
+    .onboarding-wrap .card {
+        border: 1px solid var(--border-color, #dee2e6);
+        border-radius: 0.75rem;
+    }
+    .onboarding-wrap .card-body {
+        padding: 1.5rem 1.25rem;
+    }
+    @media (min-width: 576px) {
+        .onboarding-wrap .card-body { padding: 2rem 1.75rem; }
+    }
+    .onboarding-wrap .onb-title {
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: var(--text-primary, #212529);
+        margin-bottom: 0.75rem;
+        line-height: 1.35;
+    }
+    @media (min-width: 576px) {
+        .onboarding-wrap .onb-title { font-size: 1.5rem; margin-bottom: 1rem; }
+    }
+    .onboarding-wrap .onb-copy {
+        font-size: 1.05rem;
+        line-height: 1.6;
+        color: var(--text-secondary, #6c757d);
+        margin-bottom: 1.5rem;
+    }
+    @media (min-width: 576px) {
+        .onboarding-wrap .onb-copy { font-size: 1.125rem; margin-bottom: 1.75rem; }
+    }
+    /* Opção inteiramente clicável */
+    .onboarding-wrap .onb-option {
+        display: block;
+        position: relative;
+        padding: 1rem 1.25rem 1rem 2.75rem;
+        margin-bottom: 0.5rem;
+        border: 2px solid var(--border-color, #dee2e6);
+        border-radius: 0.5rem;
+        cursor: pointer;
+        transition: border-color 0.2s, background-color 0.2s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .onboarding-wrap .onb-option:hover {
+        border-color: var(--primary-color, #0d6efd);
+        background-color: rgba(13, 110, 253, 0.04);
+    }
+    .onboarding-wrap .onb-option.selected,
+    .onboarding-wrap .onb-option:has(input:checked) {
+        border-color: var(--primary-color, #0d6efd);
+        background-color: rgba(13, 110, 253, 0.08);
+    }
+    .onboarding-wrap .onb-option input {
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        margin: 0;
+        width: 1.125rem;
+        height: 1.125rem;
+    }
+    .onboarding-wrap .onb-option .onb-option-label {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--text-primary, #212529);
+        display: block;
+    }
+    .onboarding-wrap .onb-option .onb-option-desc {
+        font-size: 0.9rem;
+        color: var(--text-secondary, #6c757d);
+        margin-top: 0.15rem;
+    }
+    /* Navegação por setas (discreta) */
+    .onboarding-wrap .onb-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color, #dee2e6);
+    }
+    .onboarding-wrap .onb-nav-btn {
+        width: 2.5rem;
+        height: 2.5rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border-color, #dee2e6);
+        border-radius: 0.5rem;
+        background: var(--bg-primary, #fff);
+        color: var(--text-secondary, #6c757d);
+        font-size: 1.1rem;
+        cursor: pointer;
+        transition: border-color 0.2s, color 0.2s, background 0.2s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .onboarding-wrap .onb-nav-btn:hover:not(:disabled) {
+        border-color: var(--primary-color, #0d6efd);
+        color: var(--primary-color, #0d6efd);
+        background: rgba(13, 110, 253, 0.06);
+    }
+    .onboarding-wrap .onb-nav-btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+    /* Botão principal */
+    .onboarding-wrap .onb-btn-primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.875rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        border-radius: 0.5rem;
+        border: none;
+        background: var(--primary-color, #0d6efd);
+        color: #fff;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.1s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .onboarding-wrap .onb-btn-primary:hover:not(:disabled) {
+        background: var(--primary-dark, #0a58ca);
+    }
+    .onboarding-wrap .onb-btn-primary:active:not(:disabled) {
+        transform: scale(0.98);
+    }
+    .onboarding-wrap .onb-btn-primary:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+    .onboarding-wrap .onb-btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.75rem 1.25rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        border-radius: 0.5rem;
+        border: 2px solid var(--border-color, #dee2e6);
+        background: var(--bg-primary, #fff);
+        color: var(--text-secondary, #6c757d);
+        text-decoration: none;
+        transition: border-color 0.2s, color 0.2s;
+    }
+    .onboarding-wrap .onb-btn-secondary:hover {
+        border-color: var(--primary-color, #0d6efd);
+        color: var(--primary-color, #0d6efd);
+    }
+    /* Step 3 inputs */
+    .onboarding-wrap .onb-field label {
+        font-size: 0.95rem;
+        font-weight: 500;
+        margin-bottom: 0.35rem;
+    }
+    .onboarding-wrap .onb-field .form-control {
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        border-radius: 0.5rem;
+    }
+    /* Step 4 result */
+    .onboarding-wrap #step4-result .onb-title { margin-bottom: 0.5rem; }
+    .onboarding-wrap #step4-result .onb-cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+    }
+    /* Step 4: área do resultado pode ocupar mais largura para a tabela respirar */
+    .onboarding-wrap.onb-step4-wide {
+        max-width: 54rem;
+    }
+    @media (min-width: 992px) {
+        .onboarding-wrap.onb-step4-wide { max-width: 64rem; }
+    }
+    /* Tabela de resultado do onboarding: layout expandido, legível (estilo planilha) */
+    .onboarding-wrap .onboarding-result-table-container {
+        overflow-x: auto;
+        margin-left: -0.5rem;
+        margin-right: -0.5rem;
+        padding: 0 0.5rem;
+    }
+    .onboarding-wrap .onboarding-result-table-wrap {
+        min-width: 100%;
+    }
+    .onboarding-wrap .onboarding-result-table-wrap .table {
+        margin-bottom: 0;
+        font-size: 0.95rem;
+    }
+    .onboarding-wrap .onboarding-result-table thead th {
+        white-space: nowrap;
+        padding: 0.75rem 1rem;
+        background: var(--bg-table-header, #f8f9fa);
+        font-weight: 600;
+        border-bottom: 2px solid var(--border-color, #dee2e6);
+    }
+    .onboarding-wrap .onboarding-result-table tbody td {
+        padding: 0.875rem 1rem;
+        vertical-align: top;
+        border-bottom: 1px solid var(--border-color, #dee2e6);
+    }
+    .onboarding-wrap .onboarding-result-table tbody td.align-top {
+        vertical-align: top;
+    }
+    .onboarding-wrap .onboarding-result-table .partners-list .socio-item {
+        padding: 0.25rem 0;
+    }
+    .onboarding-wrap .onboarding-result-table .badge {
+        font-size: 0.8em;
+    }
+    /* Células ocultas: blur em vez de texto [DADO OCULTO] */
+    .onboarding-wrap .onb-blurred {
+        filter: blur(5px);
+        user-select: none;
+        display: inline-block;
+        min-width: 2.5rem;
+        color: var(--text-secondary, #6c757d);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="container py-2 py-md-3" id="onboarding-container">
+    <div class="onboarding-wrap">
+        <!-- Step 1 -->
+        <div class="onboarding-step" data-step="1" id="step-1">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="onb-title">Vamos configurar sua máquina de prospecção.</h2>
+                    <p class="onb-copy">Fala! Sou o gestor por trás do NitroLeads. Eu criei essa ferramenta porque cansei de ver times comerciais perdendo horas minerando dados manualmente no Google e LinkedIn. Para eu ajustar a ferramenta pro seu dia a dia, qual seu papel hoje?</p>
+                    <div class="onb-options mb-0">
+                        <label class="onb-option" for="role-owner">
+                            <input type="radio" name="role" id="role-owner" value="owner">
+                            <span class="onb-option-label">Dono de Empresa</span>
+                            <span class="onb-option-desc">Foco em ROI e escala.</span>
+                        </label>
+                        <label class="onb-option" for="role-manager">
+                            <input type="radio" name="role" id="role-manager" value="manager">
+                            <span class="onb-option-label">Gestor Comercial</span>
+                            <span class="onb-option-desc">Foco em produtividade do time.</span>
+                        </label>
+                        <label class="onb-option" for="role-sdr">
+                            <input type="radio" name="role" id="role-sdr" value="sdr">
+                            <span class="onb-option-label">Vendedor / SDR</span>
+                            <span class="onb-option-desc">Foco em bater meta sem sofrimento.</span>
+                        </label>
+                    </div>
+                    <div class="onb-nav" id="nav-step1">
+                        <button type="button" class="onb-nav-btn" disabled aria-label="Voltar">‹</button>
+                        <button type="button" class="onb-nav-btn onb-next" aria-label="Avançar">›</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="onboarding-step d-none" data-step="2" id="step-2">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="onb-title">Onde a sua operação trava hoje?</h2>
+                    <p class="onb-copy">A gente sabe que prospecção ativa é o que traz dinheiro, mas o trabalho braçal mata qualquer um. O que mais te faz perder tempo hoje?</p>
+                    <div class="onb-options mb-0">
+                        <label class="onb-option" for="pain-mining">
+                            <input type="checkbox" name="pain" id="pain-mining" value="mining_phones">
+                            <span class="onb-option-label">Ficar minerando site por site atrás de um telefone que funcione.</span>
+                        </label>
+                        <label class="onb-option" for="pain-decision">
+                            <input type="checkbox" name="pain" id="pain-decision" value="finding_decision_maker">
+                            <span class="onb-option-label">Tentar descobrir quem é o dono ou o decisor da empresa.</span>
+                        </label>
+                        <label class="onb-option" for="pain-crm">
+                            <input type="checkbox" name="pain" id="pain-crm" value="copy_paste_crm">
+                            <span class="onb-option-label">Copiar e colar dados em planilhas ou no CRM.</span>
+                        </label>
+                    </div>
+                    <div class="onb-nav" id="nav-step2">
+                        <button type="button" class="onb-nav-btn onb-prev" aria-label="Voltar">‹</button>
+                        <button type="button" class="onb-nav-btn onb-next" aria-label="Avançar">›</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="onboarding-step d-none" data-step="3" id="step-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="onb-title">Chega de garimpar no braço. Deixa que eu faço o trabalho sujo.</h2>
+                    <p class="onb-copy">No braço, um ser humano demoraria 2 horas para mapear 50 empresas com qualidade. O meu "robô de pesquisa" vai vasculhar a web agora e fazer isso por você em segundos. Me diz um nicho e uma cidade que você quer dominar hoje:</p>
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 position-relative">
+                            <div class="onb-field">
+                                <label for="onboarding-niche">Nicho/Setor</label>
+                                <input type="text" id="onboarding-niche" class="form-control" placeholder="Ex: Academia" autocomplete="off">
+                            </div>
+                            <div id="onboarding-niche-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px;"></div>
+                        </div>
+                        <div class="col-12 position-relative">
+                            <div class="onb-field">
+                                <label for="onboarding-location">Cidade/Estado</label>
+                                <input type="text" id="onboarding-location" class="form-control" placeholder="Ex: São Paulo - SP" autocomplete="off">
+                            </div>
+                            <div id="onboarding-location-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px;"></div>
+                        </div>
+                    </div>
+                    <div class="onb-nav">
+                        <button type="button" class="onb-nav-btn onb-prev" aria-label="Voltar">‹</button>
+                        <button type="button" class="onb-btn-primary" id="btn-step3-start">
+                            <i class="fas fa-bolt"></i> Iniciar automação de pesquisa
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="onboarding-step d-none" data-step="4" id="step-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div id="step4-loading">
+                        <h2 class="onb-title">Preparando seus leads...</h2>
+                        <p class="onb-copy mb-2" id="step4-loading-msg">Acessando motores de busca...</p>
+                        <div class="spinner-border text-primary" role="status"></div>
+                    </div>
+                    <div id="step4-result" class="d-none">
+                        <h2 class="onb-title">Pronto. Acabei de te devolver 2 horas de vida.</h2>
+                        <p class="onb-copy">Enquanto a gente conversava, o NitroLeads simulou o trabalho de um pesquisador humano e encontrou <strong id="step4-count">0</strong> leads qualificados para você. Já validei os dois primeiros para você ver que o dado é quente.</p>
+                        <div id="step4-table-wrap" class="onboarding-result-table-container table-responsive mb-3"></div>
+                        <p class="onb-copy mb-0">Se você quer que esse "SDR Digital" continue trabalhando para você todo dia — e já envie tudo direto para o seu CRM — escolha o pacote que faz sentido para o seu volume atual. Sem letras miúdas.</p>
+                        <div class="onb-cta-row">
+                            <a href="{% url 'purchase_credits' %}" class="onb-btn-primary text-decoration-none">Escolher pacote</a>
+                            <a href="{% url 'dashboard' %}" class="onb-btn-secondary">Ir ao dashboard</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    let currentStep = 1;
+    let demoSearchId = null;
+    let loadingMessages = ['Acessando motores de busca...', 'Varrendo sites oficiais...', 'Validando contatos...'];
+    let loadingMsgIndex = 0;
+
+    function getCsrfToken() {
+        var input = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (input && input.value) return input.value;
+        var match = document.cookie.match(/csrftoken=([^;]+)/);
+        return match ? match[1] : '';
+    }
+
+    function goToStep(step) {
+        document.querySelectorAll('.onboarding-step').forEach(function(el) { el.classList.add('d-none'); });
+        var target = document.getElementById('step-' + step);
+        if (target) target.classList.remove('d-none');
+        currentStep = step;
+    }
+
+    function nextStep() {
+        if (currentStep < 4) goToStep(currentStep + 1);
+    }
+
+    function prevStep() {
+        if (currentStep > 1) goToStep(currentStep - 1);
+    }
+
+    function saveStep1AndNext() {
+        var role = document.querySelector('input[name="role"]:checked');
+        var csrf = getCsrfToken();
+        var body = { step: 1, role: role ? role.value : '' };
+        fetch('{% url "onboarding_save_step" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify(body)
+        }).then(function(r) {
+            if (r.ok) nextStep();
+            else r.json().then(function(d) { alert(d.error || 'Erro ao salvar'); });
+        }).catch(function() { alert('Erro de rede'); });
+    }
+
+    function saveStep2AndNext() {
+        var checked = Array.from(document.querySelectorAll('input[name="pain"]:checked')).map(function(c) { return c.value; });
+        var csrf = getCsrfToken();
+        fetch('{% url "onboarding_save_step" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ step: 2, pain_points: checked })
+        }).then(function(r) {
+            if (r.ok) nextStep();
+            else r.json().then(function(d) { alert(d.error || 'Erro ao salvar'); });
+        }).catch(function() { alert('Erro de rede'); });
+    }
+
+    // Step 1: seta avançar
+    document.querySelector('#nav-step1 .onb-next').addEventListener('click', function() {
+        saveStep1AndNext();
+    });
+
+    // Step 2: setas
+    document.querySelector('#step-2 .onb-prev').addEventListener('click', prevStep);
+    document.querySelector('#step-2 .onb-next').addEventListener('click', function() {
+        saveStep2AndNext();
+    });
+
+    // Step 3
+    document.querySelector('#step-3 .onb-prev').addEventListener('click', prevStep);
+    var nicheInput = document.getElementById('onboarding-niche');
+    var locationInput = document.getElementById('onboarding-location');
+    var nicheSuggestions = document.getElementById('onboarding-niche-suggestions');
+    var locationSuggestions = document.getElementById('onboarding-location-suggestions');
+
+    function showNicheSuggestions(list) {
+        nicheSuggestions.innerHTML = '';
+        (list || []).slice(0, 15).forEach(function(item) {
+            var a = document.createElement('a');
+            a.href = '#'; a.className = 'list-group-item list-group-item-action';
+            a.textContent = item.display || item.value;
+            a.addEventListener('click', function(e) { e.preventDefault(); nicheInput.value = item.value || item.display; nicheSuggestions.style.display = 'none'; });
+            nicheSuggestions.appendChild(a);
+        });
+        nicheSuggestions.style.display = list && list.length ? 'block' : 'none';
+    }
+    function showLocationSuggestions(list) {
+        locationSuggestions.innerHTML = '';
+        (list || []).slice(0, 15).forEach(function(item) {
+            var a = document.createElement('a');
+            a.href = '#'; a.className = 'list-group-item list-group-item-action';
+            a.textContent = item.display || item.value;
+            a.addEventListener('click', function(e) { e.preventDefault(); locationInput.value = item.value || item.display; locationSuggestions.style.display = 'none'; });
+            locationSuggestions.appendChild(a);
+        });
+        locationSuggestions.style.display = list && list.length ? 'block' : 'none';
+    }
+
+    nicheInput.addEventListener('focus', function() {
+        fetch('{% url "api_autocomplete_niches" %}?q=').then(function(r) { return r.json(); }).then(function(d) {
+            var q = nicheInput.value.toLowerCase();
+            var filtered = (d.results || []).filter(function(i) { return !q || (i.display || '').toLowerCase().includes(q); });
+            showNicheSuggestions(filtered);
+        });
+    });
+    nicheInput.addEventListener('input', function() {
+        var q = nicheInput.value.trim();
+        if (!q) { showNicheSuggestions([]); return; }
+        fetch('{% url "api_autocomplete_niches" %}?q=' + encodeURIComponent(q)).then(function(r) { return r.json(); }).then(function(d) { showNicheSuggestions(d.results || []); });
+    });
+    locationInput.addEventListener('focus', function() {
+        fetch('{% url "api_autocomplete_locations" %}?q=').then(function(r) { return r.json(); }).then(function(d) {
+            var q = locationInput.value.toLowerCase();
+            var filtered = (d.results || []).filter(function(i) { return !q || (i.display || '').toLowerCase().includes(q); });
+            showLocationSuggestions(filtered);
+        });
+    });
+    locationInput.addEventListener('input', function() {
+        var q = locationInput.value.trim();
+        if (!q) { showLocationSuggestions([]); return; }
+        fetch('{% url "api_autocomplete_locations" %}?q=' + encodeURIComponent(q)).then(function(r) { return r.json(); }).then(function(d) { showLocationSuggestions(d.results || []); });
+    });
+    document.addEventListener('click', function(e) {
+        if (!nicheInput.contains(e.target) && !nicheSuggestions.contains(e.target)) nicheSuggestions.style.display = 'none';
+        if (!locationInput.contains(e.target) && !locationSuggestions.contains(e.target)) locationSuggestions.style.display = 'none';
+    });
+
+    document.getElementById('btn-step3-start').addEventListener('click', function() {
+        var niche = nicheInput.value.trim();
+        var location = locationInput.value.trim();
+        if (!niche || !location) {
+            alert('Preencha nicho e cidade.');
+            return;
+        }
+        var btn = this;
+        btn.disabled = true;
+        fetch('{% url "onboarding_start_demo" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ niche: niche, location: location })
+        }).then(function(r) {
+            return r.json().then(function(data) {
+                if (data.search_id) {
+                    demoSearchId = data.search_id;
+                    nextStep();
+                    startStep4Polling();
+                } else {
+                    alert(data.error || 'Erro ao iniciar busca');
+                    btn.disabled = false;
+                }
+            });
+        }).catch(function() {
+            alert('Erro de rede');
+            btn.disabled = false;
+        });
+    });
+
+    function startStep4Polling() {
+        var loadingEl = document.getElementById('step4-loading');
+        var resultEl = document.getElementById('step4-result');
+        var msgEl = document.getElementById('step4-loading-msg');
+        var city = locationInput.value.trim();
+        if (city) loadingMessages[1] = 'Varrendo sites oficiais em ' + city + '...';
+
+        var msgInterval = setInterval(function() {
+            loadingMsgIndex = (loadingMsgIndex + 1) % loadingMessages.length;
+            msgEl.textContent = loadingMessages[loadingMsgIndex];
+        }, 2500);
+
+        var poll = function() {
+            if (!demoSearchId) return;
+            fetch('/api/search/' + demoSearchId + '/status/', { headers: { 'X-CSRFToken': getCsrfToken() } })
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.error) return;
+                    if (d.status === 'completed') {
+                        clearInterval(msgInterval);
+                        clearInterval(pollInterval);
+                        loadingEl.classList.add('d-none');
+                        resultEl.classList.remove('d-none');
+                        var wrap = document.querySelector('.onboarding-wrap');
+                        if (wrap) wrap.classList.add('onb-step4-wide');
+                        document.getElementById('step4-count').textContent = d.results_count || 0;
+                        fetch('/api/search/' + demoSearchId + '/leads/?onboarding=1', { headers: { 'X-CSRFToken': getCsrfToken() } })
+                            .then(function(r) { return r.text(); })
+                            .then(function(html) {
+                                document.getElementById('step4-table-wrap').innerHTML = html || '';
+                            });
+                        fetch('{% url "onboarding_complete" %}', { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } }).then(function() {});
+                    }
+                });
+        };
+        var pollInterval = setInterval(poll, 2500);
+        poll();
+    }
+
+    // Fallback .selected para navegadores sem :has() (opções inteiras clicáveis)
+    document.querySelectorAll('.onb-option').forEach(function(opt) {
+        var input = opt.querySelector('input');
+        if (!input) return;
+        function updateSelected() {
+            if (input.checked) opt.classList.add('selected');
+            else opt.classList.remove('selected');
+        }
+        input.addEventListener('change', updateSelected);
+        updateSelected();
+    });
+})();
+</script>
+{% endblock %}

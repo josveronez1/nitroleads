@@ -184,12 +184,15 @@
                                 <th>Endereço</th>
                                 <th>Contatos</th>
                                 <th>Sócios</th>
+                                <th class="lead-expand-cell"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in display_leads %}
                             {% with lead=item.lead lead_access=item.lead_access %}
-                            <tr id="lead-row-{{ lead.id }}">
+                            {% with phones_all=lead.viper_data|get_phones emails_all=lead.viper_data|get_emails %}
+                            {% with phones_first=phones_all|slice_list:2 emails_first=emails_all|slice_list:2 phones_rest=phones_all|slice_list_rest:2 emails_rest=emails_all|slice_list_rest:2 %}
+                            <tr class="lead-row" id="lead-row-{{ lead.id }}">
                                 <td class="partners-checkbox-cell" id="partners-checkbox-{{ lead.id }}" style="display: none !important; width: 0 !important; padding: 0 !important; border: none !important; visibility: hidden !important;">
                                     <input type="checkbox" class="partner-lead-checkbox" 
                                            data-lead-id="{{ lead.id }}" 
@@ -200,25 +203,39 @@
                                 </td>
                                 <td>{{ lead.name }}</td>
                                 <td>{{ lead.cnpj|default:"-" }}</td>
-                                <td>{{ lead.address|default:"-" }}</td>
                                 <td>
+                                    <div class="lead-address lead-address-compact" title="{{ lead.address|default:'' }}">{{ lead.address|default:"-" }}</div>
+                                </td>
+                                <td>
+                                    <div class="lead-contacts-compact">
+                                        {% if lead.viper_data %}
+                                            {% for phone in phones_first %}
+                                            <div class="badge bg-light text-dark mb-1">{{ phone|format_phone }}</div>
+                                            {% endfor %}
+                                            {% for email in emails_first %}
+                                            <div class="badge bg-light text-dark mb-1"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
+                                            {% endfor %}
+                                            {% if not phones_first and not emails_first %}
+                                            <span class="text-muted small">-</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted small">-</span>
+                                        {% endif %}
+                                    </div>
                                     {% if lead.viper_data %}
-                                        {% for phone in lead.viper_data|get_phones %}
-                                        <div class="badge bg-light text-dark">{{ phone|format_phone }}</div>
+                                    <div class="lead-contacts-more lead-more">
+                                        {% for phone in phones_rest %}
+                                        <div class="badge bg-light text-dark mb-1">{{ phone|format_phone }}</div>
                                         {% endfor %}
-                                        {% for email in lead.viper_data|get_emails %}
-                                        <div class="badge bg-light text-dark"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
+                                        {% for email in emails_rest %}
+                                        <div class="badge bg-light text-dark mb-1"><i class="fas fa-envelope me-1"></i>{{ email }}</div>
                                         {% endfor %}
-                                    {% else %}
-                                        <div class="blurred-partners">
-                                            <div class="blurred-name">Carlos Silva</div>
-                                            <div class="blurred-name">Ana Paula Santos</div>
-                                            <div class="blurred-name">Roberto Oliveira</div>
-                                        </div>
+                                    </div>
                                     {% endif %}
                                 </td>
                                 <td id="partners-cell-{{ lead.id }}">
                                     {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                                        <div class="lead-partners-wrap">
                                         <div class="partners-list" id="partners-list-{{ lead.id }}">
                                             {% for socio in lead.viper_data.socios_qsa.socios %}
                                             <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
@@ -282,15 +299,21 @@
                                             </button>
                                         </div>
                                         {% endif %}
+                                        </div>
                                     {% else %}
                                         <div class="blurred-partners">
-                                            <div class="blurred-name">Carlos Silva</div>
-                                            <div class="blurred-name">Ana Paula Santos</div>
-                                            <div class="blurred-name">Roberto Oliveira</div>
+                                            <div class="blurred-name">{% cycle "Carlos Silva" "Fernanda Lima" "Ricardo Alves" %}</div>
+                                            <div class="blurred-name">{% cycle "Ana Paula Santos" "Paulo Costa" "Juliana Mendes" %}</div>
+                                            <div class="blurred-name">{% cycle "Roberto Oliveira" "Mariana Souza" "Bruno Ferreira" %}</div>
                                         </div>
                                     {% endif %}
                                 </td>
+                                <td class="lead-expand-cell">
+                                    <button type="button" class="lead-expand-btn" aria-label="Expandir" onclick="var tr=this.closest('tr');if(tr)tr.classList.toggle('lead-row-expanded');return false;"><i class="fas fa-chevron-down"></i><i class="fas fa-chevron-up"></i></button>
+                                </td>
                             </tr>
+                            {% endwith %}
+                            {% endwith %}
                             {% endwith %}
                             {% endfor %}
                         </tbody>
@@ -947,15 +970,17 @@
             return;
         }
         
-        // Se não há dados de sócios, mostrar nomes borrados
+        // Se não há dados de sócios, mostrar nomes borrados (variados por lead para não repetir)
         if (!viperData || !viperData.socios_qsa || !viperData.socios_qsa.socios) {
-            partnersCell.innerHTML = `
-                <div class="blurred-partners">
-                    <div class="blurred-name">Carlos Silva</div>
-                    <div class="blurred-name">Ana Paula Santos</div>
-                    <div class="blurred-name">Roberto Oliveira</div>
-                </div>
-            `;
+            var nameSets = [
+                ['Carlos Silva', 'Ana Paula Santos', 'Roberto Oliveira'],
+                ['Fernanda Lima', 'Paulo Costa', 'Mariana Souza'],
+                ['Ricardo Alves', 'Juliana Mendes', 'Bruno Ferreira']
+            ];
+            var names = nameSets[leadId % 3];
+            partnersCell.innerHTML = '<div class="blurred-partners">' +
+                names.map(function(n) { return '<div class="blurred-name">' + n + '</div>'; }).join('') +
+                '</div>';
             return;
         }
         

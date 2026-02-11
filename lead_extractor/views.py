@@ -259,6 +259,118 @@ def dashboard(request):
     
     return render(request, 'lead_extractor/dashboard.html', context)
 
+
+@require_user_profile
+def onboarding_view(request):
+    """
+    Onboarding em 4 passos para primeiro login.
+    Se já completou, redireciona para o dashboard.
+    """
+    user_profile = request.user_profile
+    if getattr(user_profile, 'onboarding_completed', True):
+        return redirect('dashboard')
+    context = {
+        'user_profile': user_profile,
+    }
+    return render(request, 'lead_extractor/onboarding.html', context)
+
+
+@require_user_profile
+@require_POST
+def onboarding_save_step(request):
+    """
+    POST /onboarding/step/
+    Body JSON: step=1, role=owner|manager|sdr  OU  step=2, pain_points=[...]
+    """
+    user_profile = request.user_profile
+    if getattr(user_profile, 'onboarding_completed', True):
+        return JsonResponse({'error': 'Onboarding já concluído'}, status=400)
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+    step = data.get('step')
+    if step == 1:
+        role = data.get('role')
+        if role not in ('owner', 'manager', 'sdr'):
+            return JsonResponse({'error': 'role inválido'}, status=400)
+        user_profile.onboarding_role = role
+        user_profile.save(update_fields=['onboarding_role'])
+        return JsonResponse({'ok': True})
+    if step == 2:
+        pain_points = data.get('pain_points')
+        if not isinstance(pain_points, list):
+            pain_points = []
+        allowed = {'mining_phones', 'finding_decision_maker', 'copy_paste_crm'}
+        pain_points = [p for p in pain_points if p in allowed]
+        user_profile.onboarding_pain_points = pain_points
+        user_profile.save(update_fields=['onboarding_pain_points'])
+        return JsonResponse({'ok': True})
+    return JsonResponse({'error': 'step inválido'}, status=400)
+
+
+@require_user_profile
+@require_POST
+def onboarding_start_demo(request):
+    """
+    POST /onboarding/start-demo/
+    Body JSON: niche, location
+    Cria Search com quantity=5 e search_data.onboarding=True, dispara process_search_async.
+    """
+    user_profile = request.user_profile
+    if getattr(user_profile, 'onboarding_completed', True):
+        return JsonResponse({'error': 'Onboarding já concluído'}, status=400)
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+    niche = (data.get('niche') or '').strip()
+    location = (data.get('location') or '').strip()
+    if not niche or not location:
+        return JsonResponse({'error': 'niche e location são obrigatórios'}, status=400)
+    niche_normalized = normalize_niche(niche)
+    location_normalized = normalize_location(location)
+    search_term = f"{niche} em {location}"
+    cached_search = get_cached_search(niche_normalized, location_normalized) if (niche_normalized and location_normalized) else None
+    use_cache = bool(cached_search and cached_search.total_leads_cached >= 5)
+    search_obj = Search.objects.create(
+        user=user_profile,
+        niche=niche,
+        location=location,
+        quantity_requested=5,
+        cached_search=cached_search if use_cache else None,
+        status='processing',
+        processing_started_at=timezone.now(),
+        search_data={
+            'query': search_term,
+            'from_cache': use_cache,
+            'onboarding': True,
+        },
+    )
+    thread = threading.Thread(target=process_search_async, args=(search_obj.id,))
+    thread.daemon = True
+    thread.start()
+    return JsonResponse({'search_id': search_obj.id})
+
+
+@require_user_profile
+def onboarding_complete(request):
+    """
+    GET: tela "Escolha seu plano" (híbrido).
+    POST: marca onboarding_completed=True e retorna JSON com redirect.
+    """
+    user_profile = request.user_profile
+    if request.method == 'POST':
+        user_profile.onboarding_completed = True
+        user_profile.save(update_fields=['onboarding_completed'])
+        return JsonResponse({'redirect': '/onboarding/complete/'})
+    context = {
+        'user_profile': user_profile,
+        'available_credits': check_credits(user_profile),
+    }
+    return render(request, 'lead_extractor/onboarding_complete.html', context)
+
+
 @ratelimit(key='user', rate='10/m', method='GET', block=True)  # 10 exportações por minuto por usuário
 @require_user_profile
 def export_leads_csv(request, search_id=None):
@@ -1160,27 +1272,51 @@ def api_search_leads(request, search_id):
     """
     Endpoint para obter leads de uma busca específica.
     GET /api/search/<int:search_id>/leads/
-    Retorna HTML da tabela de leads para atualização dinâmica.
+    Query: ?onboarding=1 — quando a busca é de onboarding, retorna tabela com 2 linhas completas e resto oculto.
     """
     user_profile = request.user_profile
     
     try:
         search_obj = Search.objects.get(id=search_id, user=user_profile)
-        
-        # Renderizar apenas a parte da tabela
         from django.template.loader import render_to_string
-        from django.template import RequestContext
         
         display_leads = search_obj.get_leads_for_display(user_profile)
-        leads_html = render_to_string(
-            'lead_extractor/partials/search_leads_table.html',
-            {
-                'search': search_obj,
-                'user_profile': user_profile,
-                'display_leads': display_leads,
-            },
-            request=request
+        is_onboarding = (
+            request.GET.get('onboarding') == '1' and
+            search_obj.search_data.get('onboarding') is True
         )
+        
+        if is_onboarding and display_leads:
+            # Primeiras 2 linhas completas (show_full=True); resto com nome/endereço visíveis e resto em blur
+            full_count = min(2, len(display_leads))
+            display_leads_full = [
+                {**item, 'show_full': True}
+                for item in display_leads[:full_count]
+            ]
+            placeholder_leads = [
+                {'name': item['lead'].name or '-', 'address': item['lead'].address or '-'}
+                for item in display_leads[full_count:]
+            ]
+            leads_html = render_to_string(
+                'lead_extractor/partials/onboarding_leads_table.html',
+                {
+                    'search': search_obj,
+                    'user_profile': user_profile,
+                    'display_leads_full': display_leads_full,
+                    'placeholder_leads': placeholder_leads,
+                },
+                request=request
+            )
+        else:
+            leads_html = render_to_string(
+                'lead_extractor/partials/search_leads_table.html',
+                {
+                    'search': search_obj,
+                    'user_profile': user_profile,
+                    'display_leads': display_leads,
+                },
+                request=request
+            )
         
         return HttpResponse(leads_html)
         

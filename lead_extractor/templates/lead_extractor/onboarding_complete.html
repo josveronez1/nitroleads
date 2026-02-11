@@ -1,0 +1,111 @@
+{% extends "lead_extractor/base.html" %}
+{% block title %}Escolha seu pacote - NitroLeads{% endblock %}
+
+{% block extra_css %}
+<style>
+    .onboarding-complete-wrap {
+        max-width: 28rem;
+        margin-left: auto;
+        margin-right: auto;
+        padding: 1.5rem 0.75rem 3rem;
+    }
+    @media (min-width: 576px) {
+        .onboarding-complete-wrap { max-width: 32rem; padding: 2rem 1rem 3rem; }
+    }
+    .onboarding-complete-wrap .card {
+        border: 1px solid var(--border-color, #dee2e6);
+        border-radius: 0.75rem;
+    }
+    .onboarding-complete-wrap .card-body {
+        padding: 2rem 1.25rem;
+    }
+    @media (min-width: 576px) {
+        .onboarding-complete-wrap .card-body { padding: 2.5rem 1.75rem; }
+    }
+    .onboarding-complete-wrap .onb-title {
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: var(--text-primary, #212529);
+        margin-bottom: 1rem;
+        line-height: 1.35;
+    }
+    @media (min-width: 576px) {
+        .onboarding-complete-wrap .onb-title { font-size: 1.5rem; }
+    }
+    .onboarding-complete-wrap .onb-copy {
+        font-size: 1.05rem;
+        line-height: 1.6;
+        color: var(--text-secondary, #6c757d);
+        margin-bottom: 1rem;
+    }
+    @media (min-width: 576px) {
+        .onboarding-complete-wrap .onb-copy { font-size: 1.125rem; }
+    }
+    .onboarding-complete-wrap .onb-btn-primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.875rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        border-radius: 0.5rem;
+        border: none;
+        background: var(--primary-color, #0d6efd);
+        color: #fff;
+        text-decoration: none;
+        transition: background 0.2s, transform 0.1s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .onboarding-complete-wrap .onb-btn-primary:hover {
+        background: var(--primary-dark, #0a58ca);
+        color: #fff;
+    }
+    .onboarding-complete-wrap .onb-btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.75rem 1.25rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        border-radius: 0.5rem;
+        border: 2px solid var(--border-color, #dee2e6);
+        background: var(--bg-primary, #fff);
+        color: var(--text-secondary, #6c757d);
+        text-decoration: none;
+        transition: border-color 0.2s, color 0.2s;
+    }
+    .onboarding-complete-wrap .onb-btn-secondary:hover {
+        border-color: var(--primary-color, #0d6efd);
+        color: var(--primary-color, #0d6efd);
+    }
+    .onboarding-complete-wrap .onb-cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+        justify-content: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-2 py-md-3">
+    <div class="onboarding-complete-wrap">
+        <div class="card shadow-sm border-0">
+            <div class="card-body text-center">
+                <h1 class="onb-title">Sua máquina de prospecção está pronta</h1>
+                <p class="onb-copy">Você já viu na prática como o NitroLeads encontra leads qualificados em segundos. Para continuar usando o "SDR Digital" no dia a dia e enviar tudo direto para o seu CRM, escolha o pacote que faz sentido para o seu volume.</p>
+                <p class="onb-copy mb-0">Sem letras miúdas. Você controla seus créditos e usa quando precisar.</p>
+                <div class="onb-cta-row">
+                    <a href="{% url 'purchase_credits' %}" class="onb-btn-primary">
+                        <i class="fas fa-shopping-cart"></i> Escolher pacote
+                    </a>
+                    <a href="{% url 'dashboard' %}" class="onb-btn-secondary">Ir ao dashboard</a>
+                </div>
+                <p class="small text-muted mt-4 mb-0">Você tem <strong>{{ available_credits|default:0 }} créditos</strong> disponíveis.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

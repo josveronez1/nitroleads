@@ -67,8 +67,9 @@
             border-right: 1px solid var(--border-color);
             transition: all 0.3s ease;
             z-index: 1000;
-            overflow-y: auto;
             overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .sidebar-collapsed {
@@ -78,10 +79,17 @@
         .sidebar-header {
             height: var(--topbar-height);
             display: flex;
+            flex-direction: row;
             align-items: center;
             justify-content: space-between;
             padding: 0 1.25rem;
             border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        .sidebar-collapsed .sidebar-header {
+            justify-content: center;
+            padding: 0.75rem 0.5rem;
         }
 
         .sidebar-logo {
@@ -96,12 +104,35 @@
             overflow: hidden;
         }
 
+        .sidebar-collapsed .sidebar-logo {
+            justify-content: center;
+        }
+
         .sidebar-logo i {
             font-size: 1.5rem;
         }
 
         .sidebar-collapsed .sidebar-logo span {
             display: none;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem 0;
+        }
+
+        .sidebar-footer {
+            flex-shrink: 0;
+            padding: 1rem 1.25rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .sidebar-collapsed .sidebar-footer {
+            padding: 1rem 0.5rem;
         }
 
         .sidebar-toggle {
@@ -119,6 +150,10 @@
             background-color: var(--bg-secondary);
             color: var(--text-primary);
         }
+        .sidebar-toggle .when-collapsed { display: none; }
+        .sidebar-toggle .when-expanded { display: inline-block; }
+        .sidebar-collapsed .sidebar-toggle .when-expanded { display: none; }
+        .sidebar-collapsed .sidebar-toggle .when-collapsed { display: inline-block; }
 
         .sidebar-nav {
             padding: 1rem 0;
@@ -360,6 +395,46 @@
             vertical-align: middle;
         }
 
+        /* Lead row: visual compacto + expandir */
+        .lead-row .lead-address-compact {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            max-width: 100%;
+            line-height: 1.35;
+        }
+        .lead-row-expanded .lead-address-compact {
+            -webkit-line-clamp: unset;
+            overflow: visible;
+        }
+        .lead-row .lead-contacts-compact .badge,
+        .lead-row .lead-contacts-more .badge { margin-bottom: 0.2rem; }
+        .lead-row .lead-more { display: none !important; }
+        .lead-row-expanded .lead-more { display: block !important; }
+        .lead-row .lead-partners-wrap {
+            max-height: 5.5em;
+            overflow: hidden;
+            transition: max-height 0.25s ease;
+        }
+        .lead-row-expanded .lead-partners-wrap { max-height: 999px; }
+        .lead-expand-cell { width: 2rem; padding: 0.5rem 0.5rem 0.5rem 0.35rem !important; vertical-align: top !important; }
+        .lead-expand-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 0.35rem;
+            cursor: pointer;
+            border-radius: 0.25rem;
+            transition: color 0.2s, background 0.2s;
+        }
+        .lead-expand-btn:hover { color: var(--primary-color); background: var(--bg-secondary); }
+        .lead-expand-btn .fa-chevron-up { display: none; }
+        .lead-expand-btn .fa-chevron-down { display: inline-block; }
+        .lead-row-expanded .lead-expand-btn .fa-chevron-up { display: inline-block; }
+        .lead-row-expanded .lead-expand-btn .fa-chevron-down { display: none; }
+        .lead-expand-label { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.15rem; }
+
         /* Forms */
         .form-control:focus,
         .form-select:focus {
@@ -480,9 +555,6 @@
                 <i class="fas fa-bolt"></i>
                 <span>NitroLeads</span>
             </a>
-            <button class="sidebar-toggle" id="sidebarToggle" title="Colapsar/Expandir">
-                <i class="fas fa-bars"></i>
-            </button>
         </div>
         <nav class="sidebar-nav">
             <div class="nav-item">
@@ -504,6 +576,12 @@
                 </a>
             </div>
         </nav>
+        <div class="sidebar-footer">
+            <button class="sidebar-toggle" id="sidebarToggle" title="Abrir menu">
+                <i class="fas fa-chevron-right when-collapsed" aria-hidden="true"></i>
+                <i class="fas fa-bars when-expanded" aria-hidden="true"></i>
+            </button>
+        </div>
     </aside>
 
     <!-- Sidebar Overlay (Mobile) -->
@@ -569,8 +647,8 @@
         const sidebarOverlay = document.getElementById('sidebarOverlay');
         const isMobile = window.innerWidth < 992;
 
-        // Load saved state
-        const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        // Estado natural: sidebar fechada (só expande se o usuário salvou 'false')
+        const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== 'false';
         if (sidebarCollapsed && !isMobile) {
             sidebar.classList.add('sidebar-collapsed');
         }
@@ -581,9 +659,9 @@
                 sidebar.classList.toggle('show');
                 sidebarOverlay.classList.toggle('show');
             } else {
-                // Desktop: push
+                // Desktop: push (salvar false = aberta, true = fechada)
                 sidebar.classList.toggle('sidebar-collapsed');
-                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('sidebar-collapsed'));
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('sidebar-collapsed') ? 'true' : 'false');
             }
         }
 
@@ -605,6 +683,15 @@
                 sidebar.classList.remove('show');
                 sidebarOverlay.classList.remove('show');
             }
+        });
+
+        // Expandir/recolher linha de lead (tabela compacta)
+        document.addEventListener('click', function(e) {
+            var btn = e.target.closest('.lead-expand-btn');
+            if (!btn) return;
+            e.preventDefault();
+            var row = btn.closest('tr');
+            if (row) row.classList.toggle('lead-row-expanded');
         });
     </script>
     {% block extra_js %}{% endblock %}

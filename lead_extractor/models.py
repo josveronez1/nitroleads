@@ -9,6 +9,10 @@ class UserProfile(models.Model):
     credits = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Onboarding (primeiro login)
+    onboarding_completed = models.BooleanField(default=False)
+    onboarding_role = models.CharField(max_length=20, null=True, blank=True)  # owner | manager | sdr
+    onboarding_pain_points = models.JSONField(default=list)  # e.g. ["mining_phones", "finding_decision_maker", "copy_paste_crm"]
 
     class Meta:
         indexes = [

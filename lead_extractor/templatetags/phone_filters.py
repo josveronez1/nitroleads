@@ -50,6 +50,30 @@ def get_phones(viper_data):
     phones = viper_data.get('telefones', [])
     return list(set([p for p in phones if p]))
 
+
+@register.filter
+def slice_list(value, arg):
+    """Retorna os primeiros N itens da lista (ex: {{ list|slice_list:2 }})"""
+    try:
+        n = int(arg)
+        if isinstance(value, list):
+            return value[:n]
+        return value if value else []
+    except (TypeError, ValueError):
+        return value
+
+
+@register.filter
+def slice_list_rest(value, arg):
+    """Retorna os itens da lista a partir do índice N (ex: {{ list|slice_list_rest:2 }})"""
+    try:
+        n = int(arg)
+        if isinstance(value, list):
+            return value[n:]
+        return []
+    except (TypeError, ValueError):
+        return []
+
 @register.filter
 def has_unenriched_partners(viper_data):
     """Verifica se há sócios com CPF que ainda não foram enriquecidos"""
