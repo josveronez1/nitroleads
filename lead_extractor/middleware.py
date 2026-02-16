@@ -168,9 +168,14 @@ class CSPMiddleware(MiddlewareMixin):
     """
     Middleware para adicionar Content Security Policy (CSP) headers.
     Permite conexões com cdn.jsdelivr.net para source maps.
+    Não aplica CSP no Django admin para evitar bloqueios e upgrade-insecure-requests.
     """
     
     def process_response(self, request, response):
+        # Não aplicar CSP no admin (evita carregamento infinito por upgrade-insecure-requests / recursos bloqueados)
+        if request.path == '/admin' or request.path.startswith('/admin/'):
+            return response
+
         # Remover TODOS os headers CSP existentes (do nginx ou outro middleware)
         # Verificar todas as variações possíveis do nome do header
         headers_to_remove = [
