@@ -22,6 +22,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     
     # URLs que não precisam de autenticação
     EXEMPT_URLS = [
+        '/admin',                  # Django admin (com ou sem barra final)
         '/admin/',
         '/login/',
         '/static/',
@@ -29,14 +30,14 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/webhook/mercadopago',   # Webhook do Mercado Pago (com ou sem / final)
         '/lp',                    # Landing page (pública)
     ]
-    
+
     def process_request(self, request):
+        # Skip authentication for Django admin (usa auth do Django, não Supabase)
+        if request.path == '/admin' or request.path.startswith('/admin/'):
+            return None
+
         # Skip authentication for exempt URLs
         if any(request.path.startswith(url) for url in self.EXEMPT_URLS):
-            return None
-        
-        # Skip authentication for admin (usa auth do Django)
-        if request.path.startswith('/admin'):
             return None
         
         # Tentar pegar o token do header Authorization
