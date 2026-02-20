@@ -1,6 +1,6 @@
-
 import React, { useState } from 'react';
 import { Header } from './components/Header';
+import { trackMetaLead } from './lib/utils';
 import { Hero } from './components/Hero';
 import { TrustBar } from './components/TrustBar';
 import { Comparison } from './components/Comparison';
@@ -32,6 +32,7 @@ const App: React.FC = () => {
         action={
           <Button
             onClick={() => {
+              trackMetaLead('CTA_BANNER_QUERO_ESCALA');
               const el = document.getElementById('cta');
               el?.scrollIntoView({ behavior: 'smooth' });
             }}

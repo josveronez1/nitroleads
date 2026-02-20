@@ -4,6 +4,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Button } from "./button";
+import { trackMetaLead } from "../../lib/utils";
 
 function FloatingPaths({ position }: { position: number }) {
     const paths = Array.from({ length: 36 }, (_, i) => ({
@@ -113,9 +114,7 @@ export function BackgroundPaths({
                     >
                         <Button
                             onClick={() => {
-                                if (typeof window !== 'undefined' && (window as unknown as { fbq?: (a: string, b: string, c?: object) => void }).fbq) {
-                                    (window as unknown as { fbq: (a: string, b: string, c?: object) => void }).fbq('track', 'Lead', { content_name: 'CTA_QUERO_ME_LIBERTAR' });
-                                }
+                                trackMetaLead('CTA_QUERO_ME_LIBERTAR');
                                 window.open('https://nitroleads.online', '_blank');
                             }}
                             className="nitro-gradient rounded-[14px] px-10 py-7 text-lg font-black 

@@ -1,6 +1,6 @@
-
 import React from 'react';
 import { UserCheck, PhoneCall, Map, Briefcase, Database, Download, Target, ChevronRight } from 'lucide-react';
+import { trackMetaLead } from '../lib/utils';
 
 export const Features: React.FC = () => {
   const features = [
@@ -51,6 +51,9 @@ export const Features: React.FC = () => {
           </div>
           <a 
             href="https://nitroleads.online"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => trackMetaLead('CTA_FEATURES_ACESSAR_AGORA')}
             className="bg-gray-900 text-white px-8 py-4 rounded-xl font-black text-sm flex items-center gap-2 hover:bg-[#0D6EFD] transition-all shadow-xl hover:-translate-y-1 uppercase tracking-widest italic"
           >
             Acessar Agora <ChevronRight className="w-5 h-5" />

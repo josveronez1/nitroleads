@@ -1,10 +1,11 @@
-
 import React from 'react';
 import { Zap, Facebook, Instagram, Linkedin } from 'lucide-react';
+import { trackMetaLead } from '../lib/utils';
 
 export const Footer: React.FC = () => {
   const handleLoginClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    trackMetaLead('CTA_FOOTER_LOGIN');
     window.open('https://nitroleads.online', '_blank');
   };
 
@@ -41,7 +42,7 @@ export const Footer: React.FC = () => {
               <ul className="space-y-4 text-gray-500 font-bold">
                 <li><a href="#como-funciona" className="hover:text-[#0D6EFD] transition-colors">Como Funciona</a></li>
                 <li><a href="#recursos" className="hover:text-[#0D6EFD] transition-colors">Recursos</a></li>
-                <li><a href="https://nitroleads.online" target="_blank" rel="noopener noreferrer" className="hover:text-[#0D6EFD] transition-colors">Preços</a></li>
+                <li><a href="https://nitroleads.online" target="_blank" rel="noopener noreferrer" onClick={() => trackMetaLead('CTA_FOOTER_PRECOS')} className="hover:text-[#0D6EFD] transition-colors">Preços</a></li>
                 <li>
                   <button 
                     onClick={handleLoginClick}

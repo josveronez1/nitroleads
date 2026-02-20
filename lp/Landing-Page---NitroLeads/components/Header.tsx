@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Zap, Menu, X, ArrowRight } from 'lucide-react';
+import { trackMetaLead } from '../lib/utils';
 
 interface HeaderProps {
   isBannerVisible?: boolean;
@@ -26,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({ isBannerVisible = false }) => {
 
   const handleLoginClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    trackMetaLead('CTA_HEADER_LOGIN');
     window.open('https://nitroleads.online', '_blank');
   };
 
@@ -84,7 +86,10 @@ export const Header: React.FC<HeaderProps> = ({ isBannerVisible = false }) => {
           </button>
           <a 
             href="#cta" 
-            onClick={(e) => scrollToSection(e, '#cta')}
+            onClick={(e) => {
+              trackMetaLead('CTA_HEADER_ACESSAR_PLATAFORMA');
+              scrollToSection(e, '#cta');
+            }}
             className="nitro-gradient hover:scale-105 active:scale-95 text-white px-8 py-3.5 rounded-xl font-black text-xs shadow-2xl shadow-blue-500/30 flex items-center gap-2 transition-all glow-button uppercase tracking-tighter italic"
           >
             Acessar Plataforma <ArrowRight className="w-4 h-4" />
@@ -117,7 +122,10 @@ export const Header: React.FC<HeaderProps> = ({ isBannerVisible = false }) => {
           <div className="flex flex-col gap-4 mt-2">
             <a 
               href="#cta" 
-              onClick={(e) => scrollToSection(e, '#cta')}
+              onClick={(e) => {
+                trackMetaLead('CTA_HEADER_COMECAR_AGORA');
+                scrollToSection(e, '#cta');
+              }}
               className="nitro-gradient text-white w-full py-6 rounded-2xl font-[900] shadow-2xl text-center uppercase tracking-widest italic text-lg"
             >
               Começar Agora

@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Zap, Search, MapPin, CheckCircle2, TrendingUp, Users } from 'lucide-react';
 import { SparklesCore } from './ui/sparkles';
+import { trackMetaLead } from '../lib/utils';
 
 interface HeroProps {
   isBannerVisible?: boolean;
@@ -64,6 +64,7 @@ export const Hero: React.FC<HeroProps> = ({ isBannerVisible = false }) => {
             <div className="flex flex-col sm:flex-row items-center gap-6 justify-center lg:justify-start">
               <a 
                 href="#cta"
+                onClick={() => trackMetaLead('CTA_HERO_ATIVAR_NITRO')}
                 className="nitro-gradient glow-button text-white px-10 py-6 rounded-[16px] font-black text-xl flex items-center gap-3 shadow-2xl shadow-blue-500/40 transition-all hover:-translate-y-2 active:scale-95 w-full sm:w-auto uppercase italic"
               >
                 <Zap className="w-6 h-6 fill-current" />
