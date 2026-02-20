@@ -22,7 +22,6 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
     
     # URLs que não precisam de autenticação
     EXEMPT_URLS = [
-        '/admin',                  # Django admin (com ou sem barra final)
         '/admin/',
         '/login/',
         '/static/',
@@ -30,14 +29,14 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/webhook/mercadopago',   # Webhook do Mercado Pago (com ou sem / final)
         '/lp',                    # Landing page (pública)
     ]
-
+    
     def process_request(self, request):
-        # Skip authentication for Django admin (usa auth do Django, não Supabase)
-        if request.path == '/admin' or request.path.startswith('/admin/'):
-            return None
-
         # Skip authentication for exempt URLs
         if any(request.path.startswith(url) for url in self.EXEMPT_URLS):
+            return None
+        
+        # Skip authentication for admin (usa auth do Django)
+        if request.path.startswith('/admin'):
             return None
         
         # Tentar pegar o token do header Authorization
@@ -168,14 +167,9 @@ class CSPMiddleware(MiddlewareMixin):
     """
     Middleware para adicionar Content Security Policy (CSP) headers.
     Permite conexões com cdn.jsdelivr.net para source maps.
-    Não aplica CSP no Django admin para evitar bloqueios e upgrade-insecure-requests.
     """
     
     def process_response(self, request, response):
-        # Não aplicar CSP no admin (evita carregamento infinito por upgrade-insecure-requests / recursos bloqueados)
-        if request.path == '/admin' or request.path.startswith('/admin/'):
-            return response
-
         # Remover TODOS os headers CSP existentes (do nginx ou outro middleware)
         # Verificar todas as variações possíveis do nome do header
         headers_to_remove = [
