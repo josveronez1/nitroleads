@@ -1171,7 +1171,7 @@ def api_autocomplete_niches(request):
     """
     Endpoint de autocomplete para nichos.
     GET /api/autocomplete/niches/?q=adv
-    Se q estiver vazio, retorna todos os nichos ativos (até 200) para carregamento completo.
+    Se q estiver vazio, retorna todos os nichos ativos (até 5000) para carregamento completo.
     """
     q = request.GET.get('q', '').strip()
     
@@ -1186,7 +1186,7 @@ def api_autocomplete_niches(request):
             # Retornar todos os nichos ativos (para carregamento completo no front-end)
             niches = NormalizedNiche.objects.filter(
                 is_active=True
-            ).order_by('display_name')[:1000]
+            ).order_by('display_name')[:5000]
         
         results = [{'value': niche.display_name, 'display': niche.display_name} for niche in niches]
         
@@ -1201,7 +1201,7 @@ def api_autocomplete_locations(request):
     """
     Endpoint de autocomplete para localizações (cidades).
     GET /api/autocomplete/locations/?q=são
-    Se q estiver vazio, retorna todas as localizações ativas (até 200) para carregamento completo.
+    Se q estiver vazio, retorna todas as localizações ativas (até 5000) para carregamento completo.
     """
     q = request.GET.get('q', '').strip()
     
@@ -1217,7 +1217,7 @@ def api_autocomplete_locations(request):
             # Retornar todas as localizações ativas (para carregamento completo no front-end)
             locations = NormalizedLocation.objects.filter(
                 is_active=True
-            ).order_by('state', 'city')[:1000]
+            ).order_by('state', 'city')[:5000]
         
         results = [{'value': loc.display_name, 'display': loc.display_name} for loc in locations]
         

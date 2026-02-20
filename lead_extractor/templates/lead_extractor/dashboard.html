@@ -129,13 +129,13 @@
                     <label for="niche" class="form-label fw-semibold">Nicho</label>
                     <input type="text" name="niche" id="niche" class="form-control form-control-lg"
                         placeholder="Ex: Advogado" value="{{ niche }}" required autocomplete="off">
-                    <div id="niche-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
+                    <div id="niche-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 360px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
                 </div>
                 <div class="col-md-4 position-relative">
                     <label for="location" class="form-label fw-semibold">Localização</label>
                     <input type="text" name="location" id="location" class="form-control form-control-lg"
                         placeholder="Ex: São Paulo - SP" value="{{ location }}" required autocomplete="off">
-                    <div id="location-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
+                    <div id="location-suggestions" class="list-group position-absolute w-100" style="display: none; z-index: 1000; max-height: 360px; overflow-y: auto; top: 100%; margin-top: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
                 </div>
                 <div class="col-md-4">
                     <label for="quantity" class="form-label fw-semibold">Quantidade</label>
@@ -305,6 +305,9 @@
         leadsData = [];
     }
     
+    // Objeto global para validação do formulário (nicho/local obrigatórios da lista)
+    window.__searchAutocomplete = { niches: [], locations: [], nichesLoaded: false, locationsLoaded: false };
+
     // Autocomplete para nichos - Lista completa com filtro client-side
     (function() {
         const nicheInput = document.getElementById('niche');
@@ -312,6 +315,11 @@
         let allNiches = null;
         let nicheCacheLoaded = false;
         let activeNicheIndex = -1;
+
+        function syncNichesToGlobal() {
+            window.__searchAutocomplete.niches = allNiches || [];
+            window.__searchAutocomplete.nichesLoaded = nicheCacheLoaded;
+        }
         
         // Função para renderizar sugestões filtradas
         function renderNicheSuggestions(filtered) {
@@ -336,17 +344,18 @@
             activeNicheIndex = -1;
         }
         
-        // Função para filtrar e mostrar sugestões
+        // Função para filtrar e mostrar sugestões (mais itens quando vazio para scroll)
         function filterAndShowNicheSuggestions(query) {
             if (!allNiches || allNiches.length === 0) {
                 nicheSuggestions.style.display = 'none';
                 return;
             }
-            const queryLower = query.toLowerCase();
+            const queryLower = query.trim().toLowerCase();
             const filtered = allNiches.filter(item => 
                 item.display.toLowerCase().includes(queryLower)
-            ).slice(0, 20); // Limitar exibição a 20 itens
-            renderNicheSuggestions(filtered);
+            );
+            const maxShow = queryLower === '' ? 200 : 50;
+            renderNicheSuggestions(filtered.slice(0, maxShow));
         }
         
         function loadNichesIfNeeded() {
@@ -356,6 +365,7 @@
                     .then(data => {
                         allNiches = data.results || [];
                         nicheCacheLoaded = true;
+                        syncNichesToGlobal();
                         filterAndShowNicheSuggestions(nicheInput.value);
                     })
                     .catch(error => console.error('Erro ao carregar nichos:', error));
@@ -363,16 +373,19 @@
                 filterAndShowNicheSuggestions(nicheInput.value);
             }
         }
-        // Carregar no DOMContentLoaded (pré-carregar para foco instantâneo)
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadNichesIfNeeded);
-        } else {
-            loadNichesIfNeeded();
-        }
-        // Carregar/atualizar também no foco
+
+        // Mostrar sugestões apenas quando o usuário focar no campo
         nicheInput.addEventListener('focus', loadNichesIfNeeded);
+
+        // Ao sair do campo: só aceitar valor que esteja na lista
+        nicheInput.addEventListener('blur', function() {
+            const val = this.value.trim();
+            if (!val) return;
+            if (nicheCacheLoaded && allNiches && !allNiches.some(item => item.value === val)) {
+                this.value = '';
+            }
+        });
         
-        // Filtrar conforme digita (sem delay, instantâneo)
         nicheInput.addEventListener('input', function() {
             if (nicheCacheLoaded && allNiches) {
                 filterAndShowNicheSuggestions(this.value);
@@ -401,6 +414,7 @@
                 nicheSuggestions.style.display = 'none';
             }
         });
+        syncNichesToGlobal();
     })();
     
     // Autocomplete para localizações - Lista completa com filtro client-side
@@ -410,6 +424,11 @@
         let allLocations = null;
         let locationCacheLoaded = false;
         let activeLocationIndex = -1;
+
+        function syncLocationsToGlobal() {
+            window.__searchAutocomplete.locations = allLocations || [];
+            window.__searchAutocomplete.locationsLoaded = locationCacheLoaded;
+        }
         
         // Função para renderizar sugestões filtradas
         function renderLocationSuggestions(filtered) {
@@ -434,17 +453,18 @@
             activeLocationIndex = -1;
         }
         
-        // Função para filtrar e mostrar sugestões
+        // Função para filtrar e mostrar sugestões (mais itens quando vazio para scroll)
         function filterAndShowLocationSuggestions(query) {
             if (!allLocations || allLocations.length === 0) {
                 locationSuggestions.style.display = 'none';
                 return;
             }
-            const queryLower = query.toLowerCase();
+            const queryLower = query.trim().toLowerCase();
             const filtered = allLocations.filter(item => 
                 item.display.toLowerCase().includes(queryLower)
-            ).slice(0, 20); // Limitar exibição a 20 itens
-            renderLocationSuggestions(filtered);
+            );
+            const maxShow = queryLower === '' ? 200 : 50;
+            renderLocationSuggestions(filtered.slice(0, maxShow));
         }
         
         function loadLocationsIfNeeded() {
@@ -454,6 +474,7 @@
                     .then(data => {
                         allLocations = data.results || [];
                         locationCacheLoaded = true;
+                        syncLocationsToGlobal();
                         filterAndShowLocationSuggestions(locationInput.value);
                     })
                     .catch(error => console.error('Erro ao carregar localizações:', error));
@@ -461,16 +482,19 @@
                 filterAndShowLocationSuggestions(locationInput.value);
             }
         }
-        // Carregar no DOMContentLoaded (pré-carregar para foco instantâneo)
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadLocationsIfNeeded);
-        } else {
-            loadLocationsIfNeeded();
-        }
-        // Carregar/atualizar também no foco
+
+        // Mostrar sugestões apenas quando o usuário focar no campo
         locationInput.addEventListener('focus', loadLocationsIfNeeded);
+
+        // Ao sair do campo: só aceitar valor que esteja na lista
+        locationInput.addEventListener('blur', function() {
+            const val = this.value.trim();
+            if (!val) return;
+            if (locationCacheLoaded && allLocations && !allLocations.some(item => item.value === val)) {
+                this.value = '';
+            }
+        });
         
-        // Filtrar conforme digita (sem delay, instantâneo)
         locationInput.addEventListener('input', function() {
             if (locationCacheLoaded && allLocations) {
                 filterAndShowLocationSuggestions(this.value);
@@ -499,6 +523,7 @@
                 locationSuggestions.style.display = 'none';
             }
         });
+        syncLocationsToGlobal();
     })();
 
     // Abrir detalhes do lead
@@ -739,25 +764,50 @@
         
         // Interceptar submit do formulário
         form.addEventListener('submit', function(e) {
-            e.preventDefault(); // Sempre prevenir submit padrão primeiro para evitar validação HTML5
+            e.preventDefault();
             removeValidationMessages();
             
             let isValid = true;
             let firstInvalidField = null;
+            const ac = window.__searchAutocomplete || {};
             
-            // Validar nicho
+            // Validar nicho (obrigatório e deve ser um item da lista)
             if (!nicheInput || !nicheInput.value.trim()) {
                 if (nicheInput) {
-                    createValidationMessage(nicheInput, 'Por favor, preencha o campo Nicho');
+                    createValidationMessage(nicheInput, 'Por favor, selecione um nicho da lista (clique no campo e escolha uma opção)');
+                    if (!firstInvalidField) firstInvalidField = nicheInput;
+                }
+                isValid = false;
+            } else if (ac.nichesLoaded && ac.niches.length && !ac.niches.some(function(item) { return item.value === nicheInput.value.trim(); })) {
+                if (nicheInput) {
+                    createValidationMessage(nicheInput, 'Selecione um nicho da lista (clique no campo e escolha uma opção). Não é permitido digitar um valor que não esteja na lista.');
+                    if (!firstInvalidField) firstInvalidField = nicheInput;
+                }
+                isValid = false;
+            } else if (!ac.nichesLoaded && nicheInput.value.trim()) {
+                if (nicheInput) {
+                    createValidationMessage(nicheInput, 'Clique no campo Nicho para carregar as opções e selecione um item da lista.');
                     if (!firstInvalidField) firstInvalidField = nicheInput;
                 }
                 isValid = false;
             }
             
-            // Validar localização
+            // Validar localização (obrigatório e deve ser um item da lista)
             if (!locationInput || !locationInput.value.trim()) {
                 if (locationInput) {
-                    createValidationMessage(locationInput, 'Por favor, preencha o campo Localização');
+                    createValidationMessage(locationInput, 'Por favor, selecione uma localização da lista (clique no campo e escolha uma opção)');
+                    if (!firstInvalidField) firstInvalidField = locationInput;
+                }
+                isValid = false;
+            } else if (ac.locationsLoaded && ac.locations.length && !ac.locations.some(function(item) { return item.value === locationInput.value.trim(); })) {
+                if (locationInput) {
+                    createValidationMessage(locationInput, 'Selecione uma localização da lista (clique no campo e escolha uma opção). Não é permitido digitar um valor que não esteja na lista.');
+                    if (!firstInvalidField) firstInvalidField = locationInput;
+                }
+                isValid = false;
+            } else if (!ac.locationsLoaded && locationInput.value.trim()) {
+                if (locationInput) {
+                    createValidationMessage(locationInput, 'Clique no campo Localização para carregar as opções e selecione um item da lista.');
                     if (!firstInvalidField) firstInvalidField = locationInput;
                 }
                 isValid = false;
@@ -773,10 +823,8 @@
                 }
             }
             
-            // Se tudo estiver válido, permitir submit manualmente
             if (isValid) {
                 removeValidationMessages();
-                // Usar submit() diretamente que ignora validação HTML5
                 form.submit();
             } else if (firstInvalidField) {
                 firstInvalidField.focus();

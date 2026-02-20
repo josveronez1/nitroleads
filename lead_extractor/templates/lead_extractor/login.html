@@ -11,179 +11,351 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
-            --primary-color: #0d6efd;
-            --primary-dark: #0a58ca;
+            --nl-primary: #0d6efd;
+            --nl-primary-dark: #0a58ca;
+            --nl-primary-light: #3d8bfd;
             --bg-primary: #ffffff;
             --bg-secondary: #f8f9fa;
+            --text-muted: #6c757d;
+            --text-dark: #212529;
+            --border-color: #dee2e6;
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
-            background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+            margin: 0;
             min-height: 100vh;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow-x: hidden;
+        }
+
+        .login-wrap {
+            display: flex;
+            min-height: 100vh;
+            flex-wrap: wrap;
+        }
+
+        /* Coluna esquerda: formulário (~10% menor para dar mais destaque ao painel direito) */
+        .login-form-col {
+            flex: 1 1 50%;
+            min-width: 288px;
+            min-height: 100vh;
+            background: var(--bg-primary);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            padding: 1rem;
+            padding: 1.8rem;
         }
 
-        .login-card {
-            background: var(--bg-primary);
-            border-radius: 1rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 3rem;
+        .login-form-inner {
             width: 100%;
-            max-width: 420px;
+            max-width: 342px;
         }
 
-        .login-header {
-            text-align: center;
-            margin-bottom: 2.5rem;
+        .login-form-inner .form-label {
+            font-size: 0.9rem;
         }
 
-        .login-header .logo-icon {
-            font-size: 3.5rem;
-            color: var(--primary-color);
-            margin-bottom: 1rem;
+        .login-form-inner .form-control {
+            font-size: 0.95rem;
         }
 
-        .login-header h1 {
-            color: var(--primary-color);
+        .login-form-inner .btn-primary {
+            font-size: 0.95rem;
+        }
+
+        .login-form-inner .text-muted,
+        .login-form-inner .toggle-link {
+            font-size: 0.9rem;
+        }
+
+        .login-form-inner .mb-3 {
+            margin-bottom: 0.9rem !important;
+        }
+
+        .login-form-inner .mt-3 {
+            margin-top: 0.9rem !important;
+        }
+
+        .login-form-inner .mt-2 {
+            margin-top: 0.45rem !important;
+        }
+
+        .login-form-header {
+            margin-bottom: 1.8rem;
+        }
+
+        .login-form-header h3 {
+            font-size: 1.55rem;
             font-weight: 700;
-            margin-bottom: 0.5rem;
-            font-size: 2rem;
-        }
-
-        .login-header p {
-            color: #6c757d;
-            margin: 0;
+            color: var(--text-dark);
+            margin: 0 0 0.2rem 0;
+            line-height: 1.2;
         }
 
         .form-label {
             font-weight: 600;
-            color: #212529;
-            margin-bottom: 0.5rem;
+            color: var(--text-dark);
+            margin-bottom: 0.45rem;
         }
 
         .form-control {
-            border: 1px solid #dee2e6;
-            padding: 0.75rem;
-            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+            padding: 0.65rem 0.9rem;
+            border-radius: 0.45rem;
         }
 
         .form-control:focus {
-            border-color: var(--primary-color);
+            border-color: var(--nl-primary);
             box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+            outline: none;
         }
 
         .btn-primary {
-            background-color: var(--primary-color);
-            border-color: var(--primary-color);
-            padding: 0.75rem;
+            background: var(--nl-primary);
+            border: none;
+            color: #fff;
+            padding: 0.65rem 1.35rem;
             font-weight: 600;
-            border-radius: 0.5rem;
-            transition: all 0.2s;
+            border-radius: 0.45rem;
+            width: 100%;
+            transition: background 0.2s, transform 0.15s;
         }
 
         .btn-primary:hover {
-            background-color: var(--primary-dark);
-            border-color: var(--primary-dark);
+            background: var(--nl-primary-dark);
+            color: #fff;
             transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
         }
 
-        .alert {
-            border-radius: 0.5rem;
-            border: none;
-            margin-top: 1rem;
+        .btn-primary:focus {
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35);
         }
 
         .toggle-link {
-            color: var(--primary-color);
+            color: var(--nl-primary);
             text-decoration: none;
             font-weight: 500;
-            transition: color 0.2s;
         }
 
         .toggle-link:hover {
-            color: var(--primary-dark);
+            color: var(--nl-primary-dark);
             text-decoration: underline;
+        }
+
+        .alert {
+            border-radius: 0.45rem;
+            border: none;
+            margin-top: 0.9rem;
+            font-size: 0.9rem;
+        }
+
+        /* Coluna direita: painel de boas-vindas */
+        .login-welcome-col {
+            flex: 1 1 50%;
+            min-width: 320px;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--nl-primary) 0%, var(--nl-primary-dark) 50%, #084298 100%);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem;
+            overflow: hidden;
+        }
+
+        .login-welcome-col::before,
+        .login-welcome-col::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
+            pointer-events: none;
+        }
+
+        .login-welcome-col::before {
+            width: 400px;
+            height: 400px;
+            top: -120px;
+            right: -100px;
+        }
+
+        .login-welcome-col::after {
+            width: 280px;
+            height: 280px;
+            bottom: -80px;
+            left: -60px;
+        }
+
+        .welcome-inner {
+            position: relative;
+            z-index: 1;
+            max-width: 420px;
+            color: #fff;
+        }
+
+        .welcome-inner .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 3rem;
+            color: rgba(255, 255, 255, 0.95);
+        }
+
+        .welcome-inner .brand i {
+            font-size: 1.5rem;
+        }
+
+        .welcome-inner h2 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+            line-height: 1.2;
+            color: #fff;
+        }
+
+        .welcome-inner .welcome-desc {
+            font-size: 1rem;
+            line-height: 1.6;
+            opacity: 0.95;
+            margin-bottom: 2rem;
+        }
+
+        .welcome-inner .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .welcome-inner .feature-list li {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.85rem;
+            font-size: 0.95rem;
+            opacity: 0.95;
+        }
+
+        .welcome-inner .feature-list li i {
+            flex-shrink: 0;
+            width: 1.25rem;
+            color: rgba(255, 255, 255, 0.95);
+        }
+
+        @media (max-width: 767px) {
+            .login-welcome-col {
+                min-height: auto;
+                padding: 2rem 1.5rem;
+            }
+
+            .welcome-inner .brand {
+                margin-bottom: 2rem;
+            }
+
+            .welcome-inner h2 {
+                font-size: 1.75rem;
+            }
+
+            .welcome-inner .welcome-desc,
+            .welcome-inner .feature-list {
+                margin-bottom: 1.5rem;
+            }
         }
     </style>
 </head>
 
 <body>
-    <div class="login-card">
-        <div class="login-header">
-            <i class="fas fa-bolt logo-icon"></i>
-            <h1>NitroLeads</h1>
-            <p>Entre com sua conta para continuar</p>
+    <div class="login-wrap">
+        <!-- Coluna esquerda: formulário -->
+        <div class="login-form-col">
+            <div class="login-form-inner">
+                <div class="login-form-header">
+                    <h3 id="auth-form-title">Login</h3>
+                </div>
+
+                <div id="auth-container">
+                    <div id="login-form">
+                        <form id="signin-form">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <input type="email" class="form-control form-control-lg" id="email" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Senha</label>
+                                <input type="password" class="form-control form-control-lg" id="password" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-sign-in-alt me-2"></i>Entrar
+                            </button>
+                        </form>
+
+                        <div class="text-center mt-3">
+                            <span class="text-muted">Não tem conta?</span>
+                            <a href="#" id="toggle-register" class="toggle-link ms-1">Registre-se</a>
+                        </div>
+                        <div class="text-center mt-2">
+                            <a href="/password-reset/" class="toggle-link" style="font-size: 0.875rem;" id="forgot-password-link">
+                                Esqueci minha senha
+                            </a>
+                        </div>
+                    </div>
+
+                    <div id="register-form" style="display: none;">
+                        <form id="signup-form">
+                            <div class="mb-3">
+                                <label for="register-email" class="form-label">Email</label>
+                                <input type="email" class="form-control form-control-lg" id="register-email" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="register-password" class="form-label">Senha</label>
+                                <input type="password" class="form-control form-control-lg" id="register-password" required minlength="6">
+                                <small class="text-muted">Mínimo de 6 caracteres</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-lg w-100">
+                                <i class="fas fa-user-plus me-2"></i>Criar Conta
+                            </button>
+                        </form>
+
+                        <div class="text-center mt-3">
+                            <span class="text-muted">Já tem conta?</span>
+                            <a href="#" id="toggle-login" class="toggle-link ms-1">Entrar</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="alert-container"></div>
+            </div>
         </div>
 
-        <div id="auth-container">
-            <!-- Tela de Login -->
-            <div id="login-form">
-                <form id="signin-form">
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email</label>
-                        <input type="email" class="form-control form-control-lg" id="email" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Senha</label>
-                        <input type="password" class="form-control form-control-lg" id="password" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        <i class="fas fa-sign-in-alt me-2"></i>Entrar
-                    </button>
-                </form>
-                
-                <div class="text-center mt-3">
-                    <span class="text-muted">Não tem conta?</span>
-                    <a href="#" id="toggle-register" class="toggle-link ms-1">
-                        Registre-se
-                    </a>
+        <!-- Coluna direita: painel de boas-vindas -->
+        <div class="login-welcome-col">
+            <div class="welcome-inner">
+                <div class="brand">
+                    <i class="fas fa-bolt"></i>
+                    NitroLeads
                 </div>
-                <div class="text-center mt-2">
-                    <a href="/password-reset/" class="toggle-link" style="font-size: 0.875rem;" id="forgot-password-link">
-                        Esqueci minha senha
-                    </a>
-                </div>
-            </div>
-
-            <!-- Tela de Registro -->
-            <div id="register-form" style="display: none;">
-                <form id="signup-form">
-                    <div class="mb-3">
-                        <label for="register-email" class="form-label">Email</label>
-                        <input type="email" class="form-control form-control-lg" id="register-email" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="register-password" class="form-label">Senha</label>
-                        <input type="password" class="form-control form-control-lg" id="register-password" required minlength="6">
-                        <small class="text-muted">Mínimo de 6 caracteres</small>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        <i class="fas fa-user-plus me-2"></i>Criar Conta
-                    </button>
-                </form>
-                
-                <div class="text-center mt-3">
-                    <span class="text-muted">Já tem conta?</span>
-                    <a href="#" id="toggle-login" class="toggle-link ms-1">
-                        Entrar
-                    </a>
-                </div>
+                <h2>Bem vindo!</h2>
+                <p class="welcome-desc">
+                    Encontre leads por nicho e localização. Pesquise empresas, exporte dados e enriqueça com CNPJ e sócios direto no painel.
+                </p>
+                <ul class="feature-list">
+                    <li><i class="fas fa-check"></i> Extração de leads por nicho e cidade</li>
+                    <li><i class="fas fa-check"></i> Painel completo de gestão e histórico</li>
+                    <li><i class="fas fa-check"></i> Enriquecimento com dados de sócios (QSA)</li>
+                </ul>
             </div>
         </div>
-
-        <div id="alert-container"></div>
     </div>
 
     <script>
-        // Configurar Supabase
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseKey = '{{ supabase_key }}';
-        
+
         if (!supabaseUrl || !supabaseKey) {
             document.getElementById('alert-container').innerHTML = `
                 <div class="alert alert-danger">
@@ -194,7 +366,6 @@
         } else {
             const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-            // Verificar se há erros no hash da URL (quando Supabase redireciona com erro)
             window.addEventListener('load', function() {
                 const hash = window.location.hash.substring(1);
                 if (hash) {
@@ -202,21 +373,15 @@
                     const error = hashParams.get('error');
                     const errorCode = hashParams.get('error_code');
                     const errorDescription = hashParams.get('error_description');
-                    
+
                     if (error) {
                         let errorMessage = 'Erro ao processar link de redefinição de senha.';
                         if (errorCode === 'otp_expired') {
-                            errorMessage = 'O link de redefinição de senha expirou. Por favor, solicite um novo link.';
+                            errorMessage = 'O link de redefinição de senha expirou. Solicite um novo link.';
                         } else if (errorDescription) {
                             errorMessage = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
                         }
-                        
-                        showAlert(
-                            `<i class="fas fa-exclamation-triangle"></i> <strong>Erro:</strong> ${errorMessage}`,
-                            'danger'
-                        );
-                        
-                        // Limpar o hash da URL
+                        showAlert(`<i class="fas fa-exclamation-triangle"></i> <strong>Erro:</strong> ${errorMessage}`, 'danger');
                         if (window.history.replaceState) {
                             window.history.replaceState(null, null, window.location.pathname);
                         }
@@ -224,11 +389,13 @@
                 }
             });
 
-            // Toggle entre login e registro
+            const authFormTitle = document.getElementById('auth-form-title');
+
             document.getElementById('toggle-register').addEventListener('click', function(e) {
                 e.preventDefault();
                 document.getElementById('login-form').style.display = 'none';
                 document.getElementById('register-form').style.display = 'block';
+                if (authFormTitle) authFormTitle.textContent = 'Registro';
                 clearAlerts();
             });
 
@@ -236,13 +403,12 @@
                 e.preventDefault();
                 document.getElementById('register-form').style.display = 'none';
                 document.getElementById('login-form').style.display = 'block';
+                if (authFormTitle) authFormTitle.textContent = 'Login';
                 clearAlerts();
             });
 
-            // Função para mostrar alertas
-            function showAlert(message, type = 'danger') {
-                const alertContainer = document.getElementById('alert-container');
-                alertContainer.innerHTML = `
+            function showAlert(message, type) {
+                document.getElementById('alert-container').innerHTML = `
                     <div class="alert alert-${type} alert-dismissible fade show" role="alert">
                         ${message}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -254,7 +420,6 @@
                 document.getElementById('alert-container').innerHTML = '';
             }
 
-            // Login
             document.getElementById('signin-form').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 clearAlerts();
@@ -268,27 +433,19 @@
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Entrando...';
 
                 try {
-                    const { data, error } = await supabase.auth.signInWithPassword({
-                        email: email,
-                        password: password
-                    });
-
+                    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
                     if (error) throw error;
 
-                    // Salvar token no cookie
                     if (data.session && data.session.access_token) {
                         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`;
                         if (data.session.refresh_token) {
                             document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=604800; SameSite=Lax`;
                         }
-                        
-                        // Redirecionar
                         const nextUrl = new URLSearchParams(window.location.search).get('next') || '/';
                         window.location.href = nextUrl;
                     } else {
                         throw new Error('Sessão não retornada pelo Supabase');
                     }
-
                 } catch (error) {
                     btn.disabled = false;
                     btn.innerHTML = originalText;
@@ -296,7 +453,6 @@
                 }
             });
 
-            // Registro
             document.getElementById('signup-form').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 clearAlerts();
@@ -311,16 +467,13 @@
 
                 try {
                     const { data, error } = await supabase.auth.signUp({
-                        email: email,
-                        password: password,
-                        options: {
-                            emailRedirectTo: window.location.origin + '/login/'
-                        }
+                        email,
+                        password,
+                        options: { emailRedirectTo: window.location.origin + '/login/' }
                     });
 
                     if (error) throw error;
 
-                    // Se já tem sessão (email confirmation desabilitado no Supabase), fazer login
                     if (data.session && data.session.access_token) {
                         if (typeof fbq !== 'undefined') fbq('track', 'CompleteRegistration');
                         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`;
@@ -330,19 +483,16 @@
                         window.location.href = '/';
                     } else {
                         if (typeof fbq !== 'undefined') fbq('track', 'CompleteRegistration');
-                        // Precisa confirmar email
                         btn.disabled = false;
                         btn.innerHTML = originalText;
-                        showAlert('Conta criada com sucesso! Verifique seu email para confirmar e depois faça login.', 'success');
-                        
-                        // Trocar para tela de login após 3 segundos
+                        showAlert('Conta criada! Verifique seu email para confirmar e depois faça login.', 'success');
                         setTimeout(() => {
                             document.getElementById('register-form').style.display = 'none';
                             document.getElementById('login-form').style.display = 'block';
                             document.getElementById('email').value = email;
+                            if (authFormTitle) authFormTitle.textContent = 'Login';
                         }, 3000);
                     }
-
                 } catch (error) {
                     btn.disabled = false;
                     btn.innerHTML = originalText;
@@ -350,11 +500,9 @@
                 }
             });
 
-            // Garantir que o link de "Esqueci minha senha" funcione
             const forgotPasswordLink = document.getElementById('forgot-password-link');
             if (forgotPasswordLink) {
-                forgotPasswordLink.addEventListener('click', function(e) {
-                    // Permitir navegação normal - não prevenir default
+                forgotPasswordLink.addEventListener('click', function() {
                     window.location.href = '/password-reset/';
                 });
             }
