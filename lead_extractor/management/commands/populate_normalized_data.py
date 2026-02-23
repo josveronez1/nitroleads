@@ -3,7 +3,7 @@ from lead_extractor.models import NormalizedNiche, NormalizedLocation
 
 
 class Command(BaseCommand):
-    help = 'Popula dados iniciais de nichos e localizações normalizadas'
+    help = 'Popula dados iniciais de nichos e localizações normalizadas. Para todas as cidades do Brasil (IBGE), use: python manage.py load_brazil_cities'
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Populando nichos normalizados...'))

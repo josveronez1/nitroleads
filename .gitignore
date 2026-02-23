@@ -41,6 +41,7 @@ viper_tokens.json
 secure/
 *.png
 erro_auth.png
+load_brazil_cities.py
 
 # Logs
 logs/

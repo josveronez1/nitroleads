@@ -495,6 +495,21 @@
 <script>
     // ID da busca atualmente exibida no modal fullscreen (null se fechado)
     let fullscreenModalSearchId = null;
+
+    // Listener único para o botão expandir dentro do modal fullscreen (conteúdo é injetado por innerHTML)
+    function ensureFullscreenExpandHandler() {
+        const modalBody = document.getElementById('searchFullscreenBody');
+        if (!modalBody || modalBody._expandHandlerBound) return;
+        modalBody._expandHandlerBound = true;
+        modalBody.addEventListener('click', function(e) {
+            const btn = e.target.closest('.lead-expand-btn');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const row = btn.closest('tr');
+            if (row) row.classList.toggle('lead-row-expanded');
+        });
+    }
     
     // Abrir pesquisa em modal fullscreen
     function openSearchFullscreen(searchId) {
@@ -596,6 +611,9 @@
                     } else {
                         modalBody.innerHTML = '<div class="alert alert-info">Nenhum lead encontrado para esta pesquisa.</div>';
                     }
+                    // Remover onclick inline para o evento propagar ao listener do modal (onclick com return false impede bubble)
+                    modalBody.querySelectorAll('.lead-expand-btn').forEach(function(btn) { btn.removeAttribute('onclick'); });
+                    ensureFullscreenExpandHandler();
                 }, 100);
             } else {
                 modalBody.innerHTML = '<div class="alert alert-info">Clique em "Ver leads" primeiro.</div>';
@@ -1194,6 +1212,7 @@
                                 const modalBody = document.getElementById('searchFullscreenBody');
                                 if (modalBody) {
                                     modalBody.innerHTML = newTable.outerHTML;
+                                    modalBody.querySelectorAll('.lead-expand-btn').forEach(function(btn) { btn.removeAttribute('onclick'); });
                                     reattachEventListeners(searchId);
                                 }
                             }
@@ -2253,7 +2272,7 @@
                                     const newTable = tempDiv.querySelector('.table-responsive');
                                     if (newTable) {
                                         modalBody.innerHTML = newTable.outerHTML;
-                                        
+                                        modalBody.querySelectorAll('.lead-expand-btn').forEach(function(btn) { btn.removeAttribute('onclick'); });
                                         // Re-anexar event listeners no modal
                                         setTimeout(() => {
                                             document.querySelectorAll('#searchFullscreenBody .search-cpf-btn').forEach(btn => {
