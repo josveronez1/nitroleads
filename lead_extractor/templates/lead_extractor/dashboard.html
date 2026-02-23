@@ -377,15 +377,6 @@
         // Mostrar sugestões apenas quando o usuário focar no campo
         nicheInput.addEventListener('focus', loadNichesIfNeeded);
 
-        // Ao sair do campo: só aceitar valor que esteja na lista
-        nicheInput.addEventListener('blur', function() {
-            const val = this.value.trim();
-            if (!val) return;
-            if (nicheCacheLoaded && allNiches && !allNiches.some(item => item.value === val)) {
-                this.value = '';
-            }
-        });
-        
         nicheInput.addEventListener('input', function() {
             if (nicheCacheLoaded && allNiches) {
                 filterAndShowNicheSuggestions(this.value);
@@ -771,27 +762,15 @@
             let firstInvalidField = null;
             const ac = window.__searchAutocomplete || {};
             
-            // Validar nicho (obrigatório e deve ser um item da lista)
+            // Validar nicho (obrigatório; pode ser da lista ou texto livre)
             if (!nicheInput || !nicheInput.value.trim()) {
                 if (nicheInput) {
-                    createValidationMessage(nicheInput, 'Por favor, selecione um nicho da lista (clique no campo e escolha uma opção)');
-                    if (!firstInvalidField) firstInvalidField = nicheInput;
-                }
-                isValid = false;
-            } else if (ac.nichesLoaded && ac.niches.length && !ac.niches.some(function(item) { return item.value === nicheInput.value.trim(); })) {
-                if (nicheInput) {
-                    createValidationMessage(nicheInput, 'Selecione um nicho da lista (clique no campo e escolha uma opção). Não é permitido digitar um valor que não esteja na lista.');
-                    if (!firstInvalidField) firstInvalidField = nicheInput;
-                }
-                isValid = false;
-            } else if (!ac.nichesLoaded && nicheInput.value.trim()) {
-                if (nicheInput) {
-                    createValidationMessage(nicheInput, 'Clique no campo Nicho para carregar as opções e selecione um item da lista.');
+                    createValidationMessage(nicheInput, 'Por favor, preencha o campo Nicho');
                     if (!firstInvalidField) firstInvalidField = nicheInput;
                 }
                 isValid = false;
             }
-            
+
             // Validar localização (obrigatório e deve ser um item da lista)
             if (!locationInput || !locationInput.value.trim()) {
                 if (locationInput) {
