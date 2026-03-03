@@ -1358,15 +1358,26 @@ def enrich_leads(request, search_id):
                 'error': f'Créditos insuficientes. Necessário: {len(lead_ids)}, Disponível: {available_credits}'
             }, status=402)
         
-        # Buscar LeadAccess (apenas do usuário e da pesquisa)
+        # Validar que todos os leads pertencem a esta pesquisa (SearchLead)
+        valid_lead_ids = set(
+            SearchLead.objects.filter(search=search_obj, lead_id__in=lead_ids).values_list('lead_id', flat=True)
+        )
+        if len(valid_lead_ids) != len(lead_ids):
+            return JsonResponse({'error': 'Alguns leads não foram encontrados ou não pertencem a esta pesquisa'}, status=400)
+
+        # Garantir LeadAccess para cada lead (cria se faltar, ex.: após cleanup ou lead de outra pesquisa)
+        for lead_id in lead_ids:
+            LeadAccess.objects.get_or_create(
+                user=user_profile,
+                lead_id=lead_id,
+                defaults={'search': search_obj, 'credits_paid': 0}
+            )
+
+        # Buscar LeadAccess (usuário + leads; search pode ser de outra pesquisa)
         lead_accesses_to_enrich = LeadAccess.objects.filter(
             lead_id__in=lead_ids,
-            user=user_profile,
-            search=search_obj
+            user=user_profile
         ).select_related('lead')
-        
-        if lead_accesses_to_enrich.count() != len(lead_ids):
-            return JsonResponse({'error': 'Alguns leads não foram encontrados ou não pertencem a esta pesquisa'}, status=400)
         
         credits_used = 0
         enriched_count = 0
@@ -1480,17 +1491,28 @@ def search_partners(request, search_id):
                 'error': f'Créditos insuficientes. Necessário: {len(lead_ids)}, Disponível: {available_credits}'
             }, status=402)
         
-        # Buscar LeadAccess (apenas do usuário e da pesquisa)
-        lead_accesses_to_process = LeadAccess.objects.filter(
-            lead_id__in=lead_ids,
-            user=user_profile,
-            search=search_obj
-        ).select_related('lead')
-        
-        if lead_accesses_to_process.count() != len(lead_ids):
+        # Validar que todos os leads pertencem a esta pesquisa (SearchLead)
+        valid_lead_ids = set(
+            SearchLead.objects.filter(search=search_obj, lead_id__in=lead_ids).values_list('lead_id', flat=True)
+        )
+        if len(valid_lead_ids) != len(lead_ids):
             return JsonResponse({
                 'error': 'Alguns leads não foram encontrados ou não pertencem a esta pesquisa'
             }, status=400)
+
+        # Garantir LeadAccess para cada lead (cria se faltar, ex.: após cleanup ou lead de outra pesquisa)
+        for lead_id in lead_ids:
+            LeadAccess.objects.get_or_create(
+                user=user_profile,
+                lead_id=lead_id,
+                defaults={'search': search_obj, 'credits_paid': 0}
+            )
+
+        # Buscar LeadAccess (usuário + leads; search pode ser de outra pesquisa)
+        lead_accesses_to_process = LeadAccess.objects.filter(
+            lead_id__in=lead_ids,
+            user=user_profile
+        ).select_related('lead')
         
         results = []
         credits_debited = 0
