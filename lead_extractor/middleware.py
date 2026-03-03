@@ -28,6 +28,8 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
         '/media/',
         '/webhook/mercadopago',   # Webhook do Mercado Pago (com ou sem / final)
         '/lp',                    # Landing page (pública)
+        '/password-reset',
+        '/password-reset/confirm',
     ]
     
     def process_request(self, request):
