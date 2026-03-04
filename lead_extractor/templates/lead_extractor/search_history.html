@@ -197,7 +197,7 @@
                                     <input type="checkbox" class="partner-lead-checkbox" 
                                            data-lead-id="{{ lead.id }}" 
                                            data-search-id="{{ search.id }}"
-                                           {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
+                                           {% if lead_access and lead_access.enriched_at and lead_access.search_id == search.id and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
                                            onchange="updatePartnersCost({{ search.id }})"
                                            style="display: none !important;">
                                 </td>
@@ -234,10 +234,11 @@
                                     {% endif %}
                                 </td>
                                 <td id="partners-cell-{{ lead.id }}">
-                                    {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                                    {% if lead_access and lead_access.enriched_at and lead_access.search_id == search.id and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
                                         <div class="lead-partners-wrap">
                                         <div class="partners-list" id="partners-list-{{ lead.id }}">
                                             {% for socio in lead.viper_data.socios_qsa.socios %}
+                                            {% get_socio_cpf_data lead_enrichments lead.id socio.DOCUMENTO as socio_cpf_data %}
                                             <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
                                                 <div class="d-flex align-items-center justify-content-between">
                                                     <div>
@@ -253,16 +254,16 @@
                                                            data-lead-id="{{ lead.id }}"
                                                            data-socio-name="{{ socio.NOME|default:"N/A" }}"
                                                            id="cpf-{{ lead.id }}-{{ forloop.counter }}"
-                                                           {% if socio.cpf_enriched and socio.cpf_data %}disabled{% endif %}
+                                                           {% if socio_cpf_data %}disabled{% endif %}
                                                            style="display: none;">
                                                     {% endif %}
                                                 </div>
-                                                {% if socio.cpf_enriched and socio.cpf_data %}
+                                                {% if socio_cpf_data %}
                                                 <div class="mt-1 cpf-data">
-                                                    {% if socio.cpf_data.dados_gerais.nome %}
-                                                    <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
+                                                    {% if socio_cpf_data.dados_gerais.nome %}
+                                                    <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio_cpf_data.dados_gerais.nome }}</div>
                                                     {% endif %}
-                                                    {% for phone_info in socio.cpf_data|get_unique_phones %}
+                                                    {% for phone_info in socio_cpf_data|get_unique_phones %}
                                                         {% if phone_info.type == 'fixo' %}
                                                         <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone_info.phone }}</span>
                                                         {% elif phone_info.type == 'movel' %}
@@ -271,7 +272,7 @@
                                                         <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone_info.phone }}</span>
                                                         {% endif %}
                                                     {% endfor %}
-                                                    {% for email in socio.cpf_data.emails %}
+                                                    {% for email in socio_cpf_data.emails %}
                                                         {% if email %}
                                                         <span class="badge bg-info me-1"><i class="fas fa-envelope me-1"></i>{{ email }}</span>
                                                         {% endif %}
@@ -281,8 +282,8 @@
                                             </div>
                                             {% endfor %}
                                         </div>
-                                        {% comment %} Verificar se há sócios com CPF que ainda não foram enriquecidos {% endcomment %}
-                                        {% if lead.viper_data|has_unenriched_partners %}
+                                        {% has_unenriched_partners_for_user_tag lead.viper_data lead.id lead_enrichments as has_unenriched_socios %}
+                                        {% if has_unenriched_socios %}
                                         <div class="d-flex align-items-center gap-2 mt-2">
                                             <button class="btn btn-sm btn-outline-primary" 
                                                     type="button"
@@ -697,6 +698,7 @@
                         }
                     });
                 }
+                ensureBodyModalCleanup();
             }, { once: true });
             
             modal.show();
@@ -873,8 +875,9 @@
         modal.show();
     }
     
-    function showSuccess(message) {
-        const modal = new bootstrap.Modal(document.getElementById('successModal'));
+    function showSuccess(message, autoCloseMs) {
+        const el = document.getElementById('successModal');
+        const modal = new bootstrap.Modal(el);
         const messageElement = document.getElementById('successModalMessage');
         // Se a mensagem já contém HTML (como <br>), usar innerHTML, senão usar textContent
         if (message.includes('<br>') || message.includes('<')) {
@@ -883,6 +886,12 @@
             messageElement.textContent = message;
         }
         modal.show();
+        if (autoCloseMs && autoCloseMs > 0) {
+            setTimeout(function() {
+                const m = bootstrap.Modal.getInstance(el);
+                if (m) m.hide();
+            }, autoCloseMs);
+        }
     }
     
     function showError(message) {
@@ -890,6 +899,24 @@
         document.getElementById('errorModalMessage').textContent = message;
         modal.show();
     }
+    
+    // Limpar body ao fechar modais (evita página travada)
+    function ensureBodyModalCleanup() {
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+        document.querySelectorAll('.modal-backdrop').forEach(function(el) {
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        });
+    }
+    
+    // Ao fechar qualquer modal (aviso ou fullscreen), garantir que o body volte ao normal
+    (function attachAlertModalCleanup() {
+        ['successModal', 'errorModal', 'alertModal', 'searchFullscreenModal'].forEach(function(id) {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('hidden.bs.modal', ensureBodyModalCleanup);
+        });
+    })();
     
     // Salvar estado de expansão das pesquisas
     function saveExpandedSearches() {
@@ -958,17 +985,26 @@
                     });
                 }
                 
-                // Se todos os leads foram processados, parar polling
+                // Se todos os leads foram processados, parar polling e esconder botão de sócios
                 if (data.all_processed) {
                     clearInterval(partnersPollingIntervals[searchId]);
                     delete partnersPollingIntervals[searchId];
-                    showSuccess('Todos os sócios foram atualizados com sucesso!');
+                    showSuccess('Todos os sócios foram atualizados com sucesso!', 3000);
+                    const cardPartnersBtn = document.getElementById(`search-partners-btn-${searchId}`);
+                    if (cardPartnersBtn) cardPartnersBtn.style.display = 'none';
+                    if (fullscreenModalSearchId === searchId) {
+                        const modalPartnersBtn = document.getElementById('searchFullscreenPartnersBtn');
+                        if (modalPartnersBtn) modalPartnersBtn.style.display = 'none';
+                    }
+                    // Esconder o bloco "Selecione as empresas para buscar quadro societário"
+                    const selectionDiv = document.getElementById(`partners-selection-${searchId}`);
+                    if (selectionDiv) selectionDiv.style.display = 'none';
                 }
             })
             .catch(error => {
                 console.error('Erro ao verificar status dos sócios:', error);
             });
-        }, 10000); // Polling a cada 10 segundos
+        }, 3000); // Polling a cada 3 segundos (alinhado à busca principal)
     }
     
     // Atualizar sócios de um lead específico na interface
@@ -1109,6 +1145,34 @@
             partnersList.appendChild(socioItem);
         });
         
+        // Garantir wrapper e botões "Buscar informações dos sócios" / "Cancelar" (como no template)
+        let wrap = partnersCell.querySelector('.lead-partners-wrap');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.className = 'lead-partners-wrap';
+            while (partnersCell.firstChild) wrap.appendChild(partnersCell.firstChild);
+            partnersCell.appendChild(wrap);
+        }
+        let buttonsDiv = wrap.querySelector('.d-flex.align-items-center.gap-2.mt-2');
+        if (!buttonsDiv) {
+            buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'd-flex align-items-center gap-2 mt-2';
+            const searchCpfBtn = document.createElement('button');
+            searchCpfBtn.className = 'btn btn-sm btn-outline-primary';
+            searchCpfBtn.type = 'button';
+            searchCpfBtn.id = `search-cpf-btn-${leadId}`;
+            searchCpfBtn.innerHTML = '<i class="fas fa-search"></i> Buscar informações dos sócios';
+            const cancelCpfBtn = document.createElement('button');
+            cancelCpfBtn.className = 'btn btn-sm btn-outline-secondary';
+            cancelCpfBtn.type = 'button';
+            cancelCpfBtn.id = `cancel-cpf-btn-${leadId}`;
+            cancelCpfBtn.style.display = 'none';
+            cancelCpfBtn.innerHTML = '<i class="fas fa-times"></i>';
+            buttonsDiv.appendChild(searchCpfBtn);
+            buttonsDiv.appendChild(cancelCpfBtn);
+            wrap.appendChild(buttonsDiv);
+        }
+        
         // Re-anexar event listeners para botões de CPF
         setTimeout(() => {
             const searchBtn = partnersCell.querySelector(`#search-cpf-btn-${leadId}`);
@@ -1243,6 +1307,19 @@
                     const actionButtons = document.getElementById(`action-buttons-${searchId}`);
                     if (actionButtons) {
                         actionButtons.style.display = 'block';
+                    }
+                    // Se nem todos os leads têm sócios, injetar botão "Buscar Quadro Societário" (não vem no HTML quando a busca estava processing)
+                    if (data.all_leads_have_partners === false && !document.getElementById(`search-partners-btn-${searchId}`)) {
+                        const partnersBtn = document.createElement('button');
+                        partnersBtn.className = 'btn btn-sm btn-primary ms-2';
+                        partnersBtn.type = 'button';
+                        partnersBtn.id = `search-partners-btn-${searchId}`;
+                        partnersBtn.innerHTML = '<i class="fas fa-users"></i> Buscar Quadro Societário';
+                        partnersBtn.onclick = function(e) {
+                            e.stopPropagation();
+                            togglePartnersSelection(searchId);
+                        };
+                        if (actionButtons) actionButtons.appendChild(partnersBtn);
                     }
                     
                     // Atualizar conteúdo se estiver expandido - recarregar apenas a tabela
@@ -1688,25 +1765,14 @@
             })
             .then(data => {
                 if (data.success) {
-                    const queued = data.processed - (data.results ? data.results.filter(r => r.processed).length : 0);
-                    let message = `Processamento iniciado! ${data.credits_debited} crédito(s) debitado(s).`;
+                    // Não mostrar aviso "Processamento iniciado" para não poluir a tela
+                    // Atualizar sócios em tempo real via polling (sem recarregar a página)
+                    startPartnersPolling(searchId, leadIds);
+                    // Fechar o painel "Selecione as empresas..." para evitar nova busca
+                    togglePartnersSelection(searchId);
                     
-                    if (queued > 0) {
-                        message += `<br><br>${queued} empresa(s) em processamento. Recarregue a página em alguns instantes para ver os resultados.`;
-                    }
-                    
-                    if (data.errors && data.errors.length > 0) {
-                        message += `<br><br>Avisos: ${data.errors.join('; ')}`;
-                    }
-                    
-                    showSuccess(message);
-                    
-                    // Aguardar alguns segundos antes de recarregar para dar tempo do processamento
-                    setTimeout(() => {
-                        // Salvar estado de expansão antes de recarregar
-                        saveExpandedSearches();
-                        location.reload();
-                    }, 5000); // 5 segundos de espera
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = originalText;
                 } else {
                     showError('Erro ao buscar sócios: ' + (data.error || 'Erro desconhecido'));
                     confirmBtn.disabled = false;

@@ -242,6 +242,27 @@ class SearchLead(models.Model):
         return f"Search {self.search_id} - Lead {self.lead_id}"
 
 
+class SocioCpfEnrichment(models.Model):
+    """
+    Dados de CPF (telefones, e-mails) enriquecidos por usuário para um sócio de um lead.
+    Um usuário só vê cpf_data se tiver registro aqui; evita vazamento entre usuários.
+    """
+    user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='socio_cpf_enrichments')
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='socio_cpf_enrichments')
+    socio_cpf = models.CharField(max_length=14, db_index=True)  # CPF do sócio (apenas dígitos)
+    cpf_data = models.JSONField(default=dict)  # Resposta da API de CPF (telefones, emails, etc.)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [['user', 'lead', 'socio_cpf']]
+        indexes = [
+            models.Index(fields=['user', 'lead']),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} / Lead {self.lead_id} / CPF {self.socio_cpf}"
+
+
 class ViperRequestQueue(models.Model):
     """
     Fila de requisições para API interna do Viper.

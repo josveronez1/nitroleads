@@ -16,7 +16,7 @@ from .services import (
     wait_for_partners_processing, process_search_async, sanitize_lead_data, sanitize_socios_for_storage
 )
 import threading
-from .models import Lead, Search, SearchLead, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess, CreditTransaction
+from .models import Lead, Search, SearchLead, UserProfile, ViperRequestQueue, CachedSearch, NormalizedNiche, NormalizedLocation, LeadAccess, CreditTransaction, SocioCpfEnrichment
 from .credit_service import debit_credits, check_credits
 from .mercadopago_service import create_preference, handle_webhook, process_payment, CREDIT_PACKAGES
 from .decorators import require_user_profile, validate_user_ownership
@@ -65,6 +65,35 @@ def has_valid_partners_data(lead):
     
     # Qualquer outro formato é inválido
     return False
+
+
+def _viper_data_for_user_display(lead, user_profile):
+    """
+    Retorna cópia de lead.viper_data com cpf_data nos sócios apenas quando
+    o usuário tem SocioCpfEnrichment para esse (lead, cpf). Evita vazamento entre usuários.
+    """
+    import copy
+    if not lead or not lead.viper_data:
+        return lead.viper_data or {}
+    data = copy.deepcopy(lead.viper_data)
+    socios_qsa = data.get('socios_qsa') or {}
+    socios_list = socios_qsa.get('socios') if isinstance(socios_qsa, dict) else []
+    if not socios_list:
+        return data
+    enrichments = {}
+    for lead_id, socio_cpf, cpf_data in SocioCpfEnrichment.objects.filter(
+        user=user_profile, lead=lead
+    ).values_list('lead_id', 'socio_cpf', 'cpf_data'):
+        enrichments[(lead_id, socio_cpf)] = cpf_data
+    for i, socio in enumerate(socios_list):
+        doc = socio.get('DOCUMENTO') or socio.get('CPF') or socio.get('cpf') or ''
+        cpf_clean = (str(doc)).replace('.', '').replace('-', '').strip()
+        if cpf_clean and (lead.id, cpf_clean) in enrichments:
+            socios_list[i] = {**socio, 'cpf_enriched': True, 'cpf_data': enrichments[(lead.id, cpf_clean)]}
+        else:
+            socios_list[i] = {k: v for k, v in socio.items() if k not in ('cpf_data', 'cpf_enriched')}
+            socios_list[i]['cpf_enriched'] = False
+    return data
 
 
 def login_view(request):
@@ -901,7 +930,7 @@ def search_history(request):
     # Converter para lista para compatibilidade com template
     searches_list = list(searches)
     
-    # Calcular para cada pesquisa se todos os leads já têm dados de sócios
+    # Calcular para cada pesquisa se todos os leads já têm dados de sócios (por usuário: lead_access.enriched_at)
     searches_with_partners_status = []
     for search in searches_list:
         display_leads = search.get_leads_for_display(user_profile)
@@ -909,7 +938,8 @@ def search_history(request):
         leads_count = 0
         for item in display_leads:
             leads_count += 1
-            if not has_valid_partners_data(item['lead']):
+            lead_access = item.get('lead_access')
+            if not (lead_access and lead_access.enriched_at and lead_access.search_id == search.id and has_valid_partners_data(item['lead'])):
                 all_leads_have_partners = False
                 break
         
@@ -919,12 +949,24 @@ def search_history(request):
             'all_leads_have_partners': all_leads_have_partners if leads_count > 0 else False
         })
     
+    # Dados de CPF por usuário (só exibir quando o usuário fez a busca por CPF)
+    lead_ids = [item['lead'].id for s in searches_with_partners_status for item in s['display_leads']]
+    enrichments = SocioCpfEnrichment.objects.filter(
+        user=user_profile, lead_id__in=lead_ids
+    ).select_related('lead')
+    lead_enrichments = {}
+    for e in enrichments:
+        if e.lead_id not in lead_enrichments:
+            lead_enrichments[e.lead_id] = {}
+        lead_enrichments[e.lead_id][e.socio_cpf] = e.cpf_data
+    
     context = {
         'searches': searches_list,
         'searches_with_partners_status': searches_with_partners_status,
         'last_search_id': last_search_id,
         'user_profile': user_profile,
         'available_credits': check_credits(user_profile),
+        'lead_enrichments': lead_enrichments,
     }
     
     return render(request, 'lead_extractor/search_history.html', context)
@@ -1255,13 +1297,25 @@ def api_search_status(request, search_id):
     
     try:
         search_obj = Search.objects.get(id=search_id, user=user_profile)
-        
+        display_leads = search_obj.get_leads_for_display(user_profile)
+        all_leads_have_partners = True
+        leads_count = 0
+        for item in display_leads:
+            leads_count += 1
+            lead_access = item.get('lead_access')
+            if not (lead_access and lead_access.enriched_at and lead_access.search_id == search_obj.id and has_valid_partners_data(item['lead'])):
+                all_leads_have_partners = False
+                break
+        if leads_count == 0:
+            all_leads_have_partners = True  # não mostrar botão à toa
+
         return JsonResponse({
             'status': search_obj.status,
             'results_count': search_obj.results_count,
             'credits_used': search_obj.credits_used,
             'processing_started_at': search_obj.processing_started_at.isoformat() if search_obj.processing_started_at else None,
             'created_at': search_obj.created_at.isoformat(),
+            'all_leads_have_partners': all_leads_have_partners,
         })
     except Search.DoesNotExist:
         return JsonResponse({'error': 'Pesquisa não encontrada'}, status=404)
@@ -1308,12 +1362,22 @@ def api_search_leads(request, search_id):
                 request=request
             )
         else:
+            lead_ids = [item['lead'].id for item in display_leads]
+            enrichments = SocioCpfEnrichment.objects.filter(
+                user=user_profile, lead_id__in=lead_ids
+            )
+            lead_enrichments = {}
+            for e in enrichments:
+                if e.lead_id not in lead_enrichments:
+                    lead_enrichments[e.lead_id] = {}
+                lead_enrichments[e.lead_id][e.socio_cpf] = e.cpf_data
             leads_html = render_to_string(
                 'lead_extractor/partials/search_leads_table.html',
                 {
                     'search': search_obj,
                     'user_profile': user_profile,
                     'display_leads': display_leads,
+                    'lead_enrichments': lead_enrichments,
                 },
                 request=request
             )
@@ -1641,7 +1705,7 @@ def api_partners_status(request, search_id):
                 if has_partners:
                     updated_leads.append({
                         'lead_id': lead.id,
-                        'viper_data': lead.viper_data
+                        'viper_data': _viper_data_for_user_display(lead, user_profile)
                     })
                 else:
                     all_processed = False
@@ -1737,17 +1801,19 @@ def search_cpf_batch(request):
                 cpf_data = None
                 found_socio = None
                 
-                # Buscar sócio pelo CPF e verificar se já tem dados enriquecidos
-                # NOTA: API Viper retorna CPF no campo 'DOCUMENTO', não 'CPF' ou 'cpf'
+                # Verificar se o usuário já tem enriquecimento para este (lead, cpf) no modelo
+                existing = SocioCpfEnrichment.objects.filter(
+                    user=user_profile, lead=lead, socio_cpf=cpf_clean
+                ).first()
+                if existing:
+                    cpf_data = existing.cpf_data
+                    logger.info(f"Usando SocioCpfEnrichment já existente para CPF {cpf}")
+                
+                # Encontrar sócio na lista (para validação e nome)
                 for socio in socios_list:
                     socio_cpf = str(socio.get('DOCUMENTO') or socio.get('CPF') or socio.get('cpf') or '').replace('.', '').replace('-', '').strip()
                     if socio_cpf == cpf_clean:
                         found_socio = socio
-                        # Verificar se já tem dados do CPF
-                        if socio.get('cpf_enriched') and socio.get('cpf_data'):
-                            # Usar dados salvos (não fazer nova requisição à API)
-                            logger.info(f"Usando dados de CPF já salvos para {cpf}")
-                            cpf_data = socio.get('cpf_data')
                         break
                 
                 if not found_socio:
@@ -1781,6 +1847,14 @@ def search_cpf_batch(request):
                             break
                     
                     lead.save(update_fields=['viper_data'])
+                    
+                    # Registrar enriquecimento por usuário (exibição vem do modelo, não do lead)
+                    SocioCpfEnrichment.objects.update_or_create(
+                        user=user_profile,
+                        lead=lead,
+                        socio_cpf=cpf_clean,
+                        defaults={'cpf_data': cpf_data}
+                    )
                 
                 results.append({
                     'lead_id': lead_id,

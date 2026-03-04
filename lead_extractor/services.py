@@ -375,17 +375,21 @@ def _normalize_company_name_for_cache(name):
     return " ".join(name.strip().split())
 
 
-def find_cnpj_by_name(company_name):
+def find_cnpj_by_name(company_name, location=None):
     """
     Busca 'CNPJ [Nome]' no Google via Serper e extrai via Regex.
+    Se location for informado, inclui na query para desambiguar (evitar CNPJ de outra cidade).
     Usa gl/hl para Brasil. Sem page (só primeira página).
     """
     name = _normalize_company_name_for_cache(company_name)
     if not name:
         return None
+    query = f"CNPJ {name}"
+    if location and str(location).strip():
+        query = f"{query} {str(location).strip()}"
     url = "https://google.serper.dev/search"
     payload = json.dumps({
-        "q": f"CNPJ {name}",
+        "q": query,
         "gl": SERPER_GL,
         "hl": SERPER_HL
     })
@@ -1059,17 +1063,20 @@ def get_existing_leads_from_db(niche_normalized, location_normalized, quantity, 
         return [], None
 
 
-def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None):
+def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None, extra_exclude_cnpjs=None):
     """
     Busca leads globais de um CachedSearch e cria LeadAccess para rastrear acesso.
     Retorna leads com dados sanitizados (sem QSA/telefones até enriquecer).
     GARANTE que retorna quantity leads se houver no cache, incluindo leads que o usuário já acessou.
+
+    extra_exclude_cnpjs: CNPJs já usados nesta busca (ex.: da base), para não devolver o mesmo lead.
     
     Args:
         cached_search: Objeto CachedSearch
         user_profile: UserProfile do usuário
         quantity: Quantidade desejada
         search_obj: Objeto Search (opcional, para vincular LeadAccess)
+        extra_exclude_cnpjs: set ou iterable de CNPJs a excluir (ex.: já retornados por get_existing_leads_from_db)
     
     Returns:
         list: Lista de leads do cache (formato dict como no dashboard)
@@ -1082,16 +1089,18 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
     
     try:
         # CNPJs das últimas 3 buscas do usuário - não retornar esses leads (deduplicação)
-        exclude_cnpjs = get_cnpjs_from_user_last_3_searches(
+        exclude_cnpjs = set(get_cnpjs_from_user_last_3_searches(
             user_profile, exclude_search_id=search_obj.id if search_obj else None
-        )
+        ))
+        if extra_exclude_cnpjs:
+            exclude_cnpjs.update(extra_exclude_cnpjs)
         # CNPJs já acessados (para não debitar crédito novamente ao reexibir)
         accessed_cnpjs = set(
             LeadAccess.objects.filter(user=user_profile)
             .values_list('lead__cnpj', flat=True)
         )
         
-        # Buscar leads do cache que NÃO estão nas últimas 3 buscas
+        # Buscar leads do cache que NÃO estão nas últimas 3 buscas nem em extra_exclude_cnpjs
         cached_leads_new = Lead.objects.filter(
             cached_search=cached_search,
             cnpj__isnull=False
@@ -1219,7 +1228,7 @@ def get_leads_from_cache(cached_search, user_profile, quantity, search_obj=None)
         return []
 
 
-def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
+def search_incremental(search_term, user_profile, quantity, existing_cnpjs, location=None):
     """
     Busca incremental apenas os leads que ainda não foram encontrados.
     Usa paginação se necessário, mas com limite menor (busca incremental precisa de menos resultados).
@@ -1230,6 +1239,7 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
         user_profile: UserProfile do usuário
         quantity: Quantidade adicional necessária
         existing_cnpjs: Set de CNPJs já existentes para evitar duplicatas
+        location: Localização da pesquisa (ex: "Santa Maria - RS") para desambiguar CNPJ por nome
     
     Returns:
         tuple: (lista de novos places, set atualizado de existing_cnpjs)
@@ -1271,7 +1281,7 @@ def search_incremental(search_term, user_profile, quantity, existing_cnpjs):
         if name_key in cnpj_cache:
             cnpj = cnpj_cache[name_key]
         else:
-            cnpj = find_cnpj_by_name(company_name)
+            cnpj = find_cnpj_by_name(company_name, location=location)
             serper_calls += 1
             cnpj_cache[name_key] = cnpj
         
@@ -1526,9 +1536,12 @@ def process_search_async(search_id):
                 logger.info(f"Usando cache do CachedSearch para buscar leads adicionais.")
             
             if use_cache:
-                # Buscar leads globais do cache e criar LeadAccess
+                # Buscar leads globais do cache e criar LeadAccess (excluir CNPJs já usados nesta busca)
                 # get_leads_from_cache garante que retorna quantity leads se houver no cache
-                cached_results = get_leads_from_cache(cached_search, user_profile, additional_needed, search_obj)
+                cached_results = get_leads_from_cache(
+                    cached_search, user_profile, additional_needed, search_obj,
+                    extra_exclude_cnpjs=existing_cnpjs
+                )
                 
                 # Contar créditos usados verificando LeadAccess criados nesta busca
                 from .models import LeadAccess
@@ -1608,7 +1621,7 @@ def process_search_async(search_id):
                     if name_key in cnpj_cache:
                         cnpj = cnpj_cache[name_key]
                     else:
-                        cnpj = find_cnpj_by_name(company_data['name'])
+                        cnpj = find_cnpj_by_name(company_data['name'], location=location)
                         serper_cnpj_calls += 1
                         cnpj_cache[name_key] = cnpj
                     
@@ -1796,7 +1809,7 @@ def process_search_async(search_id):
                     if name_key in cnpj_cache:
                         cnpj = cnpj_cache[name_key]
                     else:
-                        cnpj = find_cnpj_by_name(company_data['name'])
+                        cnpj = find_cnpj_by_name(company_data['name'], location=location)
                         serper_cnpj_calls += 1
                         cnpj_cache[name_key] = cnpj
                     

@@ -26,7 +26,7 @@
                     <input type="checkbox" class="partner-lead-checkbox" 
                            data-lead-id="{{ lead.id }}" 
                            data-search-id="{{ search.id }}"
-                           {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
+                           {% if lead_access and lead_access.enriched_at and lead_access.search_id == search.id and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}disabled{% else %}checked{% endif %}
                            onchange="updatePartnersCost({{ search.id }})"
                            style="display: none !important;">
                 </td>
@@ -63,10 +63,11 @@
                     {% endif %}
                 </td>
                 <td id="partners-cell-{{ lead.id }}">
-                    {% if lead_access and lead_access.enriched_at and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
+                    {% if lead_access and lead_access.enriched_at and lead_access.search_id == search.id and lead.viper_data.socios_qsa and lead.viper_data.socios_qsa.socios %}
                         <div class="lead-partners-wrap">
                         <div class="partners-list" id="partners-list-{{ lead.id }}">
                             {% for socio in lead.viper_data.socios_qsa.socios %}
+                            {% get_socio_cpf_data lead_enrichments lead.id socio.DOCUMENTO as socio_cpf_data %}
                             <div class="socio-item mb-2" data-socio-cpf="{{ socio.DOCUMENTO }}">
                                 <div class="d-flex align-items-center justify-content-between">
                                     <div>
@@ -82,16 +83,16 @@
                                            data-lead-id="{{ lead.id }}"
                                            data-socio-name="{{ socio.NOME|default:"N/A" }}"
                                            id="cpf-{{ lead.id }}-{{ forloop.counter }}"
-                                           {% if socio.cpf_enriched and socio.cpf_data %}disabled{% endif %}
+                                           {% if socio_cpf_data %}disabled{% endif %}
                                            style="display: none;">
                                     {% endif %}
                                 </div>
-                                {% if socio.cpf_enriched and socio.cpf_data %}
+                                {% if socio_cpf_data %}
                                 <div class="mt-1 cpf-data">
-                                    {% if socio.cpf_data.dados_gerais.nome %}
-                                    <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio.cpf_data.dados_gerais.nome }}</div>
+                                    {% if socio_cpf_data.dados_gerais.nome %}
+                                    <div class="small text-muted"><i class="fas fa-user me-1"></i>{{ socio_cpf_data.dados_gerais.nome }}</div>
                                     {% endif %}
-                                    {% for phone_info in socio.cpf_data|get_unique_phones %}
+                                    {% for phone_info in socio_cpf_data|get_unique_phones %}
                                         {% if phone_info.type == 'fixo' %}
                                         <span class="badge bg-success me-1"><i class="fas fa-phone me-1"></i>{{ phone_info.phone }}</span>
                                         {% elif phone_info.type == 'movel' %}
@@ -100,7 +101,7 @@
                                         <span class="badge bg-success me-1"><i class="fab fa-whatsapp me-1"></i>{{ phone_info.phone }}</span>
                                         {% endif %}
                                     {% endfor %}
-                                    {% for email in socio.cpf_data.emails %}
+                                    {% for email in socio_cpf_data.emails %}
                                         {% if email %}
                                         <span class="badge bg-info me-1"><i class="fas fa-envelope me-1"></i>{{ email }}</span>
                                         {% endif %}
@@ -110,7 +111,8 @@
                             </div>
                             {% endfor %}
                         </div>
-                        {% if lead.viper_data|has_unenriched_partners %}
+                        {% has_unenriched_partners_for_user_tag lead.viper_data lead.id lead_enrichments as has_unenriched_socios %}
+                        {% if has_unenriched_socios %}
                         <div class="d-flex align-items-center gap-2 mt-2">
                             <button class="btn btn-sm btn-outline-primary" 
                                     type="button"

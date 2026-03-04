@@ -74,13 +74,55 @@ def slice_list_rest(value, arg):
     except (TypeError, ValueError):
         return []
 
+def _normalize_cpf(value):
+    """CPF apenas dígitos para chave de lookup."""
+    if value is None:
+        return ''
+    return re.sub(r'\D', '', str(value))
+
+
 @register.filter
 def has_unenriched_partners(viper_data):
-    """Verifica se há sócios com CPF que ainda não foram enriquecidos"""
+    """Verifica se há sócios com CPF que ainda não foram enriquecidos (legado)."""
     if not viper_data or not viper_data.get('socios_qsa') or not viper_data.get('socios_qsa', {}).get('socios'):
         return False
     for socio in viper_data['socios_qsa']['socios']:
         if socio.get('DOCUMENTO') and not socio.get('cpf_enriched'):
+            return True
+    return False
+
+
+@register.simple_tag
+def get_socio_cpf_data(lead_enrichments, lead_id, socio_documento):
+    """Retorna cpf_data do modelo SocioCpfEnrichment para (lead_id, sócio) ou None."""
+    if not lead_enrichments or not lead_id:
+        return None
+    key = _normalize_cpf(socio_documento)
+    if not key:
+        return None
+    return (lead_enrichments.get(lead_id) or {}).get(key)
+
+
+@register.simple_tag
+def has_unenriched_partners_for_user_tag(viper_data, lead_id, lead_enrichments):
+    """
+    Verifica se há sócios com CPF que o usuário ainda não enriqueceu.
+    Uso: {% has_unenriched_partners_for_user_tag lead.viper_data lead.id lead_enrichments as has_unenriched %}
+    """
+    return has_unenriched_partners_for_user_impl(viper_data or {}, lead_id, lead_enrichments or {})
+
+
+def has_unenriched_partners_for_user_impl(viper_data, lead_id, lead_enrichments):
+    if not lead_enrichments:
+        # Fallback: usar flag no viper_data
+        return has_unenriched_partners(viper_data)
+    by_lead = lead_enrichments.get(lead_id) or {}
+    for socio in viper_data.get('socios_qsa', {}).get('socios') or []:
+        doc = socio.get('DOCUMENTO')
+        if not doc:
+            continue
+        key = _normalize_cpf(doc)
+        if key and not by_lead.get(key):
             return True
     return False
 
