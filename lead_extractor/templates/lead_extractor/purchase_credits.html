@@ -193,7 +193,7 @@
         bricksBuilder.create('statusScreen', 'statusScreenBrick_container', {
             initialization: { paymentId: String(paymentId) },
             callbacks: {
-                onReady: function() { console.log('Status Screen pronto'); },
+                onReady: function() { debugLog('Status Screen pronto'); },
                 onError: function(err) { console.error('Status Screen error:', err); },
             },
         }).then(function(controller) {
@@ -232,7 +232,7 @@
             },
             callbacks: {
                 onReady: function() {
-                    console.log('Payment Brick pronto');
+                    debugLog('Payment Brick pronto');
                 },
                 onSubmit: function({ formData, selectedPaymentMethod }) {
                     return new Promise(function(resolve, reject) {

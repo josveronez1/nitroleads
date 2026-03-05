@@ -455,7 +455,7 @@
     
     // Abrir pesquisa em modal fullscreen
     function openSearchFullscreen(searchId) {
-        console.log('openSearchFullscreen chamado com searchId:', searchId);
+        debugLog('openSearchFullscreen chamado com searchId:', searchId);
         fullscreenModalSearchId = searchId;
         
         const searchCard = document.getElementById(`search-card-${searchId}`);
@@ -800,7 +800,7 @@
         if (typeof showToast === 'function') {
             showToast(message, type || 'info');
         } else {
-            console.warn('showToast não disponível:', message);
+            debugWarn('showToast não disponível:', message);
         }
     }
     
@@ -808,7 +808,7 @@
         if (typeof showToast === 'function') {
             showToast(message, 'success');
         } else {
-            console.warn('showToast não disponível:', message);
+            debugWarn('showToast não disponível:', message);
         }
     }
     
@@ -816,7 +816,7 @@
         if (typeof showToast === 'function') {
             showToast(message, 'error');
         } else {
-            console.warn('showToast não disponível:', message);
+            debugWarn('showToast não disponível:', message);
         }
     }
     
@@ -1116,7 +1116,7 @@
     function startSearchPolling(searchId) {
         // Limpar intervalo anterior se existir
         if (searchPollingIntervals[searchId]) {
-            console.log(`Limpando polling anterior para busca ${searchId}`);
+            debugLog(`Limpando polling anterior para busca ${searchId}`);
             clearInterval(searchPollingIntervals[searchId]);
         }
         
@@ -1126,7 +1126,7 @@
             return;
         }
         
-        console.log(`Iniciando polling para busca ${searchId}`);
+        debugLog(`Iniciando polling para busca ${searchId}`);
         searchPollingIntervals[searchId] = setInterval(() => {
             fetch(`/api/search/${searchId}/status/`, {
                 method: 'GET',
@@ -1148,7 +1148,7 @@
                     return;
                 }
                 
-                console.log(`Status da busca ${searchId}:`, data.status);
+                debugLog(`Status da busca ${searchId}:`, data.status);
                 
                 // Atualizar status no card
                 const resultsBadge = document.querySelector(`#search-card-${searchId} .badge.bg-primary`);
@@ -1198,13 +1198,13 @@
                                 }
                             }
                         })
-                        .catch(err => console.warn('Erro ao atualizar tabela durante processamento:', err));
+                        .catch(err => debugWarn('Erro ao atualizar tabela durante processamento:', err));
                     }
                 } else if (data.status === 'completed') {
                     // Parar polling
                     clearInterval(searchPollingIntervals[searchId]);
                     delete searchPollingIntervals[searchId];
-                    console.log(`Busca ${searchId} completada!`);
+                    debugLog(`Busca ${searchId} completada!`);
                     
                     // Atualizar badges
                     if (resultsBadge) {
@@ -1269,7 +1269,7 @@
                                     
                                     // Re-anexar event listeners
                                     reattachEventListeners(searchId);
-                                    console.log(`Tabela da busca ${searchId} atualizada com sucesso!`);
+                                    debugLog(`Tabela da busca ${searchId} atualizada com sucesso!`);
                                 }
                             }
                         })
@@ -1280,12 +1280,12 @@
                         });
                     } else {
                         // Se não estiver expandido, apenas atualizar os badges já foi feito
-                        console.log(`Busca ${searchId} completada, mas lista não está expandida`);
+                        debugLog(`Busca ${searchId} completada, mas lista não está expandida`);
                     }
                 } else if (data.status === 'failed') {
                     clearInterval(searchPollingIntervals[searchId]);
                     delete searchPollingIntervals[searchId];
-                    console.log(`Busca ${searchId} falhou!`);
+                    debugLog(`Busca ${searchId} falhou!`);
                     
                     // Atualizar badge para erro
                     const processingBadge = document.querySelector(`#search-card-${searchId} .badge.bg-warning`);
@@ -1332,15 +1332,15 @@
     
     // Controlar visibilidade dos botões quando a lista estiver expandida
     document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOMContentLoaded - Iniciando polling para buscas em processamento');
+        debugLog('DOMContentLoaded - Iniciando polling para buscas em processamento');
         // Iniciar polling para buscas em processamento
         {% for search_data in searches_with_partners_status %}
         {% with search=search_data.search %}
         {% if search.status == 'processing' %}
-        console.log('Iniciando polling para busca {{ search.id }}');
+        debugLog('Iniciando polling para busca {{ search.id }}');
         startSearchPolling({{ search.id }});
         {% else %}
-        console.log('Busca {{ search.id }} não está em processamento (status: {{ search.status }})');
+        debugLog('Busca {{ search.id }} não está em processamento (status: {{ search.status }})');
         {% endif %}
         {% endwith %}
         {% endfor %}
@@ -1601,7 +1601,7 @@
 
     // Confirmar busca de sócios (aceita leadIds como parâmetro opcional para uso no modal)
     function confirmPartnersSearch(searchId, leadIds = null) {
-        console.log('confirmPartnersSearch chamado com searchId:', searchId);
+        debugLog('confirmPartnersSearch chamado com searchId:', searchId);
         
         try {
             if (!leadIds) {
@@ -1614,7 +1614,7 @@
                 }).filter(id => id !== null);
             }
             
-            console.log('Leads selecionados:', leadIds);
+            debugLog('Leads selecionados:', leadIds);
             
             if (leadIds.length === 0) {
                 showAlert('Selecione pelo menos uma empresa para buscar quadro societário.', 'warning');
@@ -1651,7 +1651,7 @@
                 }
             }
             
-            console.log('CSRF Token obtido:', csrfToken ? 'Sim' : 'Não');
+            debugLog('CSRF Token obtido:', csrfToken ? 'Sim' : 'Não');
             
             if (!csrfToken) {
                 showError('Erro: Token CSRF não encontrado. Por favor, recarregue a página.');
@@ -1662,7 +1662,7 @@
         
             // Fazer requisição AJAX
             const url = `{% url 'search_partners' 0 %}`.replace('0', searchId);
-            console.log('Fazendo requisição para:', url);
+            debugLog('Fazendo requisição para:', url);
             
             fetch(url, {
                 method: 'POST',
@@ -2020,7 +2020,7 @@
         .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    console.log(`CPFs buscados com sucesso para lead ${leadId}:`, data.results);
+                    debugLog(`CPFs buscados com sucesso para lead ${leadId}:`, data.results);
                     // Atualizar interface com os dados retornados
                     data.results.forEach(result => {
                         // Procurar no modal primeiro, depois na view normal
@@ -2057,7 +2057,7 @@
                         }
                         
                         if (socioItem && result.data) {
-                            console.log(`Atualizando sócio com CPF ${result.cpf} no lead ${leadId}`);
+                            debugLog(`Atualizando sócio com CPF ${result.cpf} no lead ${leadId}`);
                         // Adicionar dados ao sócio
                         let dataDiv = socioItem.querySelector('.cpf-data');
                         if (!dataDiv) {
@@ -2148,7 +2148,7 @@
                             dataDiv.appendChild(noDataSpan);
                         }
                         } else {
-                            console.warn(`Sócio com CPF ${result.cpf} não encontrado no DOM para lead ${leadId}`);
+                            debugWarn(`Sócio com CPF ${result.cpf} não encontrado no DOM para lead ${leadId}`);
                         }
                     });
                     
@@ -2201,7 +2201,7 @@
                         // Atualizar tabela na view normal se estiver expandida
                         const collapse = document.getElementById(`search-${searchId}`);
                         if (collapse && collapse.classList.contains('show')) {
-                            console.log(`Recarregando tabela da busca ${searchId} após busca de CPF (view normal)`);
+                            debugLog(`Recarregando tabela da busca ${searchId} após busca de CPF (view normal)`);
                             fetch(`/api/search/${searchId}/leads/`, {
                                 method: 'GET',
                                 headers: {
@@ -2223,7 +2223,7 @@
                                     if (newTable) {
                                         currentTable.innerHTML = newTable.innerHTML;
                                         reattachEventListeners(searchId);
-                                        console.log(`Tabela da view normal atualizada após busca de CPF`);
+                                        debugLog(`Tabela da view normal atualizada após busca de CPF`);
                                     }
                                 }
                             })
@@ -2234,7 +2234,7 @@
                         
                         // Atualizar modal se estiver aberto
                         if (isModalOpen) {
-                            console.log(`Recarregando tabela da busca ${searchId} após busca de CPF (modal)`);
+                            debugLog(`Recarregando tabela da busca ${searchId} após busca de CPF (modal)`);
                             fetch(`/api/search/${searchId}/leads/`, {
                                 method: 'GET',
                                 headers: {
@@ -2279,9 +2279,9 @@
                                             });
                                         }, 100);
                                         
-                                        console.log(`Tabela do modal atualizada após busca de CPF`);
+                                        debugLog(`Tabela do modal atualizada após busca de CPF`);
                                     } else {
-                                        console.warn('Nova tabela não encontrada no HTML retornado para o modal');
+                                        debugWarn('Nova tabela não encontrada no HTML retornado para o modal');
                                     }
                                 }
                             })
@@ -2290,7 +2290,7 @@
                             });
                         }
                     } else {
-                        console.warn(`Não foi possível encontrar searchId para lead ${leadId}`);
+                        debugWarn(`Não foi possível encontrar searchId para lead ${leadId}`);
                     }
                 
                 showSuccess(`CPFs buscados com sucesso! ${data.processed} CPF(s) processado(s). ${data.credits_debited} crédito(s) debitado(s).`);
