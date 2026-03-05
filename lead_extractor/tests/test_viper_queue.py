@@ -24,13 +24,13 @@ class ViperQueueTest(TestCase):
     
     def test_enqueue_request(self):
         """Testa adicionar requisição à fila."""
-        queue_item = enqueue_viper_request(
+        queue_item, created = enqueue_viper_request(
             user_profile=self.user_profile,
             request_type='partners',
             request_data={'cnpj': '12345678901234'},
             priority=0
         )
-        
+        self.assertTrue(created)
         self.assertIsNotNone(queue_item)
         self.assertEqual(queue_item.status, 'pending')
         self.assertEqual(queue_item.request_type, 'partners')
@@ -69,7 +69,7 @@ class ViperQueueTest(TestCase):
     def test_process_next_request(self):
         """Testa processar próximo item da fila."""
         # Adicionar requisição
-        queue_item = enqueue_viper_request(
+        queue_item, _ = enqueue_viper_request(
             user_profile=self.user_profile,
             request_type='partners',
             request_data={'cnpj': '12345678901234'},
@@ -89,7 +89,7 @@ class ViperQueueTest(TestCase):
     
     def test_mark_request_completed(self):
         """Testa marcar requisição como completa."""
-        queue_item = enqueue_viper_request(
+        queue_item, _ = enqueue_viper_request(
             user_profile=self.user_profile,
             request_type='partners',
             request_data={'cnpj': '12345678901234'},
@@ -106,7 +106,7 @@ class ViperQueueTest(TestCase):
     
     def test_mark_request_failed(self):
         """Testa marcar requisição como falhada."""
-        queue_item = enqueue_viper_request(
+        queue_item, _ = enqueue_viper_request(
             user_profile=self.user_profile,
             request_type='partners',
             request_data={'cnpj': '12345678901234'},

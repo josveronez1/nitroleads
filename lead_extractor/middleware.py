@@ -2,16 +2,18 @@ from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.deprecation import MiddlewareMixin
 from django.db import IntegrityError
-from supabase import create_client, Client
-from jose import jwt, JWTError
 from decouple import config
+import jwt
 import logging
 
 logger = logging.getLogger(__name__)
 
-SUPABASE_URL = config('SUPABASE_URL', default='')
+SUPABASE_URL = config('SUPABASE_URL', default='').rstrip('/')
 SUPABASE_KEY = config('SUPABASE_KEY', default='')
 SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
+
+# JWKS URL para verificação de tokens assinados com chaves assimétricas (ES256/RS256)
+SUPABASE_JWKS_URL = f'{SUPABASE_URL}/auth/v1/.well-known/jwks.json' if SUPABASE_URL else ''
 
 
 class SupabaseAuthMiddleware(MiddlewareMixin):
@@ -58,22 +60,42 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             login_url = reverse('login')
             return HttpResponseRedirect(f'{login_url}?next={request.path}')
         
-        # Se não tem JWT_SECRET configurado, redirecionar para login
-        if not SUPABASE_JWT_SECRET:
-            logger.error("SUPABASE_JWT_SECRET não configurado. Configure no .env para habilitar autenticação.")
+        # É necessário ter JWT Secret (HS256) ou SUPABASE_URL (para JWKS em ES256/RS256)
+        if not SUPABASE_JWT_SECRET and not SUPABASE_JWKS_URL:
+            logger.error("Configure SUPABASE_JWT_SECRET e/ou SUPABASE_URL no .env para habilitar autenticação.")
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({'error': 'Autenticação não configurada', 'redirect': '/login/'}, status=500)
             login_url = reverse('login')
             return HttpResponseRedirect(login_url)
-        
+
         try:
-            # Verificar e decodificar o JWT
-            payload = jwt.decode(
-                auth_token,
-                SUPABASE_JWT_SECRET,
-                algorithms=['HS256'],
-                audience='authenticated'
-            )
+            # Ler o header do token sem verificar para saber o algoritmo
+            unverified_header = jwt.get_unverified_header(auth_token)
+            alg = unverified_header.get('alg')
+
+            if alg == 'HS256':
+                if not SUPABASE_JWT_SECRET:
+                    raise ValueError("SUPABASE_JWT_SECRET é necessário para tokens HS256.")
+                payload = jwt.decode(
+                    auth_token,
+                    SUPABASE_JWT_SECRET,
+                    algorithms=['HS256'],
+                    audience='authenticated'
+                )
+            elif alg in ('RS256', 'ES256'):
+                if not SUPABASE_JWKS_URL:
+                    raise ValueError("SUPABASE_URL é necessário para verificar tokens com chave assimétrica.")
+                # Buscar chave pública no JWKS do Supabase (Signing Keys)
+                jwks_client = jwt.PyJWKClient(SUPABASE_JWKS_URL, timeout=10)
+                signing_key = jwks_client.get_signing_key_from_jwt(auth_token)
+                payload = jwt.decode(
+                    auth_token,
+                    signing_key.key,
+                    algorithms=[alg],
+                    audience='authenticated'
+                )
+            else:
+                raise ValueError(f"Algoritmo JWT não suportado: {alg}")
             
             # Pegar o user_id do payload
             user_id = payload.get('sub')
@@ -147,7 +169,7 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
                         return JsonResponse({'error': 'Onboarding pendente', 'redirect': '/onboarding/'}, status=200)
                     return HttpResponseRedirect(reverse('onboarding'))
             
-        except JWTError as e:
+        except (jwt.PyJWTError, ValueError) as e:
             logger.warning(f"JWT validation failed: {e}")
             # Token inválido, redirecionar para login
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':

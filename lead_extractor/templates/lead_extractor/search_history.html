@@ -49,17 +49,12 @@
         font-size: 0.875rem;
         color: #6c757d;
     }
-    /* Modais de alerta devem aparecer sobre o modal fullscreen */
-    #alertModal,
-    #successModal,
-    #errorModal,
+    /* Modal de confirmação e fullscreen */
     #confirmModal {
         z-index: 1060 !important;
     }
-    #alertModal .modal-backdrop,
-    #successModal .modal-backdrop,
-    #errorModal .modal-backdrop,
-    #confirmModal .modal-backdrop {
+    #confirmModal .modal-backdrop,
+    #searchFullscreenModal .modal-backdrop {
         z-index: 1059 !important;
     }
 </style>
@@ -373,60 +368,6 @@
                 <button type="button" class="btn btn-primary" id="confirm-enrichment-btn" onclick="processEnrichment()">
                     Confirmar e Enriquecer
                 </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal de Aviso Genérico -->
-<div class="modal fade" id="alertModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header" id="alertModalHeader">
-                <h5 class="modal-title" id="alertModalTitle">Aviso</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="alertModalBody">
-                <p id="alertModalMessage"></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal de Sucesso -->
-<div class="modal fade" id="successModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-success text-white">
-                <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Sucesso</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="successModalBody">
-                <p id="successModalMessage"></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-success" data-bs-dismiss="modal">OK</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal de Erro -->
-<div class="modal fade" id="errorModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title"><i class="fas fa-exclamation-circle me-2"></i>Erro</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="errorModalBody">
-                <p id="errorModalMessage"></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-danger" data-bs-dismiss="modal">OK</button>
             </div>
         </div>
     </div>
@@ -854,53 +795,32 @@
     }
     
     
-    // Funções para mostrar modais ao invés de alerts
-    function showAlert(message, type = 'info') {
-        const modal = new bootstrap.Modal(document.getElementById('alertModal'));
-        const title = document.getElementById('alertModalTitle');
-        const body = document.getElementById('alertModalBody');
-        const header = document.getElementById('alertModalHeader');
-        
-        title.textContent = type === 'info' ? 'Aviso' : (type === 'warning' ? 'Atenção' : 'Informação');
-        document.getElementById('alertModalMessage').textContent = message;
-        
-        // Ajustar cor do header
-        header.className = 'modal-header';
-        if (type === 'warning') {
-            header.classList.add('bg-warning', 'text-dark');
+    // Avisos via toast (topo da tela, 2s, sem botão, não bloqueia cliques)
+    function showAlert(message, type) {
+        if (typeof showToast === 'function') {
+            showToast(message, type || 'info');
         } else {
-            header.classList.add('bg-info', 'text-white');
+            console.warn('showToast não disponível:', message);
         }
-        
-        modal.show();
     }
     
-    function showSuccess(message, autoCloseMs) {
-        const el = document.getElementById('successModal');
-        const modal = new bootstrap.Modal(el);
-        const messageElement = document.getElementById('successModalMessage');
-        // Se a mensagem já contém HTML (como <br>), usar innerHTML, senão usar textContent
-        if (message.includes('<br>') || message.includes('<')) {
-            messageElement.innerHTML = message;
+    function showSuccess(message) {
+        if (typeof showToast === 'function') {
+            showToast(message, 'success');
         } else {
-            messageElement.textContent = message;
-        }
-        modal.show();
-        if (autoCloseMs && autoCloseMs > 0) {
-            setTimeout(function() {
-                const m = bootstrap.Modal.getInstance(el);
-                if (m) m.hide();
-            }, autoCloseMs);
+            console.warn('showToast não disponível:', message);
         }
     }
     
     function showError(message) {
-        const modal = new bootstrap.Modal(document.getElementById('errorModal'));
-        document.getElementById('errorModalMessage').textContent = message;
-        modal.show();
+        if (typeof showToast === 'function') {
+            showToast(message, 'error');
+        } else {
+            console.warn('showToast não disponível:', message);
+        }
     }
     
-    // Limpar body ao fechar modais (evita página travada)
+    // Limpar body ao fechar modal fullscreen (evita página travada)
     function ensureBodyModalCleanup() {
         document.body.classList.remove('modal-open');
         document.body.style.removeProperty('overflow');
@@ -910,12 +830,9 @@
         });
     }
     
-    // Ao fechar qualquer modal (aviso ou fullscreen), garantir que o body volte ao normal
-    (function attachAlertModalCleanup() {
-        ['successModal', 'errorModal', 'alertModal', 'searchFullscreenModal'].forEach(function(id) {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener('hidden.bs.modal', ensureBodyModalCleanup);
-        });
+    (function attachModalCleanup() {
+        const el = document.getElementById('searchFullscreenModal');
+        if (el) el.addEventListener('hidden.bs.modal', ensureBodyModalCleanup);
     })();
     
     // Salvar estado de expansão das pesquisas

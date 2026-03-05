@@ -542,6 +542,47 @@
             border-radius: 0.5rem;
             border: none;
         }
+
+        /* Toast container: topo da tela, não bloqueia cliques */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            max-width: 90vw;
+            width: auto;
+            pointer-events: none;
+        }
+        .app-toast {
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            font-size: 0.95rem;
+            white-space: normal;
+            max-width: 420px;
+            pointer-events: none;
+            animation: toast-in 0.3s ease;
+        }
+        .app-toast.toast-out {
+            animation: toast-out 0.25s ease forwards;
+        }
+        .app-toast.toast-success { background: #198754; color: #fff; }
+        .app-toast.toast-error { background: #dc3545; color: #fff; }
+        .app-toast.toast-warning { background: #ffc107; color: #212529; }
+        .app-toast.toast-info { background: #0dcaf0; color: #212529; }
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(-1rem); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes toast-out {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-0.5rem); }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -586,6 +627,9 @@
 
     <!-- Sidebar Overlay (Mobile) -->
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Container para toasts (não bloqueia a tela) -->
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
     <!-- Topbar -->
     <header class="topbar">
@@ -693,6 +737,28 @@
             var row = btn.closest('tr');
             if (row) row.classList.toggle('lead-row-expanded');
         });
+
+        // Toasts: aparecem no topo por 2s e somem (sem botão, não bloqueiam cliques)
+        function showToast(message, type) {
+            type = type || 'info';
+            var container = document.getElementById('toast-container');
+            if (!container) return;
+            var div = document.createElement('div');
+            div.className = 'app-toast toast-' + type;
+            div.setAttribute('role', 'alert');
+            if (typeof message === 'string' && (message.indexOf('<') !== -1)) {
+                div.innerHTML = message;
+            } else {
+                div.textContent = message;
+            }
+            container.appendChild(div);
+            setTimeout(function() {
+                div.classList.add('toast-out');
+                setTimeout(function() {
+                    if (div.parentNode) div.parentNode.removeChild(div);
+                }, 260);
+            }, 2000);
+        }
     </script>
     {% block extra_js %}{% endblock %}
     {% endif %}
