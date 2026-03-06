@@ -5,6 +5,7 @@ from django.core.paginator import Paginator
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_POST, require_http_methods
+from django.utils.http import url_has_allowed_host_and_scheme
 from django_ratelimit.decorators import ratelimit
 from decouple import config
 from pathlib import Path
@@ -23,6 +24,14 @@ from .decorators import require_user_profile, validate_user_ownership
 import csv
 import json
 import logging
+
+from .services.auth_service import (
+    SupabaseAuthConfigurationError,
+    SupabaseAuthError,
+    authenticate_supabase_token,
+    clear_user_session,
+    start_user_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +105,7 @@ def _viper_data_for_user_display(lead, user_profile):
     return data
 
 
+@ensure_csrf_cookie
 def login_view(request):
     """
     Página de login usando Supabase Auth.
@@ -137,7 +147,11 @@ def root_redirect_view(request):
     O JavaScript na página decide o que fazer baseado no hash.
     """
     try:
-        return render(request, 'lead_extractor/root_redirect.html', {})
+        return render(
+            request,
+            'lead_extractor/root_redirect.html',
+            {'has_active_session': bool(getattr(request, 'user_profile', None))},
+        )
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
@@ -145,6 +159,7 @@ def root_redirect_view(request):
         return redirect('login')
 
 
+@ensure_csrf_cookie
 def password_reset_confirm_view(request):
     """
     Página para confirmar e redefinir a senha usando Supabase Auth.
@@ -162,11 +177,53 @@ def password_reset_confirm_view(request):
     return render(request, 'lead_extractor/password_reset_confirm.html', context)
 
 
+@require_POST
+@ratelimit(key='ip', rate='20/m', method='POST', block=True)
+def create_session_view(request):
+    """Cria uma sessão Django a partir de um access token válido do Supabase."""
+    try:
+        payload = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Payload inválido.'}, status=400)
+
+    access_token = (payload.get('access_token') or '').strip()
+    remember_me = bool(payload.get('remember_me'))
+    next_url = payload.get('next_url') or '/'
+
+    if not access_token:
+        return JsonResponse({'error': 'Access token ausente.'}, status=400)
+
+    if not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = '/'
+
+    try:
+        _, user_profile = authenticate_supabase_token(access_token)
+        start_user_session(request, user_profile, remember_me=remember_me)
+        return JsonResponse({
+            'success': True,
+            'next_url': next_url,
+            'onboarding_completed': bool(getattr(user_profile, 'onboarding_completed', True)),
+        })
+    except SupabaseAuthConfigurationError as exc:
+        logger.error("Erro de configuração ao criar sessão Django: %s", exc)
+        return JsonResponse({'error': str(exc)}, status=500)
+    except SupabaseAuthError as exc:
+        logger.warning("Falha ao criar sessão Django: %s", exc)
+        return JsonResponse({'error': str(exc)}, status=401)
+    except Exception as exc:
+        logger.error("Erro inesperado ao criar sessão Django: %s", exc, exc_info=True)
+        return JsonResponse({'error': 'Erro ao criar sessão.'}, status=500)
+
+
 def logout_view(request):
     """
     Faz logout do usuário.
     """
-    # Limpar cookies (o front-end também vai fazer isso, mas garantimos aqui)
+    clear_user_session(request)
     response = redirect('login')
     response.delete_cookie('sb-access-token')
     response.delete_cookie('sb-refresh-token')

@@ -25,6 +25,12 @@ from .cache_service import (
     get_cnpjs_from_user_last_3_searches,
 )
 from .lead_sanitizer import sanitize_lead_data
+from .auth_service import (
+    authenticate_supabase_token,
+    clear_user_session,
+    get_user_profile_from_session,
+    start_user_session,
+)
 
 __all__ = [
     'process_search_async',
@@ -46,4 +52,8 @@ __all__ = [
     'get_leads_from_cache',
     'get_cnpjs_from_user_last_3_searches',
     'sanitize_lead_data',
+    'authenticate_supabase_token',
+    'clear_user_session',
+    'get_user_profile_from_session',
+    'start_user_session',
 ]

@@ -308,6 +308,12 @@
                                 <label for="password" class="form-label">Senha</label>
                                 <input type="password" class="form-control form-control-lg" id="password" required>
                             </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="remember-me">
+                                <label class="form-check-label" for="remember-me">
+                                    Manter conectado
+                                </label>
+                            </div>
                             <button type="submit" class="btn btn-primary btn-lg">
                                 <i class="fas fa-sign-in-alt me-2"></i>Entrar
                             </button>
@@ -384,6 +390,46 @@
             `;
         } else {
             const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+            const defaultNextUrl = '{{ next_url|escapejs }}';
+
+            function getCookie(name) {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) {
+                    return parts.pop().split(';').shift();
+                }
+                return '';
+            }
+
+            function clearLegacyAuthCookies() {
+                ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token'].forEach(function(name) {
+                    document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
+                });
+            }
+
+            async function bootstrapDjangoSession(accessToken, rememberMe, nextUrl) {
+                const response = await fetch('{% url "create_session" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken'),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({
+                        access_token: accessToken,
+                        remember_me: !!rememberMe,
+                        next_url: nextUrl || '/'
+                    })
+                });
+
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || 'Não foi possível iniciar a sessão.');
+                }
+
+                clearLegacyAuthCookies();
+                return result;
+            }
 
             window.addEventListener('load', function() {
                 const hash = window.location.hash.substring(1);
@@ -445,6 +491,7 @@
 
                 const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
+                const rememberMe = document.getElementById('remember-me').checked;
                 const btn = e.target.querySelector('button[type="submit"]');
                 const originalText = btn.innerHTML;
 
@@ -456,12 +503,15 @@
                     if (error) throw error;
 
                     if (data.session && data.session.access_token) {
-                        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`;
-                        if (data.session.refresh_token) {
-                            document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=604800; SameSite=Lax`;
-                        }
-                        const nextUrl = new URLSearchParams(window.location.search).get('next') || '/';
-                        window.location.href = nextUrl;
+                        const nextUrl = new URLSearchParams(window.location.search).get('next') || defaultNextUrl || '/';
+                        const sessionResult = await bootstrapDjangoSession(
+                            data.session.access_token,
+                            rememberMe,
+                            nextUrl
+                        );
+                        window.location.href = sessionResult.onboarding_completed
+                            ? (sessionResult.next_url || nextUrl)
+                            : '/onboarding/';
                     } else {
                         throw new Error('Sessão não retornada pelo Supabase');
                     }
@@ -496,11 +546,14 @@
 
                     if (data.session && data.session.access_token) {
                         if (typeof fbq !== 'undefined') fbq('track', 'CompleteRegistration');
-                        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`;
-                        if (data.session.refresh_token) {
-                            document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=604800; SameSite=Lax`;
-                        }
-                        window.location.href = '/';
+                        const sessionResult = await bootstrapDjangoSession(
+                            data.session.access_token,
+                            false,
+                            '/'
+                        );
+                        window.location.href = sessionResult.onboarding_completed
+                            ? (sessionResult.next_url || '/')
+                            : '/onboarding/';
                     } else {
                         if (typeof fbq !== 'undefined') fbq('track', 'CompleteRegistration');
                         btn.disabled = false;

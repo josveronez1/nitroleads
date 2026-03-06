@@ -1,189 +1,86 @@
 from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.deprecation import MiddlewareMixin
-from django.db import IntegrityError
-from decouple import config
-import jwt
 import logging
+
+from .services.auth_service import get_user_profile_from_session
 
 logger = logging.getLogger(__name__)
 
-SUPABASE_URL = config('SUPABASE_URL', default='').rstrip('/')
-SUPABASE_KEY = config('SUPABASE_KEY', default='')
-SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
-
-# JWKS URL para verificação de tokens assinados com chaves assimétricas (ES256/RS256)
-SUPABASE_JWKS_URL = f'{SUPABASE_URL}/auth/v1/.well-known/jwks.json' if SUPABASE_URL else ''
-
-
 class SupabaseAuthMiddleware(MiddlewareMixin):
     """
-    Middleware para autenticação via Supabase JWT.
+    Middleware para autenticação via sessão Django.
     Redireciona para login se não autenticado.
     """
-    
-    # URLs que não precisam de autenticação
-    EXEMPT_URLS = [
+
+    EXEMPT_URL_PREFIXES = [
         '/admin/',
         '/login/',
+        '/auth/session/',
         '/static/',
         '/media/',
         '/webhook/mercadopago',   # Webhook do Mercado Pago (com ou sem / final)
         '/lp',                    # Landing page (pública)
         '/password-reset',
-        '/password-reset/confirm',
     ]
-    
+
+    EXEMPT_EXACT_URLS = {
+        '/',
+    }
+
+    def _is_exempt_path(self, path):
+        if path in self.EXEMPT_EXACT_URLS:
+            return True
+        return any(path.startswith(url) for url in self.EXEMPT_URL_PREFIXES)
+
+    def _handle_unauthenticated(self, request):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'error': 'Não autenticado', 'redirect': '/login/'}, status=401)
+        login_url = reverse('login')
+        return HttpResponseRedirect(f'{login_url}?next={request.path}')
+
     def process_request(self, request):
-        # Skip authentication for exempt URLs
-        if any(request.path.startswith(url) for url in self.EXEMPT_URLS):
-            return None
-        
-        # Skip authentication for admin (usa auth do Django)
+        request.user_profile = None
+        request.supabase_user_id = None
+
         if request.path.startswith('/admin'):
             return None
-        
-        # Tentar pegar o token do header Authorization
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        if not auth_header.startswith('Bearer '):
-            # Tentar pegar do cookie também
-            auth_token = request.COOKIES.get('sb-access-token') or request.COOKIES.get('supabase-auth-token', '')
-        else:
-            auth_token = auth_header.replace('Bearer ', '')
-        
-        # Se não tem token, redirecionar para login
-        if not auth_token:
-            # Se for requisição AJAX, retornar JSON
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': 'Não autenticado', 'redirect': '/login/'}, status=401)
-            # Senão, redirecionar para login
-            login_url = reverse('login')
-            return HttpResponseRedirect(f'{login_url}?next={request.path}')
-        
-        # É necessário ter JWT Secret (HS256) ou SUPABASE_URL (para JWKS em ES256/RS256)
-        if not SUPABASE_JWT_SECRET and not SUPABASE_JWKS_URL:
-            logger.error("Configure SUPABASE_JWT_SECRET e/ou SUPABASE_URL no .env para habilitar autenticação.")
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': 'Autenticação não configurada', 'redirect': '/login/'}, status=500)
-            login_url = reverse('login')
-            return HttpResponseRedirect(login_url)
 
         try:
-            # Ler o header do token sem verificar para saber o algoritmo
-            unverified_header = jwt.get_unverified_header(auth_token)
-            alg = unverified_header.get('alg')
+            user_profile = get_user_profile_from_session(request)
+        except Exception as exc:
+            logger.error("Erro ao resolver sessão autenticada: %s", exc, exc_info=True)
+            return self._handle_unauthenticated(request)
 
-            if alg == 'HS256':
-                if not SUPABASE_JWT_SECRET:
-                    raise ValueError("SUPABASE_JWT_SECRET é necessário para tokens HS256.")
-                payload = jwt.decode(
-                    auth_token,
-                    SUPABASE_JWT_SECRET,
-                    algorithms=['HS256'],
-                    audience='authenticated'
-                )
-            elif alg in ('RS256', 'ES256'):
-                if not SUPABASE_JWKS_URL:
-                    raise ValueError("SUPABASE_URL é necessário para verificar tokens com chave assimétrica.")
-                # Buscar chave pública no JWKS do Supabase (Signing Keys)
-                jwks_client = jwt.PyJWKClient(SUPABASE_JWKS_URL, timeout=10)
-                signing_key = jwks_client.get_signing_key_from_jwt(auth_token)
-                payload = jwt.decode(
-                    auth_token,
-                    signing_key.key,
-                    algorithms=[alg],
-                    audience='authenticated'
-                )
-            else:
-                raise ValueError(f"Algoritmo JWT não suportado: {alg}")
-            
-            # Pegar o user_id do payload
-            user_id = payload.get('sub')
-            
-            if not user_id:
-                request.user_profile = None
-                return None
-            
-            # Buscar ou criar UserProfile
-            from .models import UserProfile
-            
-            # Extrair email do payload JWT
-            email = payload.get('email', '') or payload.get('user_metadata', {}).get('email', '') or payload.get('user', {}).get('email', '')
-            
-            # Se ainda não tem email, usar um placeholder temporário
-            if not email:
-                email = f"user_{user_id[:8]}@temp.com"
-                logger.warning(f"Email não encontrado no JWT para user_id {user_id}, usando placeholder")
-            
-            # Usar get_or_create para evitar race conditions
-            try:
-                user_profile, created = UserProfile.objects.get_or_create(
-                    supabase_user_id=user_id,
-                    defaults={'email': email}
-                )
-                
-                if created:
-                    logger.info(f"UserProfile criado para {email} (user_id: {user_id})")
-                else:
-                    # Se já existe, atualizar email se necessário (caso tenha mudado)
-                    if user_profile.email != email and email != f"user_{user_id[:8]}@temp.com":
-                        user_profile.email = email
-                        user_profile.save(update_fields=['email'])
-                        logger.info(f"Email atualizado para UserProfile (user_id: {user_id})")
-                        
-            except IntegrityError as e:
-                logger.error(f"Erro de integridade ao criar/buscar UserProfile para user_id {user_id}: {e}", exc_info=True)
-                # Se deu erro de integridade, tentar buscar novamente
-                try:
-                    user_profile = UserProfile.objects.get(supabase_user_id=user_id)
-                except UserProfile.DoesNotExist:
-                    logger.error(f"Não foi possível criar nem encontrar UserProfile para user_id {user_id}")
-                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                        return JsonResponse({'error': 'Erro ao acessar perfil de usuário'}, status=500)
-                    login_url = reverse('login')
-                    return HttpResponseRedirect(login_url)
-            except Exception as e:
-                logger.error(f"Erro inesperado ao criar/buscar UserProfile para user_id {user_id}: {e}", exc_info=True)
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse({'error': 'Erro ao acessar perfil de usuário'}, status=500)
-                login_url = reverse('login')
-                return HttpResponseRedirect(login_url)
-            
+        if user_profile:
             request.user_profile = user_profile
-            request.supabase_user_id = user_id
-            
-            # Redirecionar para onboarding se usuário ainda não completou (primeira vez)
-            if not getattr(user_profile, 'onboarding_completed', True):
-                onboarding_exempt = (
-                    request.path.startswith('/onboarding/') or
-                    request.path.startswith('/api/') or
-                    request.path.rstrip('/') == '/logout' or
-                    request.path.startswith('/login') or
-                    request.path.startswith('/static/') or
-                    request.path.startswith('/media/') or
-                    request.path.startswith('/password-reset') or
-                    request.path == '/favicon.ico'
-                )
-                if not onboarding_exempt:
-                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                        return JsonResponse({'error': 'Onboarding pendente', 'redirect': '/onboarding/'}, status=200)
-                    return HttpResponseRedirect(reverse('onboarding'))
-            
-        except (jwt.PyJWTError, ValueError) as e:
-            logger.warning(f"JWT validation failed: {e}")
-            # Token inválido, redirecionar para login
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': 'Token inválido', 'redirect': '/login/'}, status=401)
-            login_url = reverse('login')
-            return HttpResponseRedirect(f'{login_url}?next={request.path}')
-        except Exception as e:
-            logger.error(f"Error in SupabaseAuthMiddleware: {e}")
-            # Erro ao processar token, redirecionar para login
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'error': 'Erro de autenticação', 'redirect': '/login/'}, status=401)
-            login_url = reverse('login')
-            return HttpResponseRedirect(f'{login_url}?next={request.path}')
-        
+            request.supabase_user_id = request.session.get(
+                'supabase_user_id',
+                user_profile.supabase_user_id,
+            )
+
+        if self._is_exempt_path(request.path):
+            return None
+
+        if not user_profile:
+            return self._handle_unauthenticated(request)
+
+        if not getattr(user_profile, 'onboarding_completed', True):
+            onboarding_exempt = (
+                request.path.startswith('/onboarding/') or
+                request.path.startswith('/api/') or
+                request.path.rstrip('/') == '/logout' or
+                request.path.startswith('/login') or
+                request.path.startswith('/static/') or
+                request.path.startswith('/media/') or
+                request.path.startswith('/password-reset') or
+                request.path == '/favicon.ico'
+            )
+            if not onboarding_exempt:
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({'error': 'Onboarding pendente', 'redirect': '/onboarding/'}, status=200)
+                return HttpResponseRedirect(reverse('onboarding'))
+
         return None
 
 

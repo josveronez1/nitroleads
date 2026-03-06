@@ -42,6 +42,8 @@
     </div>
 
     <script>
+        var hasActiveSession = {% if has_active_session %}true{% else %}false{% endif %};
+
         // Detectar hash de recovery - verificar imediatamente
         var hash = window.location.hash;
         
@@ -74,22 +76,7 @@
                 window.location.replace('/login/');
             }
         } else {
-            // Se não há hash, verificar referer do Supabase
-            var referer = document.referrer;
-            if (referer && referer.indexOf('supabase.co') !== -1) {
-                window.location.replace('/login/');
-            } else {
-                // Se não há hash e não veio do Supabase, pode ser acesso direto à raiz
-                // Verificar se há sessão/cookie de autenticação
-                var hasAuthCookie = document.cookie.indexOf('sb-access-token') !== -1 || 
-                                      document.cookie.indexOf('supabase-auth-token') !== -1;
-                
-                if (hasAuthCookie) {
-                    window.location.replace('/dashboard/');
-                } else {
-                    window.location.replace('/login/');
-                }
-            }
+            window.location.replace(hasActiveSession ? '/dashboard/' : '/login/');
         }
     </script>
 </body>
